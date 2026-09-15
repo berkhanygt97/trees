@@ -295,6 +295,7 @@ function loop(now) {
     // Avatars are modelled facing +Z; a player's yaw is measured from -Z.
     a.avatar.group.rotation.y = a.yaw + Math.PI;
     a.avatar.update(dt, wasMoving, false);
+    a.avatar.scaleLabel(camera.position.distanceTo(a.render));
     a.shadow.position.set(a.render.x, 0.02, a.render.z);
   }
 

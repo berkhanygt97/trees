@@ -146,6 +146,7 @@ export function createAvatar({ name, color, hat, showLabel = true }) {
     // overlaps gets painted over.
     label = labelSprite(name, color, 0.55);
     label.position.y = 3.05;
+    label.userData.base = { x: label.scale.x, y: label.scale.y };
     group.add(label);
   }
 
@@ -153,6 +154,18 @@ export function createAvatar({ name, color, hat, showLabel = true }) {
   return {
     group,
     head,
+    label,
+    /**
+     * Sprites are sized in world units, so a name tag two metres from your face
+     * covers half the screen. Shrink it as it gets close, and drop it entirely
+     * when you are near enough to recognise the hat.
+     */
+    scaleLabel(distance) {
+      if (!label) return;
+      label.visible = distance > 2.0;
+      const k = Math.min(1, Math.max(0.3, distance / 7));
+      label.scale.set(label.userData.base.x * k, label.userData.base.y * k, 1);
+    },
     setVisible(v) { group.visible = v; },
     update(dt, moving, fast) {
       t += dt;
