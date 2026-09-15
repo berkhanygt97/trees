@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;" />
+<title>Casino Royale — Host</title>
+<link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="suit red">♦</span><span class="suit">♠</span>
+    <h1>CASINO ROYALE</h1>
+    <span class="suit">♣</span><span class="suit red">♥</span>
+  </div>
+  <div class="state"><i id="dot"></i><span id="state-text">starting…</span></div>
+</header>
+
+<div id="notice" class="notice" hidden></div>
+
+<section class="card">
+  <h2>SEND THIS TO YOUR GUESTS</h2>
+  <p class="hint">They open it in any browser on the same Wi-Fi. No install, no account.</p>
+  <div id="links"></div>
+  <p class="hint dim" id="same-machine"></p>
+  <button id="play" class="primary">PLAY IN A NEW WINDOW</button>
+</section>
+
+<section class="card">
+  <h2>THE FLOOR</h2>
+  <div class="roundline">
+    <span id="round-label">—</span>
+    <span id="round-clock" class="clock">--:--</span>
+  </div>
+  <div id="event" class="event" hidden></div>
+  <ol id="players"></ol>
+  <p class="hint dim" id="empty">Nobody has walked in yet. The round starts when the first player joins.</p>
+</section>
+
+<section class="card">
+  <h2>TABLE RULES</h2>
+  <div class="grid">
+    <label>Round length
+      <span class="field"><input id="roundMinutes" type="number" min="1" max="60" step="1" /><i>min</i></span>
+    </label>
+    <label>Starting stack
+      <span class="field"><i>$</i><input id="startCash" type="number" min="100" max="100000" step="100" /></span>
+    </label>
+    <label>Bankruptcy loan
+      <span class="field"><i>$</i><input id="loanAmount" type="number" min="0" max="10000" step="50" /></span>
+    </label>
+    <label>Port
+      <span class="field"><input id="port" type="number" min="1024" max="65535" step="1" /></span>
+    </label>
+  </div>
+  <button id="apply">APPLY &amp; RESTART THE FLOOR</button>
+  <p class="hint dim">Restarting disconnects everyone and starts a fresh round.</p>
+</section>
+
+<section class="card">
+  <h2>NOBODY CAN CONNECT?</h2>
+  <p class="hint">It is almost always the firewall on this machine. Allow incoming connections for Node:</p>
+  <div id="firewall" class="hint dim"></div>
+  <p class="hint dim">
+    Everyone must be on the same network, and it must not be a guest or "client isolation"
+    Wi-Fi — those block devices from talking to each other.
+  </p>
+</section>
+
+<script src="panel.js"></script>
+</body>
+</html>

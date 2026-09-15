@@ -10,14 +10,116 @@ running — everything, including three.js, is served off your machine.
 
 ---
 
-## Hosting a game
+## Two ways to run it
+
+**The desktop app** is the one to use at a party. It is a normal application —
+double-click it, and it shows you the link to hand around the room. No terminal,
+no `npm`, and your guests still need nothing but a browser.
+
+**The plain server** is the same game started from a terminal. Use it if you
+already have Node installed and would rather not build an app.
+
+Either way, only the *host* installs anything. Guests open a link.
+
+---
+
+## The desktop app
+
+### Running it from source
+
+```bash
+npm install
+npm run desktop
+```
+
+### Building an installer to double-click
+
+```bash
+npm run build:win      # Windows .exe installer + portable .exe
+npm run build:mac      # macOS .dmg
+npm run build:linux    # Linux AppImage
+```
+
+The finished app lands in `dist/`. Build on the platform you are targeting —
+a Windows installer has to be built on Windows. The first build downloads
+electron-builder, so it needs an internet connection; after that the app itself
+never does.
+
+### What the host app gives you
+
+When it opens you get a control panel:
+
+- **The link to hand out**, in big gold text with a Copy button. If your machine
+  is on more than one network you get one link per network, so you can pick the
+  one your guests are actually on.
+- **Play in a new window** — the host plays in the app itself, in a second
+  window, so the panel stays visible.
+- **The floor**: round number, time left, the current event, and a live
+  leaderboard of everyone in the casino including what they have borrowed.
+- **Table rules** you can change between games — round length, starting stack,
+  loan size, port — with one button to apply them and restart.
+- **Firewall instructions for your operating system**, because that is what is
+  wrong the one time nobody can connect.
+
+If port 3000 is busy, it quietly tries 3001, 3002 and so on, and tells you which
+one it settled on. Quitting while people are still playing asks you to confirm.
+
+---
+
+## Hosting over your local network
+
+1. **Put everyone on the same network.** Same Wi-Fi, or a mix of Wi-Fi and
+   Ethernet on the same router. It does not need internet access — a router with
+   no uplink works fine.
+2. **Start the host** (the desktop app, or `npm start`).
+3. **Read off the link.** It looks like `http://192.168.1.42:3000`. That number
+   is your machine's address on the network; only devices on that network can
+   reach it.
+4. **Guests open it in a browser.** Chrome, Edge, Firefox or Safari. Nothing to
+   install, no account, no internet needed.
+5. **Leave the host running.** Close it and the casino closes with it.
+
+### If nobody can connect
+
+Work down this list — it is almost always the first item.
+
+- **The host firewall is blocking it.** The desktop app prints the right steps
+  for your OS on its front page. From a terminal:
+  - *Windows* — the first time you host, Windows asks whether to let Node.js
+    communicate on the network. Tick **Private networks** and allow. If you
+    dismissed it: Windows Security → Firewall & network protection → Allow an app
+    through firewall → **Node.js** → tick Private.
+  - *macOS* — System Settings → Network → Firewall → Options → allow incoming
+    connections for the app (or `node`).
+  - *Linux* — `sudo ufw allow 3000/tcp`, or
+    `sudo firewall-cmd --add-port=3000/tcp`.
+- **It is a guest network.** Guest and public Wi-Fi usually turn on "client
+  isolation", which blocks devices from talking to each other. Use the main
+  network, or a phone hotspot.
+- **You handed out the wrong address.** `localhost` and `127.0.0.1` only ever
+  mean "this machine" — they will never work from another device. If the host
+  shows several addresses, try each; the right one usually starts `192.168.`
+  or `10.`.
+- **VPN on the host.** A VPN can capture the connection before it reaches your
+  LAN. Turn it off while hosting.
+- **The port is taken.** Change it in the app, or `PORT=3001 npm start`.
+
+### How many people?
+
+The server is comfortable with a dozen or so players — it sends about 15 small
+position updates a second per person, which is nothing for a home network. The
+limit in practice is how many people you can fit around one screen each.
+
+---
+
+## The plain server
 
 ```bash
 npm install          # once
 npm start
 ```
 
-The server prints the links:
+It prints the links:
 
 ```
   ♠ ♥  C A S I N O   R O Y A L E   —   L A N   ♦ ♣
@@ -27,27 +129,14 @@ The server prints the links:
   ------------------------------------------------
 ```
 
-Send your guests the `192.168.x.x` link. They open it in Chrome, Edge, Firefox or
-Safari — phones can load it, but this is a mouse-and-keyboard game.
-
-Needs Node 18 or newer.
-
-### If nobody can connect
-
-Almost always the host firewall. Allow incoming connections to Node on port 3000:
-
-- **Windows** — the first time you run it, Windows asks "Allow Node.js to
-  communicate on…". Tick **Private networks** and allow.
-- **macOS** — System Settings → Network → Firewall → Options → allow incoming
-  connections for `node`.
-- **Linux** — `sudo ufw allow 3000/tcp` (if you use ufw).
-
-Also make sure everyone is on the *same* network and not on a guest/isolated
-Wi-Fi, which blocks device-to-device traffic.
+Needs Node 18 or newer. If you would rather not touch a terminal at all, the
+`launchers/` folder has double-click scripts for Windows, macOS and Linux that
+install and start it for you.
 
 ### Tuning the night
 
-Set environment variables before `npm start`:
+Set environment variables before `npm start` (the desktop app has these as
+fields instead):
 
 | Variable | Default | What it does |
 | --- | --- | --- |
@@ -141,11 +230,17 @@ floor is multiplied by 1.25, which is usually when the round is actually decided
 
 ```
 server/
-  index.js        static file server + WebSocket server, prints the LAN links
+  app.js          the casino as a library: startCasino() -> { urls, room, close }
+  index.js        terminal entry point; reads the environment and prints the links
   room.js         players, money, station proximity checks, message dispatch
   round.js        10-minute round lifecycle, timed events, LAST CALL
   rng.js          crypto-backed randomness
   games/          one module per game; all outcomes decided here, never on a client
+desktop/
+  main.js         Electron main process — runs the casino in-app, owns the windows
+  preload.cjs     the only bridge the panel gets: five calls, no Node access
+  panel.*         the host control panel
+  make-icon.mjs   draws the app icon into a PNG with nothing but zlib
 shared/
   config.js       tunables, room dimensions and the station list — imported by the
                   server and fetched by the browser, so the geometry a player sees
@@ -155,7 +250,13 @@ public/
   js/avatar.js    the little guys
   js/controls.js  pointer-lock FPS movement and collision
   js/ui/          one panel per game
+launchers/        double-click scripts for hosts who do not want a terminal
 ```
+
+The desktop app is a thin shell: it imports the same `startCasino()` the CLI
+does and puts a window around it. There is no second copy of the game, and a
+guest joining a desktop-hosted casino is talking to exactly the same server as
+one joining `npm start`.
 
 The server is authoritative about everything that touches money: it rolls every
 outcome, checks you are actually standing at the table you are betting on, and
@@ -173,6 +274,8 @@ when it plays. That is why the whole thing works with the internet unplugged.
 ```bash
 npm run dev        # restarts on file changes
 ```
+
+`npm run icon` redraws `build/icon.png` if you change the design.
 
 Handy while building: the browser console exposes `window.casino` with
 `{ controls, world, scene, camera, net, hud, gameStates }`, so you can teleport
