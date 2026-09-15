@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Casino Royale — LAN</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎰</text></svg>" />
+<link rel="stylesheet" href="/css/style.css" />
+<script type="importmap">
+{ "imports": { "three": "/vendor/three.module.js" } }
+</script>
+</head>
+<body>
+
+<canvas id="scene"></canvas>
+
+<!-- ------------------------------------------------------------- join -->
+<div id="join" class="screen">
+  <div class="join-card">
+    <div class="logo">
+      <span class="suit red">♦</span><span class="suit">♠</span>
+      <h1>CASINO ROYALE</h1>
+      <span class="suit">♣</span><span class="suit red">♥</span>
+    </div>
+    <p class="tagline">Ten minutes. Same stack for everyone. Biggest profit takes the room.</p>
+
+    <label for="name">WHAT DO THEY CALL YOU?</label>
+    <input id="name" maxlength="14" autocomplete="off" spellcheck="false" placeholder="High Roller" />
+    <button id="enter">ENTER THE CASINO</button>
+    <div id="join-status" class="status"></div>
+
+    <div class="controls-grid">
+      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Move</span></div>
+      <div><kbd>Shift</kbd><span>Sprint</span></div>
+      <div><kbd>Space</kbd><span>Jump</span></div>
+      <div><kbd>E</kbd><span>Play the thing you're looking at</span></div>
+      <div><kbd>Q</kbd> / <kbd>Esc</kbd><span>Leave the table</span></div>
+      <div><kbd>Tab</kbd><span>Full standings</span></div>
+      <div><kbd>M</kbd><span>Mute</span></div>
+    </div>
+
+    <p class="fineprint">
+      Broke? There are ATMs by the door. Every dollar you borrow is subtracted from your
+      final profit, so borrowing keeps you playing but never wins you the round.
+    </p>
+  </div>
+</div>
+
+<!-- -------------------------------------------------------------- hud -->
+<div id="hud" hidden>
+  <div id="crosshair"></div>
+
+  <div id="wallet">
+    <div class="money" id="w-money">$0</div>
+    <div class="profit" id="w-profit">±$0</div>
+    <div class="loans" id="w-loans" hidden></div>
+  </div>
+
+  <div id="roundbar">
+    <div class="rnum" id="r-num">ROUND 1</div>
+    <div class="clock" id="r-clock">10:00</div>
+    <div class="event" id="r-event" hidden><b></b><i></i></div>
+  </div>
+
+  <div id="mini">
+    <div class="mini-title">STANDINGS</div>
+    <ol id="mini-list"></ol>
+  </div>
+
+  <div id="prompt" hidden><kbd>E</kbd> <span></span></div>
+  <div id="toasts"></div>
+  <div id="feed"></div>
+
+  <div id="board" class="screen" hidden>
+    <div class="board-card">
+      <h2>STANDINGS</h2>
+      <table id="board-table"></table>
+    </div>
+  </div>
+
+  <div id="finals" class="screen" hidden>
+    <div class="finals-card">
+      <h2>ROUND OVER</h2>
+      <div id="podium"></div>
+      <table id="finals-table"></table>
+      <div class="next" id="finals-next"></div>
+    </div>
+  </div>
+
+  <div id="panel" hidden>
+    <div class="panel-head">
+      <span id="panel-title">GAME</span>
+      <span class="panel-close">Q or ESC to leave</span>
+    </div>
+    <div id="panel-body"></div>
+    <div id="chipbar"></div>
+  </div>
+
+  <div id="disconnected" class="screen" hidden>
+    <div class="join-card">
+      <h1>CONNECTION LOST</h1>
+      <p class="tagline">The house closed the line. Refresh to walk back in.</p>
+      <button onclick="location.reload()">RECONNECT</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
