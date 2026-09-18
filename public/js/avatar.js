@@ -138,6 +138,20 @@ export function createAvatar({ name, color, hat, showLabel = true }) {
   mouth.rotation.z = Math.PI;
   head.add(mouth);
 
+  // Cigar clamped in the corner of the mouth; hidden until one is bought.
+  const cigar = new THREE.Group();
+  const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.042, 0.42, 8), mat(0x5b3a1e));
+  stick.rotation.z = Math.PI / 2;
+  stick.rotation.y = -0.25;
+  cigar.add(stick);
+  const ember = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xff7a2a }));
+  ember.position.set(0.21, 0, 0.05);
+  cigar.add(ember);
+  cigar.position.set(0.16, -0.16, 0.34);
+  cigar.visible = false;
+  head.add(cigar);
+
   head.add(buildHat(hat, color));
 
   let label = null;
@@ -151,10 +165,18 @@ export function createAvatar({ name, color, hat, showLabel = true }) {
   }
 
   let t = Math.random() * 10;
+  const cigarTip = new THREE.Object3D();
+  cigarTip.position.set(0.24, 0, 0.06);
+  cigar.add(cigarTip);
+
   return {
     group,
     head,
     label,
+    setCigar(on) { cigar.visible = !!on; },
+    hasCigar() { return cigar.visible; },
+    /** World position of the lit end, for the smoke pool to emit from. */
+    tipWorld(target) { return cigarTip.getWorldPosition(target); },
     /**
      * Sprites are sized in world units, so a name tag two metres from your face
      * covers half the screen. Shrink it as it gets close, and drop it entirely
@@ -217,6 +239,61 @@ export function createViewModel(color) {
     chip.rotation.set(0.25, 0, 0.35);
     g.add(chip);
   }
+
+  // The cigar you hold yourself: parked low and to the right until you draw on it.
+  const cigar = new THREE.Group();
+  const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.034, 0.38, 10), mat(0x5b3a1e));
+  stick.rotation.z = Math.PI / 2;
+  cigar.add(stick);
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.07, 10), mat(0xc9a227));
+  band.rotation.z = Math.PI / 2;
+  band.position.x = -0.1;
+  cigar.add(band);
+  const ember = new THREE.Mesh(new THREE.SphereGeometry(0.032, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xff7a2a }));
+  ember.position.x = 0.2;
+  cigar.add(ember);
+  const tip = new THREE.Object3D();
+  tip.position.x = 0.26;
+  cigar.add(tip);
+
+  const REST = new THREE.Vector3(0.46, -0.5, -1.0);
+  const MOUTH = new THREE.Vector3(0.1, -0.22, -0.6);
+  cigar.position.copy(REST);
+  cigar.rotation.z = 0.45;
+  cigar.visible = false;
+  g.add(cigar);
+
+  const PUFF_SECONDS = 1.6;
+  let puffT = 0;
+
   g.renderOrder = 10;
-  return { group: g };
+  return {
+    group: g,
+    setCigar(on) {
+      cigar.visible = !!on;
+      if (!on) { puffT = 0; cigar.position.copy(REST); cigar.rotation.z = 0.45; }
+    },
+    hasCigar() { return cigar.visible; },
+    /** Begin the raise-draw-lower move; false if there is nothing lit yet. */
+    puff() {
+      if (!cigar.visible || puffT > 0) return false;
+      puffT = PUFF_SECONDS;
+      return true;
+    },
+    isPuffing() { return puffT > 0; },
+    /** World position of the lit end, so smoke comes off the right spot. */
+    tipWorld(target) { return tip.getWorldPosition(target); },
+    update(dt) {
+      if (puffT <= 0) return;
+      puffT = Math.max(0, puffT - dt);
+      const p = 1 - puffT / PUFF_SECONDS;
+      // up for a third, held and glowing for a third, back down for a third
+      const k = Math.max(0, Math.min(1, p < 0.35 ? p / 0.35 : p < 0.65 ? 1 : 1 - (p - 0.65) / 0.35));
+      cigar.position.lerpVectors(REST, MOUTH, k);
+      cigar.rotation.z = 0.45 - k * 0.3;
+      ember.material.color.setHex(k > 0.5 ? 0xffd24a : 0xff7a2a);
+      ember.scale.setScalar(1 + k * 0.6);
+    },
+  };
 }

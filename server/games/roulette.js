@@ -1,26 +1,13 @@
 // European single-zero roulette. One wheel, everybody bets on the same spin.
+// The full felt is supported — splits, streets, corners, six lines and the zero
+// trios — and every bet is looked up in the shared table, so a client cannot
+// invent one.
 import { rndInt } from '../rng.js';
+import { WHEEL, colorOf, BET_BY_ID } from '../../shared/roulette.js';
 
-export const WHEEL = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10,
-  5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
+export { WHEEL, colorOf };
 
-const REDS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
-export const colorOf = (n) => (n === 0 ? 'green' : REDS.has(n) ? 'red' : 'black');
-
-const PHASES = { betting: 22000, spinning: 9000, payout: 7000 };
-
-export const BET_TYPES = {
-  red:    { mult: 2, label: 'RED',   hit: (n) => colorOf(n) === 'red' },
-  black:  { mult: 2, label: 'BLACK', hit: (n) => colorOf(n) === 'black' },
-  odd:    { mult: 2, label: 'ODD',   hit: (n) => n !== 0 && n % 2 === 1 },
-  even:   { mult: 2, label: 'EVEN',  hit: (n) => n !== 0 && n % 2 === 0 },
-  low:    { mult: 2, label: '1-18',  hit: (n) => n >= 1 && n <= 18 },
-  high:   { mult: 2, label: '19-36', hit: (n) => n >= 19 && n <= 36 },
-  dozen1: { mult: 3, label: '1ST 12', hit: (n) => n >= 1 && n <= 12 },
-  dozen2: { mult: 3, label: '2ND 12', hit: (n) => n >= 13 && n <= 24 },
-  dozen3: { mult: 3, label: '3RD 12', hit: (n) => n >= 25 && n <= 36 },
-  number: { mult: 36, label: 'STRAIGHT', hit: (n, v) => n === v },
-};
+const PHASES = { betting: 24000, spinning: 9000, payout: 7000 };
 
 export class Roulette {
   constructor(hub) {
@@ -54,15 +41,12 @@ export class Roulette {
     }
   }
 
-  placeBet(player, { type, value, amount }) {
+  placeBet(player, { betId, amount }) {
     if (this.phase !== 'betting') return { ok: false, error: 'Betting is closed — wait for the next spin' };
-    const def = BET_TYPES[type];
-    if (!def) return { ok: false, error: 'Unknown bet' };
-    if (type === 'number' && !(Number.isInteger(value) && value >= 0 && value <= 36)) {
-      return { ok: false, error: 'Pick a number from 0 to 36' };
-    }
+    const def = BET_BY_ID.get(String(betId));
+    if (!def) return { ok: false, error: 'That is not a bet on this table' };
     const entry = this.bets.get(player.id) || { name: player.name, list: [] };
-    entry.list.push({ type, value: type === 'number' ? value : null, amount });
+    entry.list.push({ betId: def.id, amount });
     this.bets.set(player.id, entry);
     this.hub.broadcast('game', this.publicState());
     return { ok: true };
@@ -88,14 +72,14 @@ export class Roulette {
       const lines = [];
       for (const b of entry.list) {
         staked += b.amount;
-        const def = BET_TYPES[b.type];
-        if (def.hit(n, b.value)) {
+        const def = BET_BY_ID.get(b.betId);
+        if (def && def.numbers.includes(n)) {
           winStake += b.amount;
           let mult = def.mult;
-          if (hotRed && b.type === 'red') mult = 3;
+          if (hotRed && def.type === 'red') mult = 3;
           const pay = Math.round(b.amount * mult);
           won += pay;
-          lines.push(`${b.type === 'number' ? '#' + b.value : def.label} +${pay}`);
+          lines.push(`${def.label} +${pay}`);
         }
       }
       if (won > 0) this.hub.pay(playerId, won, { game: 'roulette', stake: winStake, detail: lines.join('  ') });

@@ -1,12 +1,13 @@
-import { CONFIG, STATIONS, AVATAR_COLORS, HATS, profitOf, money } from '../shared/config.js';
+import { CONFIG, STATIONS, AVATAR_COLORS, HATS, CIGAR, profitOf, money } from '../shared/config.js';
 import { rnd, rndInt, pick } from './rng.js';
 import { Round } from './round.js';
-import { spin as spinSlots } from './games/slots.js';
+import * as Slots from './games/slots.js';
 import * as Dice from './games/dice.js';
 import { Blackjack } from './games/blackjack.js';
 import { Roulette } from './games/roulette.js';
 import { Crash } from './games/crash.js';
 import { Horses } from './games/horses.js';
+import { Robots } from './games/robots.js';
 
 const STATION_BY_ID = new Map(STATIONS.map((s) => [s.id, s]));
 const NAME_MAX = 14;
@@ -33,6 +34,7 @@ export class Room {
       roulette: new Roulette(hub),
       crash: new Crash(hub),
       horses: new Horses(hub),
+      robots: new Robots(hub),
       blackjack: new Blackjack(),
     };
     this.lastSnapshot = 0;
@@ -60,6 +62,9 @@ export class Room {
       station: null,
       lastLoanAt: 0,
       betCooldowns: {},
+      freeSpins: null,
+      cigar: null,
+      lastPuffAt: 0,
       joinedAt: Date.now(),
     };
     this.players.set(id, player);
@@ -102,7 +107,8 @@ export class Room {
   }
 
   publicPlayer(p) {
-    return { id: p.id, name: p.name, color: p.color, hat: p.hat };
+    // `cigar` rides along in the player list so everyone can see who is smoking.
+    return { id: p.id, name: p.name, color: p.color, hat: p.hat, cigar: !!p.cigar };
   }
 
   publicPlayers() {
@@ -113,12 +119,17 @@ export class Room {
     for (const p of this.players.values()) {
       p.money = CONFIG.STARTING_BANKROLL;
       p.loans = 0;
+      p.freeSpins = null;
+      p.cigar = null;
       p.wagered = 0;
       p.biggestWin = 0;
       p.joinedAt = Date.now();
       this.games.blackjack.clear(p.id);
       this.sendWallet(p);
     }
+    // Cigars are cleared above, so everyone needs a fresh player list or they
+    // will keep seeing smoke that no longer exists.
+    this.broadcast('players', this.publicPlayers());
   }
 
   standings() {
@@ -173,6 +184,7 @@ export class Room {
     this.games.roulette.abort(refund);
     this.games.crash.abort(refund);
     this.games.horses.abort(refund);
+    this.games.robots.abort(refund);
     this.games.blackjack.abort(refund);
   }
 
@@ -180,6 +192,7 @@ export class Room {
     this.games.roulette.reset();
     this.games.crash.reset();
     this.games.horses.reset();
+    this.games.robots.reset();
   }
 
   /** LAST CALL boosts winnings only, never the returned stake. */
@@ -272,6 +285,7 @@ export class Room {
       case 'bet': return this.onBet(p, msg.d);
       case 'act': return this.onAct(p, msg.d);
       case 'loan': return this.takeLoan(p);
+      case 'puff': return this.onPuff(p);
       case 'ping': return this.send(p.id, 'pong', { c: msg.d && msg.d.c, serverNow: Date.now() });
       default: return undefined;
     }
@@ -295,9 +309,15 @@ export class Room {
     if (st.game === 'blackjack') {
       this.send(p.id, 'result', { game: 'blackjack', ...this.games.blackjack.stateFor(p.id) });
     }
+    if (st.game === 'slots') {
+      this.send(p.id, 'result', {
+        game: 'slots', idle: true, freeLeft: p.freeSpins ? p.freeSpins.left : 0,
+      });
+    }
     if (st.game === 'roulette') this.send(p.id, 'game', this.games.roulette.publicState());
     if (st.game === 'crash') this.send(p.id, 'game', this.games.crash.publicState());
     if (st.game === 'horses') this.send(p.id, 'game', this.games.horses.publicState());
+    if (st.game === 'robots') this.send(p.id, 'game', this.games.robots.publicState());
   }
 
   onExit(p) { p.station = null; }
@@ -327,12 +347,40 @@ export class Room {
     const game = d && d.game;
 
     if (game === 'slots') {
-      const g = this._guardBet(p, d, 450); if (!g) return;
-      if (!this.wager(p, g.amount)) return;
+      const inFree = !!(p.freeSpins && p.freeSpins.left > 0);
+      let stake;
+
+      if (inFree) {
+        // A free spin costs nothing, so it skips the wager but still has to
+        // pass the same floor, proximity and debounce checks.
+        if (this.round.phase !== 'live') return this.error(p, 'The floor is closed between rounds');
+        if (!this.nearStation(p, d && d.station)) return this.error(p, 'Walk up to the machine first');
+        const now = Date.now();
+        if (now - (p.betCooldowns.slots || 0) < 450) return undefined;
+        p.betCooldowns.slots = now;
+        stake = p.freeSpins.stake;
+      } else {
+        const g = this._guardBet(p, d, 450); if (!g) return;
+        if (!this.wager(p, g.amount)) return;
+        stake = g.amount;
+      }
+
       const boost = this.round.eventId() === 'happy_hour' ? 2 : 1;
-      const res = spinSlots(g.amount, boost);
-      if (res.payout > 0) this.pay(p.id, res.payout, { game: 'slots', stake: g.amount });
-      return this.send(p.id, 'result', { game: 'slots', ...res, stake: g.amount, boost });
+      const res = Slots.spin(stake, boost, p.freeSpins);
+      if (inFree) p.freeSpins.left--;
+
+      if (res.triggered) {
+        p.freeSpins = p.freeSpins && p.freeSpins.left > 0
+          ? { ...p.freeSpins, left: p.freeSpins.left + Slots.FREE_SPINS }
+          : { left: Slots.FREE_SPINS, stake };
+      }
+      if (res.payout > 0) this.pay(p.id, res.payout, { game: 'slots', stake });
+      if (p.freeSpins && p.freeSpins.left <= 0) p.freeSpins = null;
+
+      return this.send(p.id, 'result', {
+        game: 'slots', ...res, stake, boost,
+        freeLeft: p.freeSpins ? p.freeSpins.left : 0,
+      });
     }
 
     if (game === 'dice') {
@@ -361,14 +409,14 @@ export class Room {
 
     if (game === 'roulette') {
       const g = this._guardBet(p, d, 0); if (!g) return;
-      const res = this.games.roulette.placeBet(p, { type: d.type, value: d.value, amount: g.amount });
+      const res = this.games.roulette.placeBet(p, { betId: d.betId, amount: g.amount });
       if (!res.ok) return this.error(p, res.error);
       return this.wager(p, g.amount);
     }
 
     if (game === 'crash') {
       const g = this._guardBet(p, d, 0); if (!g) return;
-      const res = this.games.crash.placeBet(p, { amount: g.amount });
+      const res = this.games.crash.placeBet(p, { rocket: d.rocket | 0, amount: g.amount });
       if (!res.ok) return this.error(p, res.error);
       return this.wager(p, g.amount);
     }
@@ -380,7 +428,57 @@ export class Room {
       return this.wager(p, g.amount);
     }
 
+    if (game === 'robots') {
+      const g = this._guardBet(p, d, 0); if (!g) return;
+      const res = this.games.robots.placeBet(p, { robot: d.robot | 0, amount: g.amount });
+      if (!res.ok) return this.error(p, res.error);
+      return this.wager(p, g.amount);
+    }
+
+    if (game === 'cigar') return this.buyCigar(p, d);
+
     return this.error(p, 'Unknown game');
+  }
+
+  // ------------------------------------------------------------------ cigar
+
+  /**
+   * A cigar does nothing mechanically. It costs real money, which comes
+   * straight off your profit, and everyone in the room can see it.
+   */
+  buyCigar(p, d) {
+    if (this.round.phase !== 'live') return this.error(p, 'The counter is shut between rounds');
+    if (!this.nearStation(p, d && d.station)) return this.error(p, 'Walk up to the counter first');
+    if (p.cigar) return this.error(p, 'You already have one going');
+    if (p.money < CIGAR.PRICE) return this.error(p, `A cigar costs ${money(CIGAR.PRICE)}`);
+
+    // Deducted directly rather than through wager(): it is an expense, not a bet,
+    // so it must not inflate the amount-wagered column.
+    p.money -= CIGAR.PRICE;
+    p.cigar = { puffs: CIGAR.PUFFS };
+    this.sendWallet(p);
+    this.broadcast('players', this.publicPlayers());
+    this.send(p.id, 'result', { game: 'cigar', puffs: p.cigar.puffs, bought: true });
+    this.toastAll(`${p.name} lit a cigar. Very classy.`, 'info');
+    return undefined;
+  }
+
+  onPuff(p) {
+    if (!p.cigar || p.cigar.puffs <= 0) return undefined;
+    const now = Date.now();
+    if (now - p.lastPuffAt < 700) return undefined;
+    p.lastPuffAt = now;
+
+    p.cigar.puffs--;
+    this.broadcast('puff', { playerId: p.id });
+
+    if (p.cigar.puffs <= 0) {
+      p.cigar = null;
+      this.broadcast('players', this.publicPlayers());
+      this.send(p.id, 'toast', { text: 'Your cigar burned out.', kind: 'info' });
+    }
+    this.send(p.id, 'result', { game: 'cigar', puffs: p.cigar ? p.cigar.puffs : 0 });
+    return undefined;
   }
 
   onAct(p, d) {
@@ -434,6 +532,7 @@ export class Room {
       this.games.roulette.tick(now);
       this.games.crash.tick(now);
       this.games.horses.tick(now);
+      this.games.robots.tick(now);
     }
 
     if (now - this.lastSnapshot >= 1000 / CONFIG.SNAPSHOT_HZ) {

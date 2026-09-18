@@ -75,6 +75,12 @@ export const sfx = {
   tick() { tone({ freq: 1400, type: 'square', dur: 0.02, gain: 0.07 }); },
   launch() { tone({ freq: 120, type: 'sawtooth', dur: 0.8, gain: 0.16, slide: 700 }); },
   explode() { noise({ dur: 0.7, gain: 0.4, bandpass: 380 }); tone({ freq: 90, type: 'sawtooth', dur: 0.5, gain: 0.25, slide: -60 }); },
+  /** Your rocket dying just after you got out. */
+  nearMiss() {
+    tone({ freq: 660, type: 'triangle', dur: 0.1, gain: 0.2 });
+    tone({ freq: 990, type: 'triangle', dur: 0.14, gain: 0.18, delay: 0.1 });
+  },
+  card() { noise({ dur: 0.06, gain: 0.16, bandpass: 3200 }); },
   gallop() { noise({ dur: 0.05, gain: 0.07, bandpass: 300 }); },
   fanfare() {
     [392, 523, 659, 784, 1046].forEach((f, i) =>

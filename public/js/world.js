@@ -1,10 +1,7 @@
 import * as THREE from 'three';
-import { ROOM, STATIONS, HORSES } from '/shared/config.js';
+import { ROOM, STATIONS, HORSES, ROCKETS } from '/shared/config.js';
+import { WHEEL as WHEEL_ORDER, REDS } from '/shared/roulette.js';
 import { carpetTexture, wallTexture, feltTexture, woodTexture, signTexture, slotFaceTexture, liveCanvas } from './textures.js';
-
-const WHEEL_ORDER = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10,
-  5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
-const REDS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 
 const TRACK_START = -32;
 const TRACK_END = 32;
@@ -32,6 +29,8 @@ export class World {
     this._crash();
     this._track();
     this._atms();
+    this._cigarShop();
+    this._arena();
     this._decor();
 
     for (const st of STATIONS) {
@@ -422,14 +421,61 @@ export class World {
       this.obstacles.push({ x: dx, z: -8.45, r: 0.5 });
     }
 
+    this._rockets(g);
+
     const st = STATIONS.find((s) => s.game === 'crash');
     g.position.set(st.pos[0], 0, st.pos[2] - 2);
     this.scene.add(g);
     this.crashGroup = g;
-    this._paintCrash({ phase: 'betting', until: 0 }, 1);
+    this._paintCrash({ phase: 'betting', until: 0 });
   }
 
-  _paintCrash(state, mult, serverNow = Date.now()) {
+  /** Three physical rockets on the lounge pad, one per entry in ROCKETS. */
+  _rockets(parent) {
+    this.rocketMeshes = ROCKETS.map((r, i) => {
+      const group = new THREE.Group();
+      const color = new THREE.Color(r.color);
+
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.4, 2.0, 12), lam(0xf2ece2));
+      body.position.y = 1.0;
+      group.add(body);
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.9, 12), lam(color));
+      nose.position.y = 2.45;
+      group.add(nose);
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.22, 12), lam(color));
+      band.position.y = 1.5;
+      group.add(band);
+      for (let f = 0; f < 3; f++) {
+        const fin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.7, 0.55), lam(color));
+        const a = (f / 3) * Math.PI * 2;
+        fin.position.set(Math.cos(a) * 0.4, 0.35, Math.sin(a) * 0.4);
+        fin.rotation.y = -a;
+        group.add(fin);
+      }
+
+      // Exhaust flame, scaled by thrust each frame.
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.3, 1.1, 10), basic(0xffb347, { transparent: true, opacity: 0.9 }));
+      flame.position.y = -0.55;
+      flame.rotation.x = Math.PI;
+      group.add(flame);
+
+      const burst = new THREE.Sprite(new THREE.SpriteMaterial({
+        color: 0xffae4a, transparent: true, opacity: 0, depthWrite: false,
+      }));
+      burst.scale.set(4, 4, 1);
+      group.add(burst);
+
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.0, 0.2, 14), lam(0x2b2230));
+      pad.position.set(-6 + i * 6, 0.45, 3.4);
+      parent.add(pad);
+
+      group.position.set(-6 + i * 6, 0.55, 3.4);
+      parent.add(group);
+      return { group, flame, burst, nose, baseY: 0.55, x: -6 + i * 6 };
+    });
+  }
+
+  _paintCrash(state, serverNow = Date.now()) {
     const { ctx: g, canvas, texture } = this.crashScreen;
     const w = canvas.width;
     const h = canvas.height;
@@ -450,49 +496,71 @@ export class World {
     g.font = 'bold 24px "Trebuchet MS", sans-serif';
     g.fillText('cash out or cry', 40, 74);
 
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
+    const growth = state.growth || 0.075;
+    const rockets = state.rockets || [];
+
+    const multOf = (r) => {
+      if (state.phase === 'betting' || !state.startAt) return 1;
+      if (r.dead) return r.crashPoint || 1;
+      return Math.exp(growth * ((serverNow - state.startAt) / 1000));
+    };
 
     if (state.phase === 'betting') {
       const left = Math.max(0, (state.until - serverNow) / 1000);
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
       g.fillStyle = '#c471e8';
-      g.font = 'bold 64px "Trebuchet MS", sans-serif';
-      g.fillText('NEXT LAUNCH IN', w / 2, h / 2 - 70);
+      g.font = 'bold 56px "Trebuchet MS", sans-serif';
+      g.fillText('NEXT LAUNCH IN', w / 2, h / 2 - 80);
       g.fillStyle = '#ffffff';
-      g.font = 'bold 190px "Trebuchet MS", sans-serif';
-      g.fillText(left.toFixed(1), w / 2, h / 2 + 60);
-    } else {
-      // Plot the multiplier curve so far.
-      const crashed = state.phase === 'crashed';
-      const peak = crashed ? state.crashPoint : mult;
-      const yMax = Math.max(2, peak * 1.15);
-      const xMax = Math.max(6, Math.log(yMax) / (state.growth || 0.075));
-      g.strokeStyle = crashed ? '#e0403a' : '#6bd66b';
-      g.lineWidth = 7;
-      g.beginPath();
-      for (let i = 0; i <= 120; i++) {
-        const t = (i / 120) * Math.min(xMax, Math.log(peak) / (state.growth || 0.075));
-        const m = Math.exp((state.growth || 0.075) * t);
-        const px = 60 + (t / xMax) * (w - 120);
-        const py = h - 80 - ((m - 1) / (yMax - 1)) * (h - 180);
-        i ? g.lineTo(px, py) : g.moveTo(px, py);
-      }
-      g.stroke();
-
-      g.fillStyle = crashed ? '#e0403a' : '#ffffff';
       g.font = 'bold 170px "Trebuchet MS", sans-serif';
-      g.fillText(`${(crashed ? state.crashPoint : mult).toFixed(2)}x`, w / 2, h / 2 - 20);
-      if (crashed) {
-        g.fillStyle = '#e0403a';
-        g.font = 'bold 76px "Trebuchet MS", sans-serif';
-        g.fillText('BUSTED', w / 2, h / 2 + 110);
+      g.fillText(left.toFixed(1), w / 2, h / 2 + 50);
+    } else {
+      // All three curves on shared axes, each in its rocket's colour.
+      const elapsed = (serverNow - state.startAt) / 1000;
+      const peak = Math.max(...rockets.map(multOf), 1.6);
+      const yMax = peak * 1.12;
+      const tMax = Math.max(4, elapsed * 1.05);
+      const px = (t) => 70 + (t / tMax) * (w - 140);
+      const py = (m) => h - 90 - ((m - 1) / (yMax - 1)) * (h - 230);
+
+      for (const r of rockets) {
+        const endT = r.dead && r.crashAt ? (r.crashAt - state.startAt) / 1000 : elapsed;
+        g.strokeStyle = r.color;
+        g.globalAlpha = r.dead ? 0.4 : 1;
+        g.lineWidth = r.dead ? 4 : 8;
+        g.beginPath();
+        for (let i = 0; i <= 80; i++) {
+          const t = (i / 80) * Math.max(0, endT);
+          const X = px(t);
+          const Y = py(Math.exp(growth * t));
+          i ? g.lineTo(X, Y) : g.moveTo(X, Y);
+        }
+        g.stroke();
+        g.globalAlpha = 1;
       }
+
+      // Scoreboard of live multipliers down the right.
+      g.textAlign = 'right';
+      g.textBaseline = 'middle';
+      rockets.forEach((r, i) => {
+        const m = multOf(r);
+        g.fillStyle = r.dead ? '#6a5a76' : r.color;
+        g.font = 'bold 62px "Trebuchet MS", sans-serif';
+        g.fillText(`${m.toFixed(2)}x`, w - 46, 150 + i * 78);
+        if (r.dead) {
+          g.fillStyle = '#e0403a';
+          g.font = 'bold 34px "Trebuchet MS", sans-serif';
+          g.fillText('DOWN', w - 250, 150 + i * 78);
+        }
+      });
     }
 
     g.fillStyle = '#7e6a8c';
     g.font = 'bold 30px "Trebuchet MS", sans-serif';
     g.textAlign = 'left';
-    const hist = (state.history || []).slice(0, 8).map((v) => `${v.toFixed(2)}x`).join('   ');
+    const hist = (state.history || []).slice(0, 5)
+      .map((set) => set.map((v) => v.toFixed(2)).join('/')).join('    ');
     g.fillText(hist, 40, h - 34);
     texture.needsUpdate = true;
   }
@@ -657,6 +725,179 @@ export class World {
     }
   }
 
+  /** A little counter by the door that sells you nothing useful. */
+  _cigarShop() {
+    const st = STATIONS.find((s) => s.game === 'cigar');
+    if (!st) return;
+    const g = new THREE.Group();
+
+    const counter = new THREE.Mesh(new THREE.BoxGeometry(3.6, 1.15, 1.1), lam(0x4b2a17, { map: woodTexture() }));
+    counter.position.y = 0.58;
+    g.add(counter);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.1, 1.3), lam(0x2b2230));
+    top.position.y = 1.2;
+    g.add(top);
+
+    // Humidor with a few cigars in it.
+    const box = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.26, 0.7), lam(0x6b4326));
+    box.position.set(0, 1.38, 0);
+    g.add(box);
+    for (let i = 0; i < 5; i++) {
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.6, 8), lam(0x5b3a1e));
+      c.rotation.x = Math.PI / 2;
+      c.position.set(-0.4 + i * 0.2, 1.54, 0);
+      g.add(c);
+    }
+
+    const back = new THREE.Mesh(new THREE.BoxGeometry(3.8, 2.6, 0.3), lam(0x3a2a44));
+    back.position.set(0, 1.3, -0.9);
+    g.add(back);
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 0.9),
+      basic(0xffffff, { map: signTexture('CIGARS', '#e8a33a'), transparent: true }));
+    sign.position.set(0, 2.9, -0.7);
+    g.add(sign);
+
+    g.position.set(st.pos[0], 0, st.pos[2]);
+    g.rotation.y = st.yaw;
+    this.scene.add(g);
+  }
+
+  /** The octagonal cage two robots knock lumps out of each other in. */
+  _arena() {
+    const st = STATIONS.find((s) => s.game === 'robots');
+    if (!st) return;
+    const g = new THREE.Group();
+    const R = 5.0;
+
+    const floor = new THREE.Mesh(new THREE.CylinderGeometry(R, R + 0.3, 0.6, 8), lam(0x33303a));
+    floor.position.y = 0.3;
+    g.add(floor);
+    const mat = new THREE.Mesh(new THREE.CylinderGeometry(R - 0.35, R - 0.35, 0.08, 8), lam(0x6b2230));
+    mat.position.y = 0.63;
+    g.add(mat);
+
+    // Cage posts and two rails between them.
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3.0, 8), lam(0xb9c0cc));
+      post.position.set(Math.cos(a) * R, 2.1, Math.sin(a) * R);
+      g.add(post);
+      const b = ((i + 1) / 8) * Math.PI * 2 + Math.PI / 8;
+      for (const h of [1.2, 2.2, 3.2]) {
+        const p1 = new THREE.Vector3(Math.cos(a) * R, h, Math.sin(a) * R);
+        const p2 = new THREE.Vector3(Math.cos(b) * R, h, Math.sin(b) * R);
+        const len = p1.distanceTo(p2);
+        const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, len, 6), lam(0x8d95a3));
+        rail.position.copy(p1).lerp(p2, 0.5);
+        rail.rotation.z = Math.PI / 2;
+        rail.rotation.y = -Math.atan2(p2.z - p1.z, p2.x - p1.x);
+        g.add(rail);
+      }
+    }
+
+    // Overhead HP screen.
+    this.arenaScreen = liveCanvas(768, 256);
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(7.5, 2.5),
+      basic(0xffffff, { map: this.arenaScreen.texture }));
+    screen.position.set(0, 6.4, 0);
+    screen.rotation.y = Math.PI;   // faces the lobby side
+    g.add(screen);
+    const screenBack = new THREE.Mesh(new THREE.PlaneGeometry(7.5, 2.5),
+      basic(0xffffff, { map: this.arenaScreen.texture }));
+    screenBack.position.set(0, 6.4, 0.06);
+    g.add(screenBack);
+    const rig = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.4, 0.2), lam(0x2b2230));
+    rig.position.set(0, 8.2, 0);
+    g.add(rig);
+
+    const spot = new THREE.PointLight(0xdfe8ff, 120, 22, 2);
+    spot.position.set(0, 7.5, 0);
+    g.add(spot);
+
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(9, 2.25),
+      basic(0xffffff, { map: signTexture('SCRAPYARD', '#9fd4e8'), transparent: true }));
+    sign.position.set(0, 9.4, 0);
+    g.add(sign);
+
+    // Two combatants, built from boxes.
+    this.robotMeshes = [0, 1].map((i) => {
+      const bot = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.2, 0.9), lam(0x9aa1ad));
+      body.position.y = 1.35;
+      bot.add(body);
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.55, 0.08), lam(0xcfd6e2));
+      plate.position.set(0, 1.45, 0.48);
+      bot.add(plate);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.45, 0.55), lam(0x7c8593));
+      head.position.y = 2.2;
+      bot.add(head);
+      const visor = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.14, 0.06), basic(0xff4444));
+      visor.position.set(0, 2.24, 0.29);
+      bot.add(visor);
+      for (const side of [-1, 1]) {
+        const track = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.7, 1.15), lam(0x2f333c));
+        track.position.set(side * 0.62, 0.38, 0);
+        bot.add(track);
+      }
+      const arms = [-1, 1].map((side) => {
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.26, 1.0), lam(0x6d7684));
+        arm.position.set(side * 0.72, 1.5, 0.35);
+        bot.add(arm);
+        return arm;
+      });
+      bot.visible = false;
+      g.add(bot);
+      return { group: bot, body, visor, arms, plate };
+    });
+
+    g.position.set(st.pos[0], 0, st.pos[2]);
+    this.scene.add(g);
+    this.arenaGroup = g;
+    this.arenaR = R;
+    this._paintArena(null);
+  }
+
+  _paintArena(state) {
+    const { ctx: g, canvas, texture } = this.arenaScreen;
+    const w = canvas.width;
+    const h = canvas.height;
+    g.fillStyle = '#0a0d14';
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#9fd4e8';
+    g.lineWidth = 4;
+    g.strokeRect(6, 6, w - 12, h - 12);
+
+    g.textAlign = 'center';
+    g.fillStyle = '#9fd4e8';
+    g.font = 'bold 30px "Trebuchet MS", sans-serif';
+    g.fillText('THE SCRAPYARD', w / 2, 44);
+
+    if (!state || !state.fighters) {
+      g.fillStyle = '#4b5565';
+      g.font = 'bold 26px "Trebuchet MS", sans-serif';
+      g.fillText('warming up…', w / 2, 140);
+      texture.needsUpdate = true;
+      return;
+    }
+
+    state.fighters.forEach((f, i) => {
+      const y = 86 + i * 78;
+      const hp = this._arenaHp ? this._arenaHp[i] : f.maxHp;
+      g.textAlign = 'left';
+      g.fillStyle = f.color;
+      g.font = 'bold 26px "Trebuchet MS", sans-serif';
+      g.fillText(f.name, 30, y);
+      g.textAlign = 'right';
+      g.fillStyle = '#cfd6e2';
+      g.fillText(`${f.odds.toFixed(2)}x`, w - 30, y);
+      g.fillStyle = 'rgba(0,0,0,0.55)';
+      g.fillRect(30, y + 12, w - 60, 22);
+      g.fillStyle = f.color;
+      g.fillRect(30, y + 12, (w - 60) * Math.max(0, Math.min(1, hp / f.maxHp)), 22);
+    });
+    texture.needsUpdate = true;
+  }
+
   // ----------------------------------------------------------------- decor
 
   _decor() {
@@ -723,6 +964,73 @@ export class World {
     this._updateRoulette(dt, ctx.roulette, ctx.serverNow);
     this._updateHorses(ctx.horses, ctx.serverNow);
     this._updateCrash(ctx.crash, ctx.serverNow);
+    this._updateRobots(ctx.robots, ctx.serverNow);
+  }
+
+  _updateRobots(state, serverNow) {
+    if (!this.robotMeshes) return;
+    const R = this.arenaR;
+
+    if (!state || !state.fighters) {
+      this.robotMeshes.forEach((r) => { r.group.visible = false; });
+      return;
+    }
+
+    // Track HP by replaying the same event list the panel uses.
+    if (state.phase === 'fighting' && state.events) {
+      const t = serverNow - state.startAt;
+      let hp = state.fighters.map((f) => f.maxHp);
+      let last = null;
+      for (const ev of state.events) {
+        if (ev.t > t) break;
+        hp = ev.hp;
+        last = ev;
+      }
+      this._arenaHp = hp;
+      this._arenaLast = last;
+    } else if (state.phase === 'betting') {
+      this._arenaHp = state.fighters.map((f) => f.maxHp);
+      this._arenaLast = null;
+    }
+
+    this.robotMeshes.forEach((r, i) => {
+      const f = state.fighters[i];
+      r.group.visible = true;
+      r.body.material.color.set(f.color);
+      r.plate.material.color.set(f.color);
+
+      const side = i === 0 ? -1 : 1;
+      const facing = i === 0 ? Math.PI / 2 : -Math.PI / 2;
+      let x = side * 2.2;
+      let lunge = 0;
+
+      if (state.phase === 'fighting' && this._arenaLast) {
+        const since = (serverNow - state.startAt - this._arenaLast.t) / 1000;
+        const mine = this._arenaLast.actor === i;
+        // Attacker lunges in, defender rocks back.
+        if (since < 0.34) {
+          const k = 1 - Math.abs(since / 0.17 - 1);
+          lunge = mine ? k * 0.9 : -k * 0.45;
+        }
+        r.visor.material.color.setHex(mine && this._arenaLast.type === 'crit' ? 0xffee66 : 0xff4444);
+      }
+      x += -side * lunge;
+
+      r.group.position.set(x, 0, Math.sin(this.t * 2 + i) * 0.1);
+      r.group.rotation.y = facing;
+      const dead = this._arenaHp && this._arenaHp[i] <= 0;
+      r.group.rotation.z = dead ? side * 1.4 : Math.sin(this.t * 6 + i) * 0.03;
+      r.group.position.y = dead ? 0.35 : 0.6;
+      r.arms.forEach((arm, k) => {
+        arm.rotation.x = lunge > 0 ? -1.0 * lunge : Math.sin(this.t * 5 + k) * 0.12;
+      });
+    });
+
+    const key = `${state.phase}:${state.matchNo}:${(this._arenaHp || []).join('/')}`;
+    if (key !== this._arenaKey) {
+      this._arenaKey = key;
+      this._paintArena(state);
+    }
   }
 
   _updateRoulette(dt, state, serverNow) {
@@ -798,10 +1106,43 @@ export class World {
 
   _updateCrash(state, serverNow) {
     if (!state) return;
-    let mult = 1;
-    if (state.phase === 'running' && state.startAt) {
-      mult = Math.exp((state.growth || 0.075) * ((serverNow - state.startAt) / 1000));
-    }
-    this._paintCrash(state, mult, serverNow);
+    this._paintCrash(state, serverNow);
+    if (!this.rocketMeshes) return;
+
+    const growth = state.growth || 0.075;
+    const flying = state.phase === 'running' && state.startAt;
+
+    this.rocketMeshes.forEach((rm, i) => {
+      const r = (state.rockets || [])[i];
+      if (!r || !flying) {
+        // On the pad, idling.
+        rm.group.position.set(rm.x, rm.baseY, 3.4);
+        rm.group.rotation.z = 0;
+        rm.group.visible = true;
+        rm.flame.scale.setScalar(state && state.phase === 'betting' ? 0.35 : 0.001);
+        rm.burst.material.opacity = 0;
+        return;
+      }
+
+      const mult = r.dead ? (r.crashPoint || 1) : Math.exp(growth * ((serverNow - state.startAt) / 1000));
+      // Log height keeps a 50x rocket on screen next to a 2x one.
+      const height = rm.baseY + Math.min(9.4, Math.log(Math.max(1, mult)) * 2.6);
+
+      if (r.dead) {
+        const since = r.crashAt ? (serverNow - r.crashAt) / 1000 : 0;
+        rm.group.position.set(rm.x, Math.max(0.4, height - since * 5.5), 3.4);
+        rm.group.rotation.z += 0.22;               // tumbling wreck
+        rm.group.visible = since < 2.2;
+        rm.flame.scale.setScalar(0.001);
+        rm.burst.material.opacity = Math.max(0, 1 - since * 1.6);
+        rm.burst.scale.setScalar(4 + since * 9);
+      } else {
+        rm.group.position.set(rm.x, height, 3.4);
+        rm.group.rotation.z = Math.sin(this.t * 9 + i) * 0.04;
+        rm.group.visible = true;
+        rm.flame.scale.set(1, 1 + Math.sin(this.t * 22 + i) * 0.35, 1);
+        rm.burst.material.opacity = 0;
+      }
+    });
   }
 }

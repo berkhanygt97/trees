@@ -35,15 +35,15 @@ npm run desktop
 ### Building an installer to double-click
 
 ```bash
-npm run build:win      # Windows .exe installer + portable .exe
-npm run build:mac      # macOS .dmg
-npm run build:linux    # Linux AppImage
+npm run build:win      # portable Windows app in dist/
 ```
 
-The finished app lands in `dist/`. Build on the platform you are targeting —
-a Windows installer has to be built on Windows. The first build downloads
-electron-builder, so it needs an internet connection; after that the app itself
-never does.
+The finished app lands in `dist/` as a zip: unzip it anywhere and run
+`Casino Royale.exe`. The first build downloads electron-builder, so it needs an
+internet connection; after that the app itself never does.
+
+(`build:mac` and `build:linux` still exist and still work, but Windows is the
+only build that gets shipped.)
 
 ### What the host app gives you
 
@@ -129,9 +129,7 @@ It prints the links:
   ------------------------------------------------
 ```
 
-Needs Node 18 or newer. If you would rather not touch a terminal at all, the
-`launchers/` folder has double-click scripts for Windows, macOS and Linux that
-install and start it for you.
+Needs Node 18 or newer.
 
 ### Tuning the night
 
@@ -169,6 +167,7 @@ never behind — just short on time.
 | `Q` / `Esc` | Leave the table |
 | `1`–`6` | Pick your chip size while at a table |
 | `Tab` | Full standings |
+| `C` | Take a draw on your cigar |
 | `M` | Mute |
 
 Each game also has its own shortcuts, shown on the buttons — `Space` to spin,
@@ -178,18 +177,26 @@ deal, or cash out; `H`/`S`/`D` for hit, stand, double; `R`/`B` for red and black
 
 ## What's on the floor
 
-| Game | Where | How it works | House edge |
+| Game | Where | How it works | Return |
 | --- | --- | --- | --- |
-| **Lucky Sevens** slots | Left wall, 8 machines | Three reels. Three of a kind pays 4x–150x, any two matching pays 1.2x. | ~7% |
-| **Blackjack** | Right wall, 4 tables | Six-deck shoe, dealer stands on all 17s, blackjack pays 3:2, double on your first two cards. No splits. | ~0.5% with good play |
-| **Roulette** | Centre-front | European single zero. Everyone at the table rides the same spin: 22s to bet, 9s to spin. | 2.7% |
-| **High / Low Dice** | Either side of the entrance | Roll 0.00–99.99, pick a target and a side. Payout scales with your odds. | 4% |
-| **The Rocket** | Centre of the floor | A multiplier climbs from 1.00x until it explodes. Cash out first. The whole lounge watches the same jumbotron. | 3% |
-| **The Track** | Back of the room | Six runners, live odds, a 15-second sprint down six lanes. | 10% |
+| **Neon Sevens** slots | Left wall, 8 machines | 5×4 grid, **1024 ways to win**. Wilds on reels 2–5 substitute for anything; three or more scatters buys **8 free spins at double pay**, and they retrigger. | 93.4% |
+| **Blackjack** | Right wall, 4 tables | Six-deck shoe, dealer stands on all 17s, blackjack pays 3:2, double on your first two. Cards are **dealt one at a time from the shoe**, hole card turned at the end. | ~99.5% with good play |
+| **Roulette** | Centre-front | European single zero with the **full felt** — straights, splits, streets, corners, six lines, columns, dozens and the zero trios. A live wheel in the panel shows the ball land. | 97.3% |
+| **High / Low Dice** | Either side of the entrance | Roll 0.00–99.99, pick a target and a side. Payout scales with your odds. | 96% |
+| **The Rocket** | Centre of the floor | **Three rockets launch together**, each with its own independently rolled crash point. You back one and watch all three climb — on the jumbotron, on a live chart in the panel, and as actual rockets flying up out of the lounge. | 97% |
+| **The Track** | Back of the room | Six runners, live odds, a 15-second sprint down six lanes. | 90% |
+| **The Scrapyard** | Left of the floor | **Two robots, one cage.** Fresh stats every bout, live HP bars and blow-by-blow commentary. Odds are Monte-Carloed from the same engine that runs the fight, so they are measured rather than guessed. | 94% |
+
+There is also a **cigar counter** by the door. A cigar costs $150, does nothing
+whatsoever, lasts 12 puffs, and is visible to everyone in the room. Press `C`
+anywhere on the floor to take a draw. The money comes straight off your profit,
+which is the joke.
 
 Every result is rolled on the server with `crypto`-grade randomness, and the
-payout maths is verified by simulation — the return rates in that table are what
-actually comes out over a few hundred thousand hands.
+payout maths is verified by simulation — the return rates in that table are
+measured over hundreds of thousands to millions of rounds, not estimated. The
+slot paytable and the robot odds in particular were *fitted* against those
+simulations rather than guessed at.
 
 ## Scoring
 
@@ -220,6 +227,7 @@ seconds:
 - **ROCKET FUEL** — the rocket cannot crash below 1.50x
 - **PHOTO FINISH** — winning race tickets pay +50%
 - **LUCKY 21** — blackjack pays 2:1
+- **ROBOT RAGE** — winning robot tickets pay +50%
 
 And with 60 seconds left on the clock, **LAST CALL**: every winning payout on the
 floor is multiplied by 1.25, which is usually when the round is actually decided.
@@ -245,12 +253,15 @@ shared/
   config.js       tunables, room dimensions and the station list — imported by the
                   server and fetched by the browser, so the geometry a player sees
                   and the hitboxes the server validates can never drift apart
+  roulette.js     the wheel and every legal bet on the felt, generated once and
+                  used by both sides: the server validates against this table, so
+                  a bet the client can draw is always a bet the server recognises
 public/
   js/world.js     the casino itself, built from boxes and procedural canvas textures
-  js/avatar.js    the little guys
+  js/avatar.js    the little guys, their hats and their cigars
+  js/fx.js        one shared smoke particle pool for every lit cigar
   js/controls.js  pointer-lock FPS movement and collision
   js/ui/          one panel per game
-launchers/        double-click scripts for hosts who do not want a terminal
 ```
 
 The desktop app is a thin shell: it imports the same `startCasino()` the CLI

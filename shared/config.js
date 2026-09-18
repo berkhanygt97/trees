@@ -65,6 +65,12 @@ export const STATIONS = [
   { id: 'horses-1', game: 'horses', name: 'Race Betting Window', pos: [-10, 0, -16], yaw: Math.PI, radius: 4.0, solid: 2.2 },
   { id: 'horses-2', game: 'horses', name: 'Race Betting Window', pos: [10, 0, -16], yaw: Math.PI, radius: 4.0, solid: 2.2 },
 
+  // --- Cigar shop (right of the bar) ---
+  { id: 'cigar-1', game: 'cigar', name: 'Cigar Counter', pos: [26, 0, 36], yaw: Math.PI, radius: 3.2, solid: 1.6 },
+
+  // --- Robot cage (left of the floor, clear of the pillar at -30,-10) ---
+  { id: 'robots-1', game: 'robots', name: 'The Scrapyard', pos: [-25, 0, -2], yaw: 0, radius: 8.0, solid: 5.2 },
+
   // --- ATMs (entrance, either side of the bar) ---
   { id: 'atm-1', game: 'atm', name: 'Bankruptcy ATM', pos: [-17, 0, 37.5], yaw: Math.PI, radius: 3.0, solid: 1.0 },
   { id: 'atm-2', game: 'atm', name: 'Bankruptcy ATM', pos: [17, 0, 37.5], yaw: Math.PI, radius: 3.0, solid: 1.0 },
@@ -78,6 +84,28 @@ export const HORSES = [
   { name: 'Mortgage',       color: '#c471e8' },
   { name: 'Beans',          color: '#f28cb1' },
 ];
+
+// Three rockets leave together. Identical odds, independently rolled — the one
+// you backed dying at 1.02x while another sails past 20x is the entire game.
+export const ROCKETS = [
+  { name: 'RED EYE',   color: '#ff5d5d' },
+  { name: 'BLUE STAR', color: '#4dc3ff' },
+  { name: 'OLD GOLD',  color: '#f2c14e' },
+];
+
+// Two of these are drawn per match and given randomised stats.
+export const ROBOTS = [
+  { name: 'RUSTBUCKET',  color: '#e8703a' },
+  { name: 'CHROME DOME', color: '#9fd4e8' },
+  { name: 'THE ACCOUNTANT', color: '#6bd66b' },
+  { name: 'MEGAHURTZ',   color: '#c471e8' },
+  { name: 'TOASTER',     color: '#f2c14e' },
+  { name: 'LAST WARNING', color: '#ff4f7a' },
+];
+
+// A cigar does nothing at all. That is the point: it costs real profit and
+// everyone in the room can see you smoking it.
+export const CIGAR = { PRICE: 150, PUFFS: 12 };
 
 export const AVATAR_COLORS = [
   '#ff5d5d', '#4dc3ff', '#ffd93d', '#6bd66b', '#c471e8',

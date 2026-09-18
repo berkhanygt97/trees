@@ -9,6 +9,7 @@ export const EVENTS = [
   { id: 'rocket_fuel', name: 'ROCKET FUEL',  desc: 'The Rocket cannot crash below 1.50x' },
   { id: 'photo_finish',name: 'PHOTO FINISH', desc: 'Winning race tickets pay +50%' },
   { id: 'lucky_21',    name: 'LUCKY 21',     desc: 'Blackjack pays 2:1' },
+  { id: 'robot_rage',  name: 'ROBOT RAGE',   desc: 'Winning robot tickets pay +50%' },
 ];
 
 export const LAST_CALL = { id: 'last_call', name: 'LAST CALL', desc: 'Every payout on the floor is x1.25' };

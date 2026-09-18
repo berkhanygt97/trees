@@ -6,6 +6,7 @@ import { hud } from './hud.js';
 import { World } from './world.js';
 import { Controls } from './controls.js';
 import { createAvatar, createViewModel } from './avatar.js';
+import { Smoke } from './fx.js';
 import { GAME_UIS } from './ui/index.js';
 
 const canvas = document.getElementById('scene');
@@ -14,10 +15,11 @@ const nameInput = document.getElementById('name');
 const enterBtn = document.getElementById('enter');
 const joinStatus = document.getElementById('join-status');
 
-let renderer, scene, camera, world, controls, viewModel;
+let renderer, scene, camera, world, controls, viewModel, smoke;
+const tmpVec = new THREE.Vector3();
 let me = null;
 const avatars = new Map();       // playerId -> { avatar, target, shadow }
-const gameStates = { roulette: null, crash: null, horses: null };
+const gameStates = { roulette: null, crash: null, horses: null, robots: null };
 let activePanel = null;          // { station, ui }
 let nearest = null;
 let roundState = null;
@@ -58,11 +60,18 @@ function initScene() {
   camera = new THREE.PerspectiveCamera(78, innerWidth / innerHeight, 0.1, 400);
 
   world = new World(scene);
+  smoke = new Smoke(scene);
   controls = new Controls(camera, canvas, world);
   controls.onStep = () => sfx.step();
 
   // Debug handle: useful when you are hosting and want to poke at the room.
-  window.casino = { controls, world, scene, camera, net, hud, gameStates };
+  window.casino = {
+    controls, world, scene, camera, net, hud, gameStates,
+    get panel() { return activePanel; },
+    get viewModel() { return viewModel; },
+    smoke,
+    get round() { return roundState; },
+  };
 
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
@@ -88,7 +97,11 @@ net.on('welcome', (d) => {
   camera.add(viewModel.group);
   scene.add(camera);
 
-  for (const p of d.players) if (p.id !== me.id) addAvatar(p);
+  for (const p of d.players) {
+    if (p.id === me.id) continue;
+    addAvatar(p);
+    avatars.get(p.id).avatar.setCigar(p.cigar);
+  }
   Object.assign(gameStates, d.games);
 
   controls.pos.set(Math.random() * 12 - 6, 0, 33);
@@ -102,6 +115,9 @@ net.on('players', (list) => {
   for (const p of list) {
     seen.add(p.id);
     if (p.id !== me.id && !avatars.has(p.id)) addAvatar(p);
+    const a = avatars.get(p.id);
+    if (a) a.avatar.setCigar(p.cigar);
+    if (p.id === me.id && viewModel) viewModel.setCigar(p.cigar);
   }
   for (const [id, a] of avatars) {
     if (!seen.has(id)) { scene.remove(a.avatar.group); scene.remove(a.shadow); a.avatar.dispose(); avatars.delete(id); }
@@ -121,6 +137,17 @@ net.on('snap', (rows) => {
 });
 
 net.on('wallet', (w) => hud.setWallet(w));
+
+// Somebody took a draw — puff smoke from their cigar.
+net.on('puff', (d) => {
+  if (!smoke) return;
+  if (d.playerId === me.id) {
+    if (viewModel && viewModel.hasCigar()) smoke.puff(viewModel.tipWorld(tmpVec), 12);
+    return;
+  }
+  const a = avatars.get(d.playerId);
+  if (a && a.avatar.hasCigar()) smoke.puff(a.avatar.tipWorld(tmpVec), 10);
+});
 
 net.on('round', (r) => {
   const wasLive = roundState && roundState.phase === 'live';
@@ -268,6 +295,16 @@ addEventListener('keydown', (e) => {
     return;
   }
 
+  if (e.code === 'KeyC') {
+    // A cigar is smokeable anywhere on the floor, not just at the counter.
+    if (viewModel && viewModel.hasCigar()) {
+      if (viewModel.puff()) net.send('puff', {});
+    } else {
+      hud.toast('Buy a cigar at the counter by the door first', 'info');
+    }
+    return;
+  }
+
   if (e.code === 'KeyE' && nearest) openPanel(nearest);
 });
 
@@ -315,13 +352,16 @@ function loop(now) {
     roulette: gameStates.roulette,
     crash: gameStates.crash,
     horses: gameStates.horses,
+    robots: gameStates.robots,
   });
 
   if (viewModel) {
     const sway = Math.sin(controls.bob) * (moving ? 0.02 : 0.005);
     viewModel.group.position.x = sway;
     viewModel.group.position.y = -Math.abs(sway) * 0.6;
+    viewModel.update(dt);
   }
+  smoke.update(dt);
 
   // Interaction prompt.
   nearest = activePanel ? null : findNearest();
