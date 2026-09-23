@@ -622,3 +622,109 @@ export function gunMetalTexture() {
 export function dashTexture() {
   return make('dash', 128, 128, (g, w, h) => noiseFill(g, w, h, '#26262a', 0.07, 1400, 1), { repeat: [2, 1] });
 }
+
+// ================================================== sunset strip (2.2)
+
+/** Neon tube lettering on a dark backing: the Vice City night look. */
+export function neonSignTexture(text, color = '#ff3d9a', sub = '') {
+  return make(`neon:${text}:${sub}:${color}`, 1024, 256, (g, w, h) => {
+    g.fillStyle = '#120c18';
+    g.fillRect(0, 0, w, h);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const draw = (t, y, size) => {
+      g.font = `italic 900 ${size}px "Trebuchet MS", "Arial Black", sans-serif`;
+      // Glow in layers, then the white-hot tube core.
+      for (const [blur, alpha] of [[40, 0.5], [22, 0.7], [10, 0.9]]) {
+        g.shadowColor = color;
+        g.shadowBlur = blur;
+        g.fillStyle = color;
+        g.globalAlpha = alpha;
+        g.fillText(t, w / 2, y, w - 70);
+      }
+      g.globalAlpha = 1;
+      g.shadowBlur = 6;
+      g.fillStyle = '#fff4fb';
+      g.fillText(t, w / 2, y, w - 70);
+      g.shadowBlur = 0;
+    };
+    draw(text, sub ? h * 0.42 : h / 2, sub ? 104 : 120);
+    if (sub) draw(sub, h * 0.8, 40);
+    g.strokeStyle = color;
+    g.lineWidth = 6;
+    g.globalAlpha = 0.8;
+    g.strokeRect(14, 14, w - 28, h - 28);
+    g.globalAlpha = 1;
+  });
+}
+
+/** Diner floor tiles with grout lines. */
+export function tileFloorTexture(a = '#ffffff', b = '#ff5fa8') {
+  return make(`tiles:${a}:${b}`, 128, 128, (g, w, h) => {
+    for (let y = 0; y < 4; y++) {
+      for (let x = 0; x < 4; x++) {
+        g.fillStyle = (x + y) % 2 ? b : a;
+        g.fillRect(x * 32, y * 32, 32, 32);
+      }
+    }
+    g.strokeStyle = 'rgba(0,0,0,0.18)';
+    g.lineWidth = 2;
+    for (let i = 0; i <= 4; i++) {
+      g.beginPath(); g.moveTo(i * 32, 0); g.lineTo(i * 32, h); g.stroke();
+      g.beginPath(); g.moveTo(0, i * 32); g.lineTo(w, i * 32); g.stroke();
+    }
+  }, { repeat: [4, 4] });
+}
+
+/** Pastel stucco with art-deco speed lines near the top. */
+export function decoWallTexture(base = '#7fe7d9', trim = '#ff5fa8') {
+  return make(`deco:${base}:${trim}`, 256, 256, (g, w, h) => {
+    noiseFill(g, w, h, base, 0.06, 1800, 2);
+    g.fillStyle = trim;
+    for (const [y, t] of [[18, 10], [36, 5], [48, 3]]) g.fillRect(0, y, w, t);
+    g.fillStyle = 'rgba(255,255,255,0.35)';
+    g.fillRect(0, h - 26, w, 6);
+  }, { repeat: [1, 1] });
+}
+
+/** Striped canvas awning. */
+export function awningTexture(a = '#ffffff', b = '#ff5fa8') {
+  return make(`awning:${a}:${b}`, 128, 32, (g, w, h) => {
+    for (let x = 0; x < 8; x++) {
+      g.fillStyle = x % 2 ? b : a;
+      g.fillRect(x * 16, 0, 16, h);
+    }
+    g.fillStyle = 'rgba(0,0,0,0.15)';
+    g.fillRect(0, h - 5, w, 5);
+  }, { repeat: [4, 1] });
+}
+
+/** A chalk menu board: dishes and prices. Not cached; menus change. */
+export function menuBoardTexture(title, lines, color = '#ffd24a') {
+  const cv = document.createElement('canvas');
+  cv.width = 512;
+  cv.height = 384;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#1f2a24';
+  g.fillRect(0, 0, 512, 384);
+  g.strokeStyle = '#8a5a2b';
+  g.lineWidth = 14;
+  g.strokeRect(7, 7, 498, 370);
+  g.fillStyle = color;
+  g.font = 'bold 44px "Trebuchet MS", sans-serif';
+  g.textAlign = 'center';
+  g.fillText(title, 256, 58);
+  g.font = 'bold 30px "Trebuchet MS", sans-serif';
+  lines.slice(0, 6).forEach(([name, price], i) => {
+    const y = 110 + i * 46;
+    g.textAlign = 'left';
+    g.fillStyle = '#f2efe6';
+    g.fillText(name, 34, y, 330);
+    g.textAlign = 'right';
+    g.fillStyle = color;
+    g.fillText(price, 478, y);
+  });
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}

@@ -25,6 +25,7 @@ export const SPECS = {
   hyper:   { radius: 1.4, seat: [-0.35, 0.28, 0.3],  cam: [0, 2.8, 7.8],  eye: 0.8 },
   tractor: { radius: 1.6, seat: [0, 1.3, 0.75],      cam: [0, 4.6, 9],    eye: 0.95, work: 3.4 },
   combine: { radius: 2.8, seat: [0, 3.4, -1.0],      cam: [0, 7.5, 14],   eye: 1.0, work: -4.6 },
+  scooter: { radius: 0.9, seat: [0, 0.72, 0.3],      cam: [0, 2.4, 5.2],  eye: 0.92 },
 };
 
 export const specOf = (modelId) => SPECS[(VEHICLE_BY_ID[modelId] || {}).body] || SPECS.sedan;
@@ -83,6 +84,34 @@ function car(g, wheels, paint, o) {
 }
 
 const BUILDERS = {
+  /** A little Italian-style delivery scooter with a box on the back. */
+  scooter(g, wheels, paint) {
+    const cream = phong(0xf3ead8);
+    const shell = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 10), paint);
+    shell.scale.set(0.9, 0.75, 1.3);
+    shell.position.set(0, 0.55, 0.35);
+    g.add(shell);
+    box(g, 0.36, 0.08, 1.0, 0, 0.32, -0.15, cream);                       // footboard
+    const apron = box(g, 0.44, 0.7, 0.12, 0, 0.62, -0.62, paint);         // leg shield
+    apron.rotation.x = -0.25;
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.7, 8), CHROME);
+    stem.position.set(0, 0.95, -0.72);
+    stem.rotation.x = -0.25;
+    g.add(stem);
+    // The rider sees their own handlebars (cockpit.js), so these hide then.
+    g.userData.riderHides = [
+      stem,
+      box(g, 0.62, 0.05, 0.05, 0, 1.28, -0.78, CHROME),                   // handlebar
+      box(g, 0.22, 0.14, 0.1, 0, 1.24, -0.84, paint),                     // headset
+    ];
+    box(g, 0.12, 0.1, 0.03, 0, 1.2, -0.9, HEAD);                          // headlight
+    box(g, 0.34, 0.12, 0.6, 0, 0.88, 0.3, phong(0x2b2b2b, { shininess: 20 }));   // seat
+    box(g, 0.56, 0.5, 0.52, 0, 1.2, 0.72, paint);                         // delivery box
+    box(g, 0.58, 0.08, 0.54, 0, 1.47, 0.72, cream);
+    box(g, 0.16, 0.08, 0.04, 0, 0.62, 0.9, TAIL);
+    wheel(g, 0.24, 0.12, 0, 0.24, -0.72, wheels);
+    wheel(g, 0.24, 0.12, 0, 0.24, 0.6, wheels);
+  },
   hatch(g, wheels, paint) {
     car(g, wheels, paint, { len: 3.6, wid: 1.7, bodyH: 0.72, lift: 0.3, cabLen: 2.0, cabH: 0.66, cabZ: 0.25, wheelR: 0.34 });
     // Rust patches and a mismatched door: it has been through things.

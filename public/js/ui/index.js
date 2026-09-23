@@ -9,9 +9,10 @@ import { createRobots } from './robots.js';
 import { createFarmShop, createAnimalShop, createBuilder, createLandOffice, createMachinery, createGunShop } from './shops.js';
 import { createMarket, createBin, createOrders } from './market.js';
 import { createCarDealer } from './dealer.js';
-import { createHouse, createCoop, createBarn, createMill, createDairy, createBakery } from './farm.js';
+import { createHouse, createCoop, createBarn, createPen, createMill, createDairy, createBakery } from './farm.js';
 import { createPlanner } from './planner.js';
 import { createJobCentre, createStaff } from './jobs.js';
+import { createRestaurant } from './restaurant.js';
 
 export const GAME_UIS = {
   // The casino.
@@ -40,9 +41,11 @@ export const GAME_UIS = {
   house: { title: 'HOME', chips: false, create: createHouse },
   planner: { title: 'FARM PLANNER', chips: false, create: createPlanner },
   staff: { title: 'YOUR STAFF', chips: false, create: createStaff },
+  restaurant: { title: 'YOUR RESTAURANT', chips: false, create: createRestaurant },
   bin: { title: 'SHIPPING BIN', chips: false, create: createBin },
   coop: { title: 'CHICKEN COOP', chips: false, create: createCoop },
   barn: { title: 'COW BARN', chips: false, create: createBarn },
+  pen: { title: 'CATTLE PEN', chips: false, create: createPen },
   mill: { title: 'WINDMILL', chips: false, create: createMill },
   dairy: { title: 'DAIRY', chips: false, create: createDairy },
   bakery: { title: 'BAKERY', chips: false, create: createBakery },

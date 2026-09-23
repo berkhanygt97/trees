@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CONFIG, money } from '/shared/config.js';
 import {
   CROP_BY_ID, ITEMS, VEHICLE_BY_ID, IMPLEMENT_BY_ID, nextAction, cropProgress, isWatered,
+  DISH_BY_ID,
 } from '/shared/catalog.js';
 import { ALL_STATIONS, PLOTS, TILE, tileAt, tileCenter, groundHeight, padStation } from '/shared/map.js';
 import { net } from './net.js';
@@ -18,6 +19,8 @@ import { BoarView } from './boarsview.js';
 import { Weapons } from './weapons.js';
 import { buildCockpit } from './cockpit.js';
 import { WorkerView } from './workersview.js';
+import { RestaurantView } from './restaurantview.js';
+import { NpcView } from './npcs.js';
 import { shadowTexture } from './textures.js';
 
 const canvas = document.getElementById('scene');
@@ -28,6 +31,11 @@ const joinStatus = document.getElementById('join-status');
 
 let renderer, scene, camera, world, fleet, controls, viewModel, smoke, selfAvatar, pipeline, boars, weapons, workers;
 let jobs = [];                    // today's Job Centre candidates
+let restaurants, npcs;
+let restaurantList = [];          // who owns which lot on the Strip
+let resto = null;                 // your restaurant's live state, for the counter panel
+let beacon = null;                // the delivery destination marker
+let lastDrop = 0;
 let cockpit = null;              // { id, obj } for the vehicle you are sitting in
 let hp = 100;
 let koUntil = 0;
@@ -117,19 +125,31 @@ function initScene() {
   pipeline = new Pipeline(renderer);
   boars = new BoarView(scene);
   workers = new WorkerView(scene);
+  restaurants = new RestaurantView(scene);
+  world.extraBoxes = restaurants.boxes;
+  npcs = new NpcView(scene);
+  beacon = makeBeacon();
+  scene.add(beacon);
   const heard = (e) => Math.max(0, 1 - camera.position.distanceTo(e.pos) / 90);
   boars.onCharge = (e) => sfx.grunt(heard(e));
   boars.onHurt = (e) => sfx.squeal(heard(e) * 0.7);
   boars.onDeath = (e) => sfx.squeal(heard(e));
   weapons = new Weapons({ scene, camera, net, hud, sfx, boars, controls });
   controls.onStep = () => sfx.step();
-  controls.onBump = (v) => { if (v > 9) sfx.deny(); };
+  controls.onBump = (v) => {
+    if (v > 9) sfx.deny();
+    // A hard knock with dinner on board spills it.
+    if (v > 9 && hud.wallet.carrying) net.send('spill', {});
+  };
   world.sky.onThunder = () => sfx.alarm && sfx.alarm();
 
   // Debug handle: useful when you are hosting and want to poke at the valley.
   window.casino = {
     controls, world, fleet, scene, camera, net, hud, gameStates, pipeline, boars, weapons,
     get workers() { return workers; },
+    get npcs() { return npcs; },
+    get restaurants() { return restaurants; },
+    get resto() { return resto; },
     get cockpit() { return cockpit; },
     get hp() { return hp; },
     get panel() { return activePanel; },
@@ -171,6 +191,10 @@ net.on('welcome', (d) => {
   weapons.attach(viewModel);
   boars.apply(d.boars || []);
   workers.setList(d.workers || []);
+  restaurantList = d.restaurants || [];
+  restaurants.setList(restaurantList);
+  world.extraBoxes = restaurants.boxes;
+  for (const ev of d.npcs || []) npcs.onEvent(ev);
 
   selfAvatar = createAvatar({ name: me.name, color: me.color, hat: me.hat, showLabel: false });
   selfAvatar.group.visible = false;
@@ -281,6 +305,28 @@ net.on('vehicles', (list) => {
 net.on('boars', (rows) => { if (boars) boars.apply(rows); });
 net.on('workers', (list) => { if (workers) workers.setList(list); });
 net.on('wk', (ev) => { if (workers) workers.onEvent(ev); });
+net.on('npc', (ev) => { if (npcs) npcs.onEvent(ev); });
+net.on('restaurants', (list) => {
+  restaurantList = list || [];
+  if (!restaurants) return;
+  restaurants.setList(restaurantList);
+  world.extraBoxes = restaurants.boxes;
+  if (activePanel && activePanel.ui.repaint) activePanel.ui.repaint();
+});
+net.on('resto', (s) => {
+  resto = s;
+  if (activePanel && activePanel.ui.onResto) activePanel.ui.onResto(s);
+});
+net.on('delivered', (d) => {
+  if (d.failed) { hud.toast('Too late — the customer gave up and ordered pizza from someone else.', 'error'); return; }
+  const bits = [`+${money(d.paid)}`];
+  if (d.tip) bits.push(`${money(d.tip)} tip`);
+  if (d.late) bits.push('late: half price');
+  if (d.damaged) bits.push('squashed: half tip');
+  hud.toast(`🛵 Delivered! ${bits.join(' · ')}`, d.late ? 'warn' : 'big');
+  hud.pop(`+${money(d.paid)}`, 'money');
+  sfx.chip();
+});
 net.on('jobs', (list) => {
   jobs = list || [];
   if (activePanel && activePanel.ui.onJobs) activePanel.ui.onJobs();
@@ -390,6 +436,7 @@ function addAvatar(p) {
 // ----------------------------------------------------------- interaction
 
 function stationUsable(st) {
+  if (st.lot != null) return !!(hud.wallet.restaurant && hud.wallet.restaurant.lot === st.lot);
   if (st.plot == null) return true;
   if (st.plot !== hud.wallet.plot) return false;
   if (st.pad === 'house' || st.pad === 'bin') return true;
@@ -425,6 +472,7 @@ function findNearest() {
 }
 
 function stationName(st) {
+  if (st.lot != null) return 'Your restaurant counter';
   if (st.plot != null) return PAD_NAMES[st.pad] || st.name;
   return st.name;
 }
@@ -444,6 +492,8 @@ function panelCtx(station) {
     get vehicles() { return fleet ? [...fleet.items.values()].filter((e) => e.owner === me.slug) : []; },
     get myPlot() { return world ? world.farms.plots.get(hud.wallet.plot) : null; },
     get jobs() { return jobs; },
+    get restaurants() { return restaurantList; },
+    get resto() { return resto; },
     /** Swap this panel for another one at the same spot (the house opens the planner). */
     open: (game) => openPanel({ ...station, game }),
     worldTime,
@@ -482,6 +532,45 @@ function relock() {
   controls.lock();
   // Browsers impose a short cooldown after an Esc-driven unlock; try once more.
   relockTimer = setTimeout(() => { if (!controls.locked && !hud.panelOpen) controls.lock(); }, 1400);
+}
+
+// ------------------------------------------------------------ deliveries
+
+/** A tall glowing column over the door you are delivering to. */
+function makeBeacon() {
+  const g = new THREE.Group();
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 60, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xff3d9a, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+  beam.position.y = 30;
+  g.add(beam);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(2.2, 3, 24).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0x35e0ff, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }));
+  ring.position.y = 0.06;
+  g.add(ring);
+  g.visible = false;
+  return g;
+}
+
+function updateDelivery(dt) {
+  const c = hud.wallet && hud.wallet.carrying;
+  if (!c) {
+    beacon.visible = false;
+    hud.setDelivery(null);
+    return;
+  }
+  beacon.visible = true;
+  beacon.position.set(c.pos[0], 0, c.pos[2]);
+  beacon.children[1].rotation.y += dt;
+  beacon.children[0].material.opacity = 0.25 + Math.sin(performance.now() / 200) * 0.1;
+  const left = Math.max(0, Math.round((c.deadline - net.now()) / 1000));
+  const dist = Math.round(Math.hypot(c.pos[0] - controls.pos.x, c.pos[2] - controls.pos.z));
+  const dish = DISH_BY_ID[c.dish];
+  hud.setDelivery(`🛵 ${dish ? dish.icon : ''} to ${c.dest} · ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · ${dist} m`, left < 20);
+  // Close enough: hand it over (the server checks you really are there).
+  if (dist < 5 && performance.now() - lastDrop > 1200) {
+    lastDrop = performance.now();
+    net.send('drop', {});
+  }
 }
 
 // ---------------------------------------------------------------- farming
@@ -594,6 +683,8 @@ function enterCar(e) {
   cockpit = { id: e.id, obj: buildCockpit(model.body, e.spec, me.color) };
   e.mesh.group.add(cockpit.obj.group);
   cockpit.obj.group.visible = !controls.chase;
+  cockpit.hides = e.mesh.body.userData.riderHides || [];
+  for (const m of cockpit.hides) m.visible = controls.chase;
   hud.showSeeds(model.kind === 'machine');
   sfx.click();
   sfx.engineStart(model.kind === 'machine');
@@ -615,6 +706,7 @@ function dropCockpit() {
   if (!cockpit) return;
   const e = fleet.get(cockpit.id);
   if (e) e.mesh.group.remove(cockpit.obj.group);
+  for (const m of cockpit.hides || []) m.visible = true;
   cockpit.obj.dispose();
   cockpit = null;
 }
@@ -687,7 +779,10 @@ addEventListener('keydown', (e) => {
     controls.chase = !controls.chase;
     controls.lookYaw = 0;
     controls.lookPitch = controls.chase ? -0.12 : -0.08;
-    if (cockpit) cockpit.obj.group.visible = !controls.chase;
+    if (cockpit) {
+      cockpit.obj.group.visible = !controls.chase;
+      for (const m of cockpit.hides) m.visible = controls.chase;
+    }
     return;
   }
   if (e.code === 'KeyP') {
@@ -856,6 +951,9 @@ function loop(now) {
   weapons.update(dt);
   boars.update(dt);
   workers.update(dt, net.now(), camera.position);
+  npcs.update(dt, net.now(), camera.position);
+  restaurants.update(dt, world.sky.night);
+  updateDelivery(dt);
   smoke.update(dt);
 
   // What can you do right now?

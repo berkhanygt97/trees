@@ -1,7 +1,8 @@
 import {
   CROPS, ITEMS, HOUSES, ANIMAL_HOUSES, PROCESSORS, FIELD_SIZES, FIELD_PRICES, FIELD_LEVELS,
-  VEHICLES, IMPLEMENTS, GUNS, boarStats, money,
+  VEHICLES, IMPLEMENTS, GUNS, RESTAURANTS, boarStats, money,
 } from '/shared/catalog.js';
+import { LOTS, STRIP, LOT_LEVEL } from '/shared/map.js';
 import { div, esc } from './util.js';
 import { sfx } from '../sfx.js';
 
@@ -91,7 +92,7 @@ export function createAnimalShop(ctx) {
       const built = b[kind];
       const locked = w.level < def.level;
       rows.push(row({
-        icon: kind === 'coop' ? '🏠' : '🏚️', name: def.name, locked, owned: !!built,
+        icon: kind === 'coop' ? '🏠' : kind === 'pen' ? '🚧' : '🏚️', name: def.name, locked, owned: !!built,
         desc: locked ? lockText(def.level) : built ? 'Built on your farm.' : `Holds up to ${def.max} ${def.animalName.toLowerCase()}s. Built on your farm straight away.`,
         price: built ? '' : money(def.price),
         buttons: built || locked ? '' : btn('BUILD', 'build', kind, { disabled: w.money < def.price }),
@@ -179,9 +180,49 @@ export function createLandOffice(ctx) {
           buttons: owned || locked ? '' : btn(next ? 'BUY' : 'LATER', 'field', String(step), { disabled: !next || w.money < FIELD_PRICES[step] }),
         });
       }).join('')}
-    </div>`, (act, arg) => {
+    </div>
+    ${lotsSection(ctx, w)}`, (act, arg) => {
     if (act === 'field') ctx.send('buy', { station, sku: `field:${arg}` });
+    if (act === 'lot') {
+      const [lot, type] = arg.split(':');
+      ctx.send('buy', { station, sku: `lot:${lot}`, type });
+    }
   });
+}
+
+/** Restaurant lots on the Sunset Strip: a little map, then one row per lot. */
+function lotsSection(ctx, w) {
+  const owners = new Map((ctx.restaurants || []).map((r) => [r.lot, r]));
+  const mine = w.restaurant;
+  // An SVG sketch of the Strip, lots coloured by who owns them.
+  const sx = (x) => ((x - STRIP.x0 + 4) / (STRIP.x1 - STRIP.x0 + 8)) * 600;
+  const sz = (z) => ((z - 18) / 72) * 150;
+  const map = `<svg class="strip-map" viewBox="0 0 600 150">
+    <rect x="0" y="${sz(STRIP.z0)}" width="600" height="${sz(STRIP.z1) - sz(STRIP.z0)}" fill="#2d2f36"/>
+    <line x1="0" x2="600" y1="${(sz(STRIP.z0) + sz(STRIP.z1)) / 2}" y2="${(sz(STRIP.z0) + sz(STRIP.z1)) / 2}" stroke="#f2c14e" stroke-dasharray="10 8"/>
+    ${LOTS.map((l) => {
+    const o = owners.get(l.id);
+    const fill = mine && mine.lot === l.id ? '#6bd66b' : o ? o.color : 'rgba(255,255,255,0.12)';
+    return `<rect x="${sx(l.x0)}" y="${sz(l.z0)}" width="${sx(l.x1) - sx(l.x0)}" height="${sz(l.z1) - sz(l.z0)}" rx="4" fill="${fill}" stroke="#fff" stroke-opacity="0.5"/>
+      <text x="${(sx(l.x0) + sx(l.x1)) / 2}" y="${(sz(l.z0) + sz(l.z1)) / 2 + 5}" text-anchor="middle" fill="#fff" font-size="15" font-weight="800">${o ? RESTAURANTS[o.type].icon : l.id}</text>`;
+  }).join('')}
+    <text x="6" y="146" fill="#b0a698" font-size="11">← plaza</text></svg>`;
+  const locked = w.level < LOT_LEVEL;
+  const rows = LOTS.map((l) => {
+    const o = owners.get(l.id);
+    if (o) {
+      return row({ icon: RESTAURANTS[o.type].icon, name: `Lot ${l.id} · ${l.name}`, owned: mine && mine.lot === l.id,
+        desc: `${esc(o.ownerName)}'s ${RESTAURANTS[o.type].name.toLowerCase()}, level ${o.level}.` });
+    }
+    return row({
+      icon: '🏗️', name: `Lot ${l.id} · ${l.name}`, locked,
+      desc: `${l.tables} tables, ${l.side} side of the boulevard.${locked ? `<br>🔒 Farm level ${LOT_LEVEL}` : mine ? '<br>You already run a restaurant.' : ' Pick what it will be:'}`,
+      price: money(l.price),
+      buttons: locked || mine ? '' : Object.entries(RESTAURANTS).map(([k, r]) => btn(`${r.icon} ${r.name.split(' ')[0].toUpperCase()}`, 'lot', `${l.id}:${k}`, { disabled: w.money < l.price })).join(''),
+    });
+  });
+  return `<div class="shop-head">SUNSET STRIP — RESTAURANT LOTS <span>one each; comes with a delivery scooter</span></div>
+    ${map}<div class="shop-list">${rows.join('')}</div>`;
 }
 
 // ------------------------------------------------------ machinery dealer

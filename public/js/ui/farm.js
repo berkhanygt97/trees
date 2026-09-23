@@ -83,6 +83,7 @@ function createAnimalHouse(ctx, kind) {
 
 export const createCoop = (ctx) => createAnimalHouse(ctx, 'coop');
 export const createBarn = (ctx) => createAnimalHouse(ctx, 'barn');
+export const createPen = (ctx) => createAnimalHouse(ctx, 'pen');
 
 // ------------------------------------------------------------- processors
 

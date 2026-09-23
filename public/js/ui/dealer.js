@@ -8,7 +8,7 @@ import { sfx } from '../sfx.js';
 
 export function createCarDealer(ctx) {
   const station = ctx.station.id;
-  const cars = VEHICLES.filter((v) => v.kind === 'car');
+  const cars = VEHICLES.filter((v) => v.kind === 'car' && !v.hidden);
   let pick = 0;
   let paint = PAINTS[0];
 

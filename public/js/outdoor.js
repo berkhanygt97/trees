@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  BOUNDS, PLAZA, ROADS, SHOPS, ORDERS_BOARD, PLOTS, PLOT_SIZE, GATE, TRACK, RAMPS, CASINO,
+  BOUNDS, PLAZA, ROADS, SHOPS, ORDERS_BOARD, PLOTS, PLOT_SIZE, GATE, TRACK, RAMPS, CASINO, COTTAGES,
   shopCounter,
 } from '/shared/map.js';
 import { VEHICLES } from '/shared/catalog.js';
@@ -613,6 +613,9 @@ export class Outdoor {
       { x0: -270, x1: 270, z0: 206, z1: 228 },
       { x0: TRACK.cx - TRACK.half - TRACK.r - 16, x1: TRACK.cx + TRACK.half + TRACK.r + 16, z0: TRACK.cz - TRACK.r - 16, z1: TRACK.cz + TRACK.r + 24 },
       ...PLOTS.map((p) => ({ x0: p.x0 - 4, x1: p.x0 + PLOT_SIZE + 4, z0: p.z0 - 4, z1: p.z0 + PLOT_SIZE + 6 })),
+      // The Sunset Strip and the cottages along the farm road (2.2).
+      { x0: 58, x1: 206, z0: 16, z1: 92 },
+      ...COTTAGES.map((c) => ({ x0: c.x - 9, x1: c.x + 9, z0: c.z - 12, z1: c.z + 8 })),
     ];
     const blocked = (x, z) => keepOut.some((k) => x > k.x0 && x < k.x1 && z > k.z0 && z < k.z1);
     const spots = [];

@@ -257,6 +257,15 @@ export const hud = {
     this.el.hpFill.style.width = `${Math.max(0, Math.min(100, hp))}%`;
   },
 
+  /** The delivery you are carrying: where to, and how long is left. */
+  setDelivery(text, urgent = false) {
+    const el = document.getElementById('delivery');
+    if (!el) return;
+    el.hidden = !text;
+    if (text && el.textContent !== text) el.textContent = text;
+    el.classList.toggle('urgent', urgent);
+  },
+
   setAmmo(state) {
     if (!state) { this.el.ammo.hidden = true; return; }
     this.el.ammo.hidden = false;

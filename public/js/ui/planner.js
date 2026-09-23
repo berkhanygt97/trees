@@ -12,7 +12,7 @@ import { sfx } from '../sfx.js';
 
 const LABEL = {
   house: ['🏠', 'House'], coop: ['🐔', 'Coop'], barn: ['🐄', 'Barn'], mill: ['🌬️', 'Mill'],
-  dairy: ['🧀', 'Dairy'], bakery: ['🥖', 'Bakery'], bin: ['📦', 'Bin'], field: ['🌾', 'Field'],
+  dairy: ['🧀', 'Dairy'], bakery: ['🥖', 'Bakery'], bin: ['📦', 'Bin'], pen: ['🐂', 'Cattle pen'], field: ['🌾', 'Field'],
 };
 const FEE = 100;
 const SCALE = 7;             // canvas pixels per metre
@@ -54,7 +54,7 @@ export function createPlanner(ctx) {
   const toM = (p) => (p - PAD) / SCALE;
   const built = () => {
     const b = ctx.wallet.buildings || {};
-    return { house: true, bin: true, coop: !!b.coop, barn: !!b.barn, mill: !!b.mill, dairy: !!b.dairy, bakery: !!b.bakery };
+    return { house: true, bin: true, coop: !!b.coop, barn: !!b.barn, pen: !!b.pen, mill: !!b.mill, dairy: !!b.dairy, bakery: !!b.bakery };
   };
 
   function rectOf(id) {

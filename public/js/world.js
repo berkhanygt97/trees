@@ -30,7 +30,10 @@ export class World {
   }
 
   boxesNear() {
-    return this.farms.boxes.length ? this.boxes.concat(this.farms.boxes) : this.boxes;
+    let out = this.farms.boxes.length ? this.boxes.concat(this.farms.boxes) : this.boxes;
+    // Restaurants and cottages on the Sunset Strip (set up by main).
+    if (this.extraBoxes && this.extraBoxes.length) out = out.concat(this.extraBoxes);
+    return out;
   }
 
   paintBoard(rows, meId) { this.casino.paintBoard(rows, meId); }

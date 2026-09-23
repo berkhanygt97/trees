@@ -248,7 +248,7 @@ export function newProfile({ name, slug, color, hat, plot, cash, pos, yaw }) {
     inv: { 'seed:wheat': 20, 'seed:carrot': 10 },
     field: { size: 8, tiles: new Array(TILE_COUNT).fill(null) },
     house: 0,
-    buildings: { coop: null, barn: null, mill: null, dairy: null, bakery: null },
+    buildings: { coop: null, barn: null, pen: null, mill: null, dairy: null, bakery: null },
     vehicles: [],
     implements: [],
     guns: ['boltrifle'],

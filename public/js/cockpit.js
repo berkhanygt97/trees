@@ -19,6 +19,7 @@ const INTERIOR = {
   hyper:   { wid: 1.8, style: 'sport', gears: 7, redline: 9000 },
   tractor: { wid: 1.4, style: 'farm', gears: 3, redline: 2600, open: true },
   combine: { wid: 1.8, style: 'farm', gears: 3, redline: 2400 },
+  scooter: { wid: 0.7, style: 'modern', gears: 1, redline: 8500, open: true },
 };
 
 export const interiorOf = (body) => INTERIOR[body] || INTERIOR.sedan;
@@ -157,6 +158,7 @@ function roundRect(g, x, y, w, h, r) {
  * the driver's seat. Returns { group, update(speed, top, steer, night) }.
  */
 export function buildCockpit(body, spec, color) {
+  if (body === 'scooter') return buildScooterCockpit(spec, color);
   const s = interiorOf(body);
   const group = new THREE.Group();
   const [sx, sy, sz] = spec.seat;
@@ -269,6 +271,71 @@ export function buildCockpit(body, spec, color) {
       if (acc > 1 / 30) {
         acc = 0;
         drawCluster(ctx, cv.width, cv.height, { speed, top, body, night });
+        tex.needsUpdate = true;
+      }
+    },
+    dispose() {
+      group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+      tex.dispose();
+    },
+  };
+}
+
+/** On a scooter you see the handlebars, your hands on the grips and a little round dial. */
+function buildScooterCockpit(spec, color) {
+  const group = new THREE.Group();
+  const [, sy, sz] = spec.seat;
+  const eyeY = sy + spec.eye * 0.9;
+  const bars = new THREE.Group();
+  bars.position.set(0, eyeY - 0.46, sz - 0.62);
+  group.add(bars);
+  const chrome = phong(0xdadada, { shininess: 90, specular: 0xffffff });
+  const grip = phong(0x1b1b1d);
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.66, 8), chrome);
+  bar.rotation.z = Math.PI / 2;
+  bars.add(bar);
+  for (const side of [-1, 1]) {
+    const g = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.12, 8), grip);
+    g.rotation.z = Math.PI / 2;
+    g.position.x = side * 0.3;
+    bars.add(g);
+    const lever = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.01, 0.02), chrome);
+    lever.position.set(side * 0.26, -0.02, -0.05);
+    bars.add(lever);
+  }
+  // A round speedo in the headset.
+  const cv = document.createElement('canvas');
+  cv.width = 512;
+  cv.height = 256;
+  const ctx = cv.getContext('2d');
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.12, 0.1), phong(0x2b2b2b));
+  head.position.set(0, 0.04, -0.04);
+  head.rotation.x = -0.5;
+  bars.add(head);
+  const face = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.12), new THREE.MeshBasicMaterial({ map: tex }));
+  face.position.set(0, 0, 0.051);
+  head.add(face);
+  const hands = [];
+  for (const side of [-1, 1]) {
+    const h = makeHand(side, color);
+    h.setCurl(0.85, 0.7);
+    h.group.position.set(side * 0.3, 0.02, 0.06);
+    h.group.rotation.set(0.35, 0, -side * 1.35);
+    bars.add(h.group);
+    hands.push(h);
+  }
+  let acc = 0;
+  return {
+    group,
+    wheel: bars,
+    update(dt, speed, top, steer, night) {
+      bars.rotation.y = -steer * 0.5;
+      acc += dt;
+      if (acc > 1 / 30) {
+        acc = 0;
+        drawCluster(ctx, cv.width, cv.height, { speed, top, body: 'scooter', night });
         tex.needsUpdate = true;
       }
     },

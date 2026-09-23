@@ -38,6 +38,7 @@ export const ITEMS = {
   bread:  { name: 'Bread',  icon: '🍞', price: 110, kind: 'goods' },
   cake:   { name: 'Cake',   icon: '🎂', price: 340, kind: 'goods' },
   boar:   { name: 'Boar Meat', icon: '🥩', price: 45, kind: 'game' },
+  beef:   { name: 'Beef',   icon: '🍖', price: 70,  kind: 'animal' },
   feed:   { name: 'Animal Feed', icon: '🌰', price: 4, kind: 'feed', sell: false },
   ...Object.fromEntries(CROPS.map((c) => [`seed:${c.id}`, {
     name: `${c.name} Seeds`, icon: c.icon, price: c.seed, kind: 'seed', sell: false,
@@ -72,6 +73,10 @@ export const ANIMAL_HOUSES = {
   barn: {
     name: 'Cow Barn', price: 9000, level: 5, animal: 'cow', animalName: 'Cow', animalIcon: '🐄',
     animalPrice: 1500, max: 6, product: 'milk', every: 8 * MINUTE, feedPer: 2, stockCap: 20, feedCap: 120,
+  },
+  pen: {
+    name: 'Cattle Pen', price: 7000, level: 5, animal: 'steer', animalName: 'Beef Steer', animalIcon: '🐂',
+    animalPrice: 1200, max: 6, product: 'beef', every: 10 * MINUTE, feedPer: 3, stockCap: 15, feedCap: 150,
   },
 };
 
@@ -108,6 +113,8 @@ export const VEHICLES = [
   { id: 'coupe',      kind: 'car', name: 'Veloce Coupe',    price: 65000,  top: 45, accel: 14, turn: 2.2, body: 'coupe',  blurb: 'Italian, allegedly.' },
   { id: 'limo',       kind: 'car', name: 'Stretch Limo',    price: 120000, top: 33, accel: 8,  turn: 1.4, body: 'limo',   blurb: 'Pull up to the casino like you mean it.' },
   { id: 'hyper',      kind: 'car', name: 'Hypercar X',      price: 220000, top: 58, accel: 20, turn: 2.3, body: 'hyper',  blurb: 'Faster than your money leaves the roulette table.' },
+  // Comes free with a restaurant, for the delivery runs. Not sold at Motors.
+  { id: 'scooter', kind: 'car', name: 'Delivery Scooter', price: 0, top: 21, accel: 10, turn: 2.6, body: 'scooter', hidden: true, blurb: 'Hot food, cold wind.' },
   // Farm machinery.
   { id: 'tractor', kind: 'machine', name: 'Tractor', price: 4000,  top: 11, accel: 5, turn: 1.7, body: 'tractor', swath: 3, blurb: 'Pulls a plow, a seeder or a water tank. Works three rows at once.' },
   { id: 'combine', kind: 'machine', name: 'Combine Harvester', price: 14000, top: 8, accel: 4, turn: 1.3, body: 'combine', swath: 5, blurb: 'Eats five rows of ripe crops at a time.' },
@@ -160,6 +167,67 @@ export function boarStats(level) {
     meat: 1 + Math.floor(l / 4),
   };
 }
+
+// ------------------------------------------------------------ restaurants
+//
+// A restaurant on the Sunset Strip turns farm produce into dishes worth about
+// 1.7x their ingredients. Customers walk in, order what is in the pantry, wait
+// for the kitchen, eat, pay and leave. Levels come from dishes served.
+
+// A recipe can ask for "patty": beef from your cattle pen, or boar you shot.
+export const INGREDIENT_GROUPS = { patty: ['beef', 'boar'] };
+export const ingredientPrice = (k) => (INGREDIENT_GROUPS[k] ? ITEMS[INGREDIENT_GROUPS[k][0]].price : ITEMS[k].price);
+
+export const RESTAURANTS = {
+  burger: {
+    name: 'Burger Joint', sign: 'BURGERS', icon: '🍔', wall: '#7fe7d9', trim: '#ff5fa8', neon: '#ff3d9a', floor: ['#ffffff', '#ff5fa8'],
+    dishes: [
+      { id: 'burger',      name: 'Classic Burger', icon: '🍔', in: { flour: 1, patty: 1, tomato: 1 }, level: 1, prep: 7 },
+      { id: 'fries',       name: 'Fries',          icon: '🍟', in: { potato: 2 },                     level: 1, prep: 4 },
+      { id: 'veggie',      name: 'Veggie Burger',  icon: '🥬', in: { flour: 1, carrot: 2, tomato: 1 }, level: 2, prep: 6 },
+      { id: 'cheeseburger', name: 'Cheeseburger',  icon: '🧀', in: { flour: 1, patty: 1, tomato: 1, cheese: 1 }, level: 3, prep: 8 },
+      { id: 'shake',       name: 'Strawberry Shake', icon: '🥤', in: { milk: 1, strawberry: 2 },       level: 4, prep: 3 },
+    ],
+  },
+  pizza: {
+    name: 'Pizzeria', sign: 'PIZZA', icon: '🍕', wall: '#ffd9a0', trim: '#2fbf71', neon: '#ff5a36', floor: ['#ffffff', '#2fbf71'],
+    dishes: [
+      { id: 'soup',       name: 'Tomato Soup',      icon: '🍲', in: { tomato: 3 },                         level: 1, prep: 4 },
+      { id: 'wedges',     name: 'Potato Wedges',    icon: '🥔', in: { potato: 2 },                         level: 1, prep: 4 },
+      { id: 'harvest',    name: 'Harvest Pizza',    icon: '🍕', in: { flour: 2, tomato: 1, corn: 2 },      level: 2, prep: 9 },
+      { id: 'margherita', name: 'Margherita',       icon: '🍕', in: { flour: 2, tomato: 2, cheese: 1 },    level: 3, prep: 9 },
+      { id: 'boarpizza',  name: 'Wild Boar Pizza',  icon: '🐗', in: { flour: 2, tomato: 2, patty: 1, cheese: 1 }, level: 4, prep: 10 },
+      { id: 'pumpkin',    name: 'Pumpkin Special',  icon: '🎃', in: { flour: 2, pumpkin: 1, cheese: 1 },   level: 5, prep: 10 },
+    ],
+  },
+  bakery: {
+    name: 'Bakery Café', sign: 'CAFÉ', icon: '🥐', wall: '#f7c6e0', trim: '#6c5ce7', neon: '#b388ff', floor: ['#ffffff', '#6c5ce7'],
+    dishes: [
+      { id: 'toast',    name: 'Toast & Eggs',     icon: '🍳', in: { bread: 1, egg: 2 },                 level: 1, prep: 4 },
+      { id: 'coffee',   name: 'Milky Coffee',     icon: '☕', in: { milk: 1 },                          level: 1, prep: 2 },
+      { id: 'tart',     name: 'Strawberry Tart',  icon: '🥧', in: { flour: 1, strawberry: 2, egg: 1 },  level: 2, prep: 6 },
+      { id: 'carrotcake', name: 'Carrot Cake',    icon: '🥕', in: { flour: 1, carrot: 3, egg: 2 },      level: 3, prep: 7 },
+      { id: 'cake',     name: 'Slice of Cake',    icon: '🎂', in: { cake: 1 },                          level: 4, prep: 3 },
+    ],
+  },
+};
+export const DISH_BY_ID = Object.fromEntries(Object.values(RESTAURANTS).flatMap((r) => r.dishes.map((d) => [d.id, d])));
+
+/** Menu price at 100%: about 1.7x what the ingredients fetch at the market. */
+export function dishPrice(dish) {
+  let v = 0;
+  for (const [k, n] of Object.entries(dish.in)) v += ingredientPrice(k) * n;
+  return Math.round((v * 1.7 + 20) / 5) * 5;
+}
+
+export const RESTO_LEVELS = [0, 40, 150, 400, 900];     // dishes served to reach levels 1..5
+export const restoLevel = (served) => { let l = 1; for (let i = 1; i < RESTO_LEVELS.length; i++) if (served >= RESTO_LEVELS[i]) l = i + 1; return l; };
+export const RESTO_DELIVERY_LEVEL = 3;
+export const RESTO_VIP_LEVEL = 5;
+export const openTables = (level, lotTables) => Math.min(lotTables, 2 + 2 * level);
+export const restoStaffCap = (level) => level + 1;
+export const REMODEL_SHARE = 0.25;                      // changing type costs a quarter of the lot price
+export const WHOLESALE = 1.5;                           // buying a missing ingredient in: 1.5x market price
 
 // ----------------------------------------------------------------- workers
 //

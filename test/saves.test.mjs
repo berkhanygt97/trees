@@ -56,7 +56,8 @@ for (const version of fs.readdirSync(path.join(here, 'fixtures'))) {
       `$${p.money} xp ${p.xp} house ${p.house}`);
     check(`${tag}: inventory`, same(p.inv, Object.fromEntries(Object.entries(r.inv).filter(([, n]) => n > 0))));
     check(`${tag}: field`, p.field.size === r.field.size && same(p.field.tiles.slice(0, 400), r.field.tiles.slice(0, 400)));
-    check(`${tag}: buildings`, same(p.buildings, r.buildings));
+    check(`${tag}: buildings`, Object.entries(r.buildings).every(([k, v]) => same(p.buildings[k], v)) && p.buildings.pen === null,
+      'every old building unchanged; the new cattle pen slot is empty');
     check(`${tag}: vehicles and implements`, same(strip(p.vehicles), strip(r.vehicles)) && same(p.implements, r.implements));
     check(`${tag}: guns (Grandpa's rifle for everyone)`, p.guns.includes('boltrifle') && (r.guns || []).every((g) => p.guns.includes(g)));
     check(`${tag}: stats kept`, Object.entries(r.stats || {}).every(([k, v]) => p.stats[k] === v || k === 'playSeconds'));

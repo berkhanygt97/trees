@@ -669,3 +669,24 @@ tr.me td { background: rgba(242,193,78,.1); }
 .shop-row .status.warn { color: #ff9f6a; }
 .shop-row .chk { margin-left: 8px; }
 .staff-row .cfg:empty { display: none; }
+
+/* --------------------------------------------------------------- restaurants */
+#delivery {
+  position: absolute; left: 50%; top: 150px; transform: translateX(-50%); padding: 8px 18px; border-radius: 22px;
+  font: 800 16px var(--font); color: #fff; background: linear-gradient(90deg, rgba(255,61,154,.85), rgba(53,224,255,.85));
+  box-shadow: 0 0 18px rgba(255,61,154,.6); text-shadow: 0 1px 3px rgba(0,0,0,.6); white-space: nowrap;
+}
+#delivery.urgent { animation: pulse .6s infinite alternate; }
+@keyframes pulse { to { box-shadow: 0 0 30px rgba(255,80,80,.95); } }
+.resto-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font: 700 15px var(--font); color: #f4eee4; }
+.resto-title .lvl { color: var(--gold); letter-spacing: 1px; }
+.resto-title .bet { margin-left: auto; }
+.resto-stats { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0; font: 600 12px var(--font); color: #b0a698; }
+.resto-stats b { color: #f4eee4; }
+.resto-price { display: flex; align-items: center; gap: 10px; margin: 4px 0 8px; font: 600 13px var(--font); color: #d8cbb8; }
+.resto-price input { flex: 0 0 200px; accent-color: var(--gold); }
+.meter.gold i { background: linear-gradient(90deg, #f2c14e, #ffe08a); }
+.meter.red i { background: linear-gradient(90deg, #c8281e, #ff6a5a); }
+.vip { font: 800 10px var(--font); color: #1b1410; background: var(--gold); border-radius: 4px; padding: 1px 5px; }
+.shop-note.warn { color: #ff9f6a; }
+.strip-map { width: 100%; max-width: 600px; display: block; margin: 6px auto 10px; background: #3b6b3a; border-radius: 10px; }

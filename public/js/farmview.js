@@ -300,6 +300,63 @@ function chicken() {
   return g;
 }
 
+/** A fenced cattle pen with a trough and a little feed shed at the back. */
+function buildPen() {
+  const g = new THREE.Group();
+  const wood = phong(0x7a5230);
+  const W = PADS.pen.w;
+  const D = PADS.pen.d;
+  // Fence posts and two rails all round, with a gate gap at the front.
+  const rail = (x, z, len, along) => {
+    for (const y of [0.55, 1.05]) {
+      const r = new THREE.Mesh(new THREE.BoxGeometry(along ? len : 0.08, 0.1, along ? 0.08 : len), wood);
+      r.position.set(x, y, z);
+      g.add(r);
+    }
+  };
+  rail(0, -D / 2, W, true);
+  rail(-W / 2, 0, D, false);
+  rail(W / 2, 0, D, false);
+  rail(-W / 2 + 1.75, D / 2, 3.5, true);
+  rail(W / 2 - 1.75, D / 2, 3.5, true);
+  for (let i = 0; i <= 5; i++) {
+    for (const [x, z] of [[-W / 2 + (W / 5) * i, -D / 2], [-W / 2 + (W / 5) * i, D / 2]]) {
+      if (Math.abs(x) < 1.5 && z > 0) continue;
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.3, 0.16), wood);
+      post.position.set(x, 0.65, z);
+      g.add(post);
+    }
+  }
+  // Muddy ground, a trough and a shed.
+  const mud = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.3, D - 0.3).rotateX(-Math.PI / 2), phong(0x6b5238));
+  mud.position.y = 0.02;
+  g.add(mud);
+  const trough = new THREE.Mesh(new THREE.BoxGeometry(3, 0.5, 0.7), phong(0x8a8f94, { shininess: 40 }));
+  trough.position.set(-W / 2 + 2.2, 0.25, -D / 2 + 1.2);
+  g.add(trough);
+  const shed = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.4, 2.4), phong(0x9a6a3a));
+  shed.position.set(W / 2 - 2, 1.2, -D / 2 + 1.5);
+  g.add(shed);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.15, 2.9), phong(0x5a3a22));
+  roof.position.set(W / 2 - 2, 2.5, -D / 2 + 1.5);
+  roof.rotation.x = 0.12;
+  g.add(roof);
+  return g;
+}
+
+/** A brown beef steer: the cow's heavier cousin. */
+function steer() {
+  const g = new THREE.Group();
+  const hide = phong(0x6b3f22);
+  const dark = phong(0x2a1a10);
+  box(g, 1.2, 1.0, 2.1, 0, 1.25, 0, hide);
+  box(g, 0.65, 0.65, 0.75, 0, 1.55, -1.25, hide);
+  box(g, 0.5, 0.3, 0.2, 0, 1.35, -1.65, phong(0xc9a38a));
+  for (const s of [-1, 1]) box(g, 0.35, 0.07, 0.07, s * 0.4, 1.9, -1.2, phong(0xe8e0cc));
+  for (const x of [-0.38, 0.38]) for (const z of [-0.75, 0.75]) box(g, 0.22, 0.85, 0.22, x, 0.42, z, dark);
+  return g;
+}
+
 function cow() {
   const g = new THREE.Group();
   const white = phong(0xf5f5f5);
@@ -494,6 +551,11 @@ export class FarmView {
       const [cx, cz] = beside(w, 0, PADS.barn.d / 2 + 2.5);
       const turnedPen = w.rot % 2 === 1;
       for (let i = 0; i < b.barn; i++) this._addAnimal(index, cow(), cx, cz, turnedPen ? 1.2 : 5, turnedPen ? 5 : 1.2);
+    }
+    if (b.pen != null) {
+      const w = place(buildPen(), 'pen', false);
+      // Fenced all round except the gate: you can walk in, the steers cannot walk out.
+      for (let i = 0; i < b.pen; i++) this._addAnimal(index, steer(), w.x, w.z, w.w - 3, w.d - 4);
     }
     if (b.mill) { const m = buildMill(); place(m, 'mill', false); view.hub = m.userData.hub; addBox('mill', 1); }
     if (b.dairy) { place(buildDairy(this.windowMats), 'dairy', false); addBox('dairy'); }

@@ -296,7 +296,7 @@ export class Staff {
   _start(p, w, r, now, job) {
     const dist = Math.hypot(job.at[0] - r.x, job.at[1] - r.z);
     const walk = (dist / (WALK * w.speed)) * 1000 / this.pace;
-    const dur = workerSeconds(BASE[job.act] || 3, w.speed, w.trait) * 1000 / this.pace;
+    const dur = workerSeconds(job.base || BASE[job.act] || 3, w.speed, w.trait) * 1000 / this.pace;
     r.ev = { from: [r2(r.x), r2(r.z)], to: [r2(job.at[0]), r2(job.at[1])], t0: now, walk: Math.round(walk), dur: Math.round(dur), act: job.act };
     r.x = job.at[0];
     r.z = job.at[1];
