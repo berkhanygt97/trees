@@ -17,6 +17,7 @@ import { Pipeline } from './post.js';
 import { BoarView } from './boarsview.js';
 import { Weapons } from './weapons.js';
 import { buildCockpit } from './cockpit.js';
+import { WorkerView } from './workersview.js';
 import { shadowTexture } from './textures.js';
 
 const canvas = document.getElementById('scene');
@@ -25,7 +26,8 @@ const nameInput = document.getElementById('name');
 const enterBtn = document.getElementById('enter');
 const joinStatus = document.getElementById('join-status');
 
-let renderer, scene, camera, world, fleet, controls, viewModel, smoke, selfAvatar, pipeline, boars, weapons;
+let renderer, scene, camera, world, fleet, controls, viewModel, smoke, selfAvatar, pipeline, boars, weapons, workers;
+let jobs = [];                    // today's Job Centre candidates
 let cockpit = null;              // { id, obj } for the vehicle you are sitting in
 let hp = 100;
 let koUntil = 0;
@@ -114,6 +116,7 @@ function initScene() {
   controls = new Controls(camera, canvas, world);
   pipeline = new Pipeline(renderer);
   boars = new BoarView(scene);
+  workers = new WorkerView(scene);
   const heard = (e) => Math.max(0, 1 - camera.position.distanceTo(e.pos) / 90);
   boars.onCharge = (e) => sfx.grunt(heard(e));
   boars.onHurt = (e) => sfx.squeal(heard(e) * 0.7);
@@ -126,6 +129,7 @@ function initScene() {
   // Debug handle: useful when you are hosting and want to poke at the valley.
   window.casino = {
     controls, world, fleet, scene, camera, net, hud, gameStates, pipeline, boars, weapons,
+    get workers() { return workers; },
     get cockpit() { return cockpit; },
     get hp() { return hp; },
     get panel() { return activePanel; },
@@ -166,6 +170,7 @@ net.on('welcome', (d) => {
   pipeline.overlayCamera.add(viewModel.group);
   weapons.attach(viewModel);
   boars.apply(d.boars || []);
+  workers.setList(d.workers || []);
 
   selfAvatar = createAvatar({ name: me.name, color: me.color, hat: me.hat, showLabel: false });
   selfAvatar.group.visible = false;
@@ -274,6 +279,12 @@ net.on('vehicles', (list) => {
 // ---------------------------------------------------------- boars and guns
 
 net.on('boars', (rows) => { if (boars) boars.apply(rows); });
+net.on('workers', (list) => { if (workers) workers.setList(list); });
+net.on('wk', (ev) => { if (workers) workers.onEvent(ev); });
+net.on('jobs', (list) => {
+  jobs = list || [];
+  if (activePanel && activePanel.ui.onJobs) activePanel.ui.onJobs();
+});
 net.on('shotres', (d) => { if (weapons) weapons.onShotRes(d); });
 net.on('ammo', (d) => { if (weapons) weapons.onAmmo(d); });
 net.on('shot', (d) => {
@@ -432,6 +443,7 @@ function panelCtx(station) {
     get orders() { return orders; },
     get vehicles() { return fleet ? [...fleet.items.values()].filter((e) => e.owner === me.slug) : []; },
     get myPlot() { return world ? world.farms.plots.get(hud.wallet.plot) : null; },
+    get jobs() { return jobs; },
     /** Swap this panel for another one at the same spot (the house opens the planner). */
     open: (game) => openPanel({ ...station, game }),
     worldTime,
@@ -843,6 +855,7 @@ function loop(now) {
   if (viewModel && !car) viewModel.update(dt, { moving, sprinting, aiming: weapons.aiming });
   weapons.update(dt);
   boars.update(dt);
+  workers.update(dt, net.now(), camera.position);
   smoke.update(dt);
 
   // What can you do right now?

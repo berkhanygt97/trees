@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeParts as merge } from './geo.js';
 import { CROPS, CROP_BY_ID, cropProgress, isWatered } from '/shared/catalog.js';
 import { PLOTS, PLOT_SIZE, GATE, TILE, PADS, tileCenter, tileIndex, padWorld } from '/shared/map.js';
 import { soilTexture, plankTexture, brickTexture, boardTexture, roofTileTexture, metalTexture, plasterTexture } from './textures.js';
@@ -14,31 +15,6 @@ const CAP = PLOTS.length * 400;
 // ------------------------------------------------------------ geometry kit
 
 /** Merges primitives into one geometry with baked vertex colours. */
-function merge(parts) {
-  const pos = [];
-  const nor = [];
-  const col = [];
-  const c = new THREE.Color();
-  for (const { geo, color, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, s = [1, 1, 1] } of parts) {
-    const g = geo.index ? geo.toNonIndexed() : geo.clone();
-    const m = new THREE.Matrix4().compose(
-      new THREE.Vector3(x, y, z),
-      new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)),
-      new THREE.Vector3(...s),
-    );
-    g.applyMatrix4(m);
-    pos.push(...g.attributes.position.array);
-    nor.push(...g.attributes.normal.array);
-    c.set(color);
-    for (let i = 0; i < g.attributes.position.count; i++) col.push(c.r, c.g, c.b);
-    g.dispose();
-  }
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  out.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  return out;
-}
 
 // Deterministic jitter so every client draws the same plants.
 const jit = (i, k) => {

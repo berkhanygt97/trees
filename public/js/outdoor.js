@@ -60,6 +60,7 @@ const SHOPKEEPERS = {
   machinery: ['Hank', '#e3c25a', 'cowboy'],
   landoffice: ['Ms. Deeds', '#c471e8', 'crown'],
   gunshop: ['Rusty', '#9aa7ff', 'cowboy'],
+  jobcentre: ['Mrs. Pruitt', '#5fe0c0', 'visor'],
 };
 
 // Cheap smooth value noise, for painting variation into the ground.

@@ -1,7 +1,7 @@
 // Pure rules for one player's farm: fields, animals and processing. Nothing
 // here touches the network; the room calls these and broadcasts the result.
 import {
-  CROP_BY_ID, ITEMS, HOUSES, ANIMAL_HOUSES, PROCESSORS, FIELD_MAX,
+  CROP_BY_ID, ITEMS, HOUSES, ANIMAL_HOUSES, PROCESSORS, FIELD_MAX, PROCESS_QUEUE_MAX,
   cropProgress, isWatered, wateredFor, countsAgainstStorage, levelOf,
 } from '../shared/catalog.js';
 import { defaultLayout, cleanLayout } from '../shared/map.js';
@@ -155,6 +155,84 @@ export function settleProcessor(kind, b, now) {
 export function settleBuildings(profile, now) {
   for (const kind of Object.keys(ANIMAL_HOUSES)) settleAnimals(kind, profile.buildings[kind], now);
   for (const kind of Object.keys(PROCESSORS)) settleProcessor(kind, profile.buildings[kind], now);
+}
+
+// ------------------------------------------- building actions (players and workers)
+//
+// One set of rules for a farmer pressing a button and a hired hand doing the
+// same job, so a worker can never do anything the owner could not.
+
+/** Fills an animal trough from feed, then wheat. */
+export function feedAnimals(profile, kind, now) {
+  const def = ANIMAL_HOUSES[kind];
+  const b = profile.buildings[kind];
+  if (!def || !b) return { error: 'Nothing built here yet' };
+  settleAnimals(kind, b, now);
+  let room = def.feedCap - b.feed;
+  if (room <= 0) return { error: 'The trough is full' };
+  const fromFeed = Math.min(room, profile.inv.feed || 0);
+  takeItem(profile, 'feed', fromFeed);
+  room -= fromFeed;
+  const fromWheat = Math.min(room, profile.inv.wheat || 0);
+  takeItem(profile, 'wheat', fromWheat);
+  if (!fromFeed && !fromWheat) return { error: 'You need feed or wheat' };
+  b.feed += fromFeed + fromWheat;
+  return { added: fromFeed + fromWheat };
+}
+
+/** Moves eggs or milk into storage. Returns { item, qty, xp }. */
+export function collectAnimals(profile, kind, now) {
+  const def = ANIMAL_HOUSES[kind];
+  const b = profile.buildings[kind];
+  if (!def || !b) return { error: 'Nothing built here yet' };
+  settleAnimals(kind, b, now);
+  if (!b.stock) return { error: 'Nothing to collect yet' };
+  const n = Math.min(b.stock, storageFree(profile));
+  if (!n) return { error: 'Storage is full' };
+  b.stock -= n;
+  addItem(profile, def.product, n);
+  return { item: def.product, qty: n, xp: n * ITEMS[def.product].price / 6 };
+}
+
+/** Queues up to `count` batches of a recipe, as many as the storage can pay for. */
+export function loadProcessor(profile, kind, recipeId, count, now) {
+  const def = PROCESSORS[kind];
+  const b = profile.buildings[kind];
+  if (!def || !b) return { error: 'Nothing built here yet' };
+  settleProcessor(kind, b, now);
+  const recipe = def.recipes.find((r) => r.id === recipeId);
+  if (!recipe) return { error: 'No such recipe' };
+  if (b.recipe && b.recipe !== recipe.id) return { error: 'Let the current batch finish first' };
+  if (b.queue >= PROCESS_QUEUE_MAX) return { error: 'The queue is full' };
+  let n = Math.max(1, Math.min(Math.round(Number(count) || 1), PROCESS_QUEUE_MAX - b.queue));
+  for (const [item, need] of Object.entries(recipe.in)) n = Math.min(n, Math.floor((profile.inv[item] || 0) / need));
+  if (n <= 0) {
+    const list = Object.entries(recipe.in).map(([k, q]) => `${q} ${ITEMS[k].name.toLowerCase()}`).join(' + ');
+    return { error: `Each batch needs ${list}` };
+  }
+  for (const [item, need] of Object.entries(recipe.in)) takeItem(profile, item, need * n);
+  if (!b.recipe) { b.recipe = recipe.id; b.started = now; }
+  b.queue += n;
+  return { count: n };
+}
+
+/** Moves finished goods into storage. Returns { got: [{ item, qty, xp }] }. */
+export function collectProcessor(profile, kind, now) {
+  const def = PROCESSORS[kind];
+  const b = profile.buildings[kind];
+  if (!def || !b) return { error: 'Nothing built here yet' };
+  settleProcessor(kind, b, now);
+  const got = [];
+  for (const [item, n] of Object.entries(b.out)) {
+    const take = Math.min(n, storageFree(profile));
+    if (take <= 0) continue;
+    addItem(profile, item, take);
+    b.out[item] -= take;
+    if (!b.out[item]) delete b.out[item];
+    got.push({ item, qty: take, xp: take * ITEMS[item].price / 8 });
+  }
+  if (!got.length) return { error: Object.keys(b.out).length ? 'Storage is full' : 'Nothing ready yet' };
+  return { got };
 }
 
 // ------------------------------------------------------------ new profile

@@ -11,6 +11,7 @@ import { createMarket, createBin, createOrders } from './market.js';
 import { createCarDealer } from './dealer.js';
 import { createHouse, createCoop, createBarn, createMill, createDairy, createBakery } from './farm.js';
 import { createPlanner } from './planner.js';
+import { createJobCentre, createStaff } from './jobs.js';
 
 export const GAME_UIS = {
   // The casino.
@@ -33,10 +34,12 @@ export const GAME_UIS = {
   machinery: { title: 'TRACTOR BARN — HANK', chips: false, create: createMachinery },
   orders: { title: 'ORDERS BOARD', chips: false, create: createOrders },
   gunshop: { title: "RUSTY'S GUNS", chips: false, create: createGunShop },
+  jobcentre: { title: 'JOB CENTRE — MRS. PRUITT', chips: false, create: createJobCentre },
 
   // Your farm.
   house: { title: 'HOME', chips: false, create: createHouse },
   planner: { title: 'FARM PLANNER', chips: false, create: createPlanner },
+  staff: { title: 'YOUR STAFF', chips: false, create: createStaff },
   bin: { title: 'SHIPPING BIN', chips: false, create: createBin },
   coop: { title: 'CHICKEN COOP', chips: false, create: createCoop },
   barn: { title: 'COW BARN', chips: false, create: createBarn },

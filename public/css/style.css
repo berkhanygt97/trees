@@ -654,3 +654,18 @@ tr.me td { background: rgba(242,193,78,.1); }
 .planner-msg.bad { color: #ff6a5a; }
 .planner-btns { display: flex; flex-direction: column; gap: 8px; }
 .planner-btns .bet { width: 100%; }
+
+/* ------------------------------------------------------ job centre and staff */
+.caps { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 8px; font: 700 12px var(--font); color: #b0a698; }
+.caps b { color: #f4eee4; }
+.speed { display: inline-block; width: 60px; height: 7px; border-radius: 4px; background: rgba(255,255,255,.12); overflow: hidden; vertical-align: middle; margin-right: 4px; }
+.speed i { display: block; height: 100%; background: linear-gradient(90deg, #f2c14e, #6bd66b); }
+.shop-row .name-in { font: 800 15px var(--font); color: #f4eee4; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.15);
+  border-radius: 6px; padding: 3px 7px; width: 150px; }
+.shop-row .name-in:focus { outline: none; border-color: var(--gold); }
+.shop-row select { font: 600 12px var(--font); background: #1e1a26; color: #f4eee4; border: 1px solid rgba(255,255,255,.2); border-radius: 6px; padding: 2px 4px; }
+.shop-row .role { font: 700 11px var(--font); color: var(--gold); letter-spacing: 1px; margin-left: 6px; }
+.shop-row .status { color: #8fe3a6; }
+.shop-row .status.warn { color: #ff9f6a; }
+.shop-row .chk { margin-left: 8px; }
+.staff-row .cfg:empty { display: none; }

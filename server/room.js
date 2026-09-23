@@ -2,7 +2,7 @@ import { CONFIG, AVATAR_COLORS, HATS, CIGAR, money } from '../shared/config.js';
 import {
   CROP_BY_ID, ITEMS, SELLABLE, HOUSES, ANIMAL_HOUSES, PROCESSORS, PROCESS_QUEUE_MAX,
   FIELD_SIZES, FIELD_PRICES, FIELD_LEVELS, VEHICLE_BY_ID, MAX_VEHICLES,
-  IMPLEMENT_BY_ID, PAINTS, RESALE, GUN_BY_ID, PLAYER_HP, levelOf, levelProgress,
+  IMPLEMENT_BY_ID, PAINTS, RESALE, GUN_BY_ID, PLAYER_HP, WORKER_ROLES, levelOf, levelProgress,
 } from '../shared/catalog.js';
 import {
   BOUNDS, PLOTS, STATION_BY_ID, TOWN_SPAWN, PAD_KEYS, plotSpawn, tileCenter, tileIndex,
@@ -14,9 +14,11 @@ import { Clock } from './clock.js';
 import { Market, Orders } from './economy.js';
 import { slugOf } from './save.js';
 import { Wildlife } from './boars.js';
+import { Staff } from './workers.js';
 import {
   workTile, rainOn, lightningOn, settleBuildings, settleAnimals, settleProcessor,
   storageUsed, storageCap, storageFree, addItem, takeItem, newProfile, migrateProfile, toSave,
+  feedAnimals, collectAnimals, loadProcessor, collectProcessor,
 } from './farm.js';
 import * as Slots from './games/slots.js';
 import * as Dice from './games/dice.js';
@@ -72,6 +74,7 @@ export class Room {
 
     this.round = new CasinoEvents(this);
     this.wildlife = new Wildlife(this);
+    this.staff = new Staff(this, world && world.staff);
 
     const hub = {
       broadcast: (type, data) => this.broadcast(type, data),
@@ -176,6 +179,7 @@ export class Room {
       plots: this.publicPlots(),
       vehicles: this.publicVehicles(),
       boars: this.wildlife.snapshot(),
+      workers: this.staff.publicWorkers(),
       games: {
         roulette: this.games.roulette.publicState(),
         crash: this.games.crash.publicState(),
@@ -358,6 +362,8 @@ export class Room {
       charity: this._charityAvailable(p),
       vehicle: p.vehicle,
       stats: p.stats,
+      staff: this.staff.staffFor(p),
+      staffCap: { farm: this.staff.capAt(p, 'farm'), restaurant: this.staff.capAt(p, 'restaurant') },
     });
   }
 
@@ -498,6 +504,8 @@ export class Room {
       case 'sell': return this.onSell(p, msg.d);
       case 'farm': return this.onFarmBuilding(p, msg.d);
       case 'layout': return this.onLayout(p, msg.d);
+      case 'hire': return this.onHire(p, msg.d);
+      case 'staff': return this.onStaff(p, msg.d);
       case 'deliver': return this.onDeliver(p, msg.d);
       case 'charity': return this.onCharity(p, msg.d);
       case 'drive': return this.onDrive(p, msg.d);
@@ -556,6 +564,7 @@ export class Room {
     if (st.game === 'robots') this.send(p.id, 'game', this.games.robots.publicState());
     if (st.game === 'market' || st.game === 'bin') this.send(p.id, 'market', this.market.state());
     if (st.game === 'orders') this.send(p.id, 'orders', this.orders.state());
+    if (st.game === 'jobcentre') this.send(p.id, 'jobs', this.staff.candidates());
     this.sendWallet(p);
   }
 
@@ -834,66 +843,29 @@ export class Room {
     const now = this.clock.time;
 
     if (ANIMAL_HOUSES[kind]) {
-      const def = ANIMAL_HOUSES[kind];
-      const b = p.buildings[kind];
-      if (!b) return this.error(p, 'Nothing built here yet');
-      settleAnimals(kind, b, now);
       if (d.action === 'feed') {
-        let room = def.feedCap - b.feed;
-        if (room <= 0) return this.error(p, 'The trough is full');
-        const fromFeed = Math.min(room, p.inv.feed || 0);
-        takeItem(p, 'feed', fromFeed);
-        room -= fromFeed;
-        const fromWheat = Math.min(room, p.inv.wheat || 0);
-        takeItem(p, 'wheat', fromWheat);
-        if (!fromFeed && !fromWheat) return this.error(p, 'You need feed or wheat');
-        b.feed += fromFeed + fromWheat;
+        const res = feedAnimals(p, kind, now);
+        if (res.error) return this.error(p, res.error);
       } else if (d.action === 'collect') {
-        const n = Math.min(b.stock, storageFree(p));
-        if (!b.stock) return this.error(p, 'Nothing to collect yet');
-        if (!n) return this.error(p, 'Storage is full');
-        b.stock -= n;
-        addItem(p, def.product, n);
-        this._gainXp(p, n * ITEMS[def.product].price / 6);
-        this.send(p.id, 'harvest', { item: def.product, qty: n });
+        const res = collectAnimals(p, kind, now);
+        if (res.error) return this.error(p, res.error);
+        this._gainXp(p, res.xp);
+        this.send(p.id, 'harvest', { item: res.item, qty: res.qty });
       }
       return this.sendWallet(p);
     }
 
     if (PROCESSORS[kind]) {
-      const def = PROCESSORS[kind];
-      const b = p.buildings[kind];
-      if (!b) return this.error(p, 'Nothing built here yet');
-      settleProcessor(kind, b, now);
       if (d.action === 'load') {
-        const recipe = def.recipes.find((r) => r.id === d.recipe);
-        if (!recipe) return this.error(p, 'No such recipe');
-        if (b.recipe && b.recipe !== recipe.id) return this.error(p, 'Let the current batch finish first');
-        let count = clamp(Math.round(Number(d.count) || 1), 1, PROCESS_QUEUE_MAX - b.queue);
-        if (b.queue >= PROCESS_QUEUE_MAX) return this.error(p, 'The queue is full');
-        for (const [item, need] of Object.entries(recipe.in)) {
-          count = Math.min(count, Math.floor((p.inv[item] || 0) / need));
-        }
-        if (count <= 0) {
-          const list = Object.entries(recipe.in).map(([k, n]) => `${n} ${ITEMS[k].name.toLowerCase()}`).join(' + ');
-          return this.error(p, `Each batch needs ${list}`);
-        }
-        for (const [item, need] of Object.entries(recipe.in)) takeItem(p, item, need * count);
-        if (!b.recipe) { b.recipe = recipe.id; b.started = now; }
-        b.queue += count;
+        const res = loadProcessor(p, kind, d.recipe, d.count, now);
+        if (res.error) return this.error(p, res.error);
       } else if (d.action === 'collect') {
-        let got = 0;
-        for (const [item, n] of Object.entries(b.out)) {
-          const take = Math.min(n, storageFree(p));
-          if (take <= 0) continue;
-          addItem(p, item, take);
-          b.out[item] -= take;
-          if (!b.out[item]) delete b.out[item];
-          got += take;
-          this._gainXp(p, take * ITEMS[item].price / 8);
-          this.send(p.id, 'harvest', { item, qty: take });
+        const res = collectProcessor(p, kind, now);
+        if (res.error) return this.error(p, res.error);
+        for (const g of res.got) {
+          this._gainXp(p, g.xp);
+          this.send(p.id, 'harvest', { item: g.item, qty: g.qty });
         }
-        if (!got) return this.error(p, Object.keys(b.out).length ? 'Storage is full' : 'Nothing ready yet');
       }
       return this.sendWallet(p);
     }
@@ -922,6 +894,36 @@ export class Room {
     this.broadcast('plot', this.publicPlot(p.plot));
     this.send(p.id, 'result', { game: 'planner', saved: true, moved, fee });
     this.send(p.id, 'toast', { text: `The builders moved ${moved} thing${moved > 1 ? 's' : ''} for ${money(fee)}.`, kind: 'info' });
+    return undefined;
+  }
+
+  // ---------------------------------------------------------------- workers
+
+  onHire(p, d) {
+    if (!this._atShop(p, d, 'jobcentre')) return this.error(p, 'Hiring happens at the Job Centre');
+    const res = this.staff.hire(p, d.cid, d.role, d.name);
+    if (res.error) return this.error(p, res.error);
+    const w = res.worker;
+    this.sendWallet(p);
+    this.send(p.id, 'jobs', this.staff.candidates());
+    this.send(p.id, 'result', { game: 'jobcentre', hired: w.id });
+    this.staff.broadcastList();
+    this.toastAll(`${p.name} hired ${w.name} as a ${WORKER_ROLES[w.role].name.toLowerCase()}.`, 'info');
+    return undefined;
+  }
+
+  /** Rename, reassign or let go: your own staff, from anywhere. */
+  onStaff(p, d) {
+    if (!d || typeof d.id !== 'string') return undefined;
+    let res;
+    if (d.action === 'rename') res = this.staff.rename(p, d.id, d.name);
+    else if (d.action === 'config') res = this.staff.configure(p, d.id, d.cfg);
+    else if (d.action === 'fire') res = this.staff.fire(p, d.id);
+    else return undefined;
+    if (res.error) return this.error(p, res.error);
+    if (d.action === 'fire') this.send(p.id, 'toast', { text: `${res.worker.name} packed up and left. No hard feelings.`, kind: 'info' });
+    if (d.action !== 'config') this.staff.broadcastList();
+    this.sendWallet(p);
     return undefined;
   }
 
@@ -1294,6 +1296,7 @@ export class Room {
     }
 
     this.wildlife.tick();
+    this.staff.tick(now);
     this._healthTick(now, 1 / CONFIG.TICK_HZ);
 
     this.round.tick(now);
@@ -1325,7 +1328,7 @@ export class Room {
       // panels only need a wallet when something actually changed.
       for (const p of this.players.values()) {
         const st = p.station && STATION_BY_ID.get(p.station);
-        if (st && st.plot != null && st.pad !== 'bin' && st.pad !== 'house') this.sendWallet(p);
+        if (st && ((st.plot != null && st.pad !== 'bin') || st.game === 'jobcentre')) this.sendWallet(p);
       }
     }
 
@@ -1333,6 +1336,7 @@ export class Room {
   }
 
   _newDay() {
+    this.staff.payWages();
     this.market.newDay();
     this.orders.refill(this.clock.time, this._topLevel());
     this.broadcast('market', this.market.state());
@@ -1397,6 +1401,7 @@ export class Room {
         clock: this.clock.toSave(),
         market: this.market.toSave(),
         orders: this.orders.toSave(),
+        staff: this.staff.toSave(),
       });
     } catch (err) {
       console.error(`[save] could not save the world: ${err.message}`);

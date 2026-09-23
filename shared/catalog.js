@@ -161,6 +161,55 @@ export function boarStats(level) {
   };
 }
 
+// ----------------------------------------------------------------- workers
+//
+// Hired hands, from the Job Centre in town. Each has a speed (0.6x to 1.6x)
+// and a trait; the wage is per in-game day and scales with speed. Workers keep
+// working while the host is running, whether or not their boss is online.
+
+export const WORKER_ROLES = {
+  field:    { name: 'Field Hand',      icon: '🧑‍🌾', place: 'farm', wage: 150, blurb: 'Plows, plants the crop you pick, waters and harvests.' },
+  animals:  { name: 'Animal Keeper',   icon: '🐓', place: 'farm', wage: 90,  blurb: 'Keeps the troughs full and collects eggs and milk.' },
+  workshop: { name: 'Workshop Hand',   icon: '⚙️', place: 'farm', wage: 130, blurb: 'Loads the mill, dairy and bakery and collects what comes out.' },
+  seller:   { name: 'Seller',          icon: '🚚', place: 'farm', wage: 70,  blurb: 'Ships your goods from the bin at 90% of market price, twice a day.' },
+  cook:     { name: 'Cook',            icon: '👨‍🍳', place: 'restaurant', wage: 160, blurb: 'Cooks every order. Faster cooks, shorter waits.' },
+  waiter:   { name: 'Waiter',          icon: '🤵', place: 'restaurant', wage: 100, blurb: 'Seats customers and carries the food out.' },
+  driver:   { name: 'Delivery Driver', icon: '🛵', place: 'restaurant', wage: 110, blurb: 'Takes the phone orders you do not ride out yourself.' },
+};
+
+export const WORKER_TRAITS = {
+  steady: { name: 'Steady',      hours: [6, 20],  pace: 1,    wage: 1,    blurb: 'Works 6am to 8pm, no fuss.' },
+  early:  { name: 'Early Bird',  hours: [4, 18],  pace: 1,    wage: 1,    blurb: 'Up at 4am, gone by 6pm.' },
+  night:  { name: 'Night Owl',   hours: [12, 26], pace: 1,    wage: 1.05, blurb: 'Noon until 2am. Handy for the dinner rush.' },
+  keen:   { name: 'Keen',        hours: [6, 20],  pace: 1.12, wage: 1.15, blurb: '12% quicker at everything, and knows it.' },
+  lazy:   { name: 'Easy-going',  hours: [7, 19],  pace: 0.8,  wage: 0.8,  blurb: 'Takes it slow. Cheap, though.' },
+  green:  { name: 'Green Thumb', hours: [6, 20],  pace: 1,    wage: 1.1,  blurb: 'Waters as they plant. In a kitchen: nothing gets burnt.' },
+};
+
+export const WORKER_NAMES = [
+  'Earl', 'Dolores', 'Hank', 'Maybelle', 'Otis', 'Tammy', 'Cletus', 'Rosa', 'Buck', 'Lorraine', 'Vern', 'Darlene',
+  'Jimbo', 'Consuela', 'Wade', 'Peggy', 'Rusty', 'Juanita', 'Skeeter', 'Bev', 'Marv', 'Yolanda', 'Dwayne', 'Trixie',
+  'Lenny', 'Carmen', 'Gus', 'Wanda', 'Tito', 'Shirl', 'Ray', 'Mercedes', 'Dale', 'Candy', 'Sal', 'Ines',
+];
+
+/** How many hands a farm can house, by house tier (tent, cabin, farmhouse, mansion). */
+export const FARM_WORKER_CAP = [1, 2, 4, 6];
+
+export const workerWage = (role, speed, trait) => {
+  const r = WORKER_ROLES[role];
+  const t = WORKER_TRAITS[trait] || WORKER_TRAITS.steady;
+  return Math.round((r ? r.wage : 100) * (0.55 + 0.45 * speed) * t.wage / 5) * 5;
+};
+
+/** Seconds a worker spends on a job that takes `base` seconds at normal speed. */
+export const workerSeconds = (base, speed, trait) => base / (speed * (WORKER_TRAITS[trait] || WORKER_TRAITS.steady).pace);
+
+/** Is this worker on shift at in-game hour `hour` (0..24)? */
+export function onShift(trait, hour) {
+  const [a, b] = (WORKER_TRAITS[trait] || WORKER_TRAITS.steady).hours;
+  return b > 24 ? (hour >= a || hour < b - 24) : (hour >= a && hour < b);
+}
+
 // What you get back if you ever tally it up. Used for the net-worth board.
 export const RESALE = 0.5;
 
