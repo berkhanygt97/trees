@@ -9,16 +9,20 @@ import { cloudTexture, glowTexture } from './textures.js';
 const lerp = (a, b, t) => a + (b - a) * t;
 const C = (hex) => new THREE.Color(hex);
 
-// [hour, zenith, horizon] keyframes for a clear day.
+// [hour, zenith, horizon] keyframes for a clear day. San Andreas by day: a
+// hazy blue sky over a dusty, smoggy horizon. Vice City at dusk: pink and
+// purple. Night: deep violet, never quite black.
 const SKY_KEYS = [
-  [0, C(0x04060f), C(0x0c1224)],
-  [5, C(0x070b1c), C(0x1a2040)],
-  [6.2, C(0x2d3a78), C(0xf2995a)],
-  [8, C(0x3f7fd0), C(0xaed4f2)],
-  [17, C(0x3a78cc), C(0xb8d8f0)],
-  [19.3, C(0x35407a), C(0xf0864e)],
-  [20.6, C(0x0c1230), C(0x2a2446)],
-  [24, C(0x04060f), C(0x0c1224)],
+  [0, C(0x0a0520), C(0x241034)],
+  [5, C(0x120a2c), C(0x3a1a44)],
+  [6.2, C(0x4a3a8a), C(0xff9a6a)],
+  [8, C(0x5a8fcf), C(0xdccfb0)],
+  [12, C(0x4f86cc), C(0xdcd2b4)],
+  [17, C(0x5a80c8), C(0xe8c89a)],
+  [18.8, C(0x6a4a9a), C(0xffa25a)],
+  [19.6, C(0x5a2a7a), C(0xff5a8a)],
+  [20.6, C(0x1c0c3c), C(0x5a1f5a)],
+  [24, C(0x0a0520), C(0x241034)],
 ];
 
 function skyAt(hour, outTop, outHorizon) {
@@ -66,7 +70,7 @@ export class Sky {
     this.dome.renderOrder = -10;
     scene.add(this.dome);
 
-    this.sunDisc = new THREE.Mesh(new THREE.CircleGeometry(28, 24), new THREE.MeshBasicMaterial({ color: 0xfff1c4, fog: false }));
+    this.sunDisc = new THREE.Mesh(new THREE.CircleGeometry(40, 28), new THREE.MeshBasicMaterial({ color: 0xfff1c4, fog: false }));
     this.moonDisc = new THREE.Mesh(new THREE.CircleGeometry(18, 24), new THREE.MeshBasicMaterial({ color: 0xdfe6ff, fog: false }));
     scene.add(this.sunDisc, this.moonDisc);
 
@@ -169,6 +173,11 @@ export class Sky {
     this.moonDisc.visible = moonDir.y > -0.05 && this.grey < 0.6;
 
     const sunUp = Math.max(0, Math.min(1, sunDir.y * 3));
+    // Low sun: a big orange-pink ball, like every PS2 sunset.
+    this.sunDisc.material.color.setRGB(1, 0.62 + sunUp * 0.33, 0.45 + sunUp * 0.4);
+    this.sunDisc.scale.setScalar(1.35 - sunUp * 0.35);
+    // Golden hour, for the colour grade: strongest around 7pm (and 6am).
+    this.dusk = Math.max(0, 1 - Math.abs(hour - 19.2) / 1.6, 1 - Math.abs(hour - 6.3) / 1.2) * (1 - this.grey);
 
     // Clouds drift with the camera, lit by the sky: white by day, orange at dusk.
     this.clouds.position.set(camera.position.x, camera.position.y + 260, camera.position.z);

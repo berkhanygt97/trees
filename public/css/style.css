@@ -676,8 +676,8 @@ tr.me td { background: rgba(242,193,78,.1); }
   font: 800 16px var(--font); color: #fff; background: linear-gradient(90deg, rgba(255,61,154,.85), rgba(53,224,255,.85));
   box-shadow: 0 0 18px rgba(255,61,154,.6); text-shadow: 0 1px 3px rgba(0,0,0,.6); white-space: nowrap;
 }
-#delivery.urgent { animation: pulse .6s infinite alternate; }
-@keyframes pulse { to { box-shadow: 0 0 30px rgba(255,80,80,.95); } }
+#delivery.urgent { animation: deliveryPulse .6s infinite alternate; }
+@keyframes deliveryPulse { to { box-shadow: 0 0 30px rgba(255,80,80,.95); } }
 .resto-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font: 700 15px var(--font); color: #f4eee4; }
 .resto-title .lvl { color: var(--gold); letter-spacing: 1px; }
 .resto-title .bet { margin-left: auto; }
@@ -690,3 +690,19 @@ tr.me td { background: rgba(242,193,78,.1); }
 .vip { font: 800 10px var(--font); color: #1b1410; background: var(--gold); border-radius: 4px; padding: 1px 5px; }
 .shop-note.warn { color: #ff9f6a; }
 .strip-map { width: 100%; max-width: 600px; display: block; margin: 6px auto 10px; background: #3b6b3a; border-radius: 10px; }
+
+/* ------------------------------------------ GTA-era HUD (2.2 art pass) */
+/* San Andreas money: chunky green digits with a thick black outline. */
+#wallet .money {
+  font: 400 44px/1 Impact, 'Arial Black', 'Trebuchet MS', sans-serif; letter-spacing: 2px;
+  color: #5cbf4a; -webkit-text-stroke: 2px #0a0a0a; paint-order: stroke fill;
+  text-shadow: 3px 3px 0 #000, 0 0 12px rgba(0,0,0,.6);
+}
+#wallet .profit { font: 700 15px Impact, 'Arial Black', sans-serif; letter-spacing: 1px; color: #cfe8c8;
+  -webkit-text-stroke: 1px #000; paint-order: stroke fill; }
+/* The clock: white, outlined, like the corner of a PS2 screen. */
+#r-clock { font-family: Impact, 'Arial Black', sans-serif !important; letter-spacing: 3px;
+  -webkit-text-stroke: 2px #0a0a0a; paint-order: stroke fill; text-shadow: 3px 3px 0 #000 !important; }
+/* Vice City toasts: pink and teal edges. */
+.toast { border-left: 4px solid #ff3d9a; box-shadow: inset -4px 0 0 #35e0ff, 0 6px 20px rgba(0,0,0,.5); }
+.toast.big { border-left-color: #5cbf4a; }

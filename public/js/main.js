@@ -879,6 +879,7 @@ function loop(now) {
     myCarId: car ? car.id : null,
     myPos: controls.pos, myYaw: car ? car.yaw : 0,
     mySpeed: move.speed || 0, mySteer: move.steer || 0,
+    night: world.sky.inside > 0.5 ? 0 : world.sky.night,
     camera,
   });
 
@@ -984,6 +985,7 @@ function loop(now) {
   hud.setClock(wt, clock.weather);
 
   pipeline.render(scene, camera, {
+    dusk: world.sky.dusk || 0,
     night: world.sky.inside > 0.5 ? 0 : world.sky.night,
     inside: world.sky.inside,
     fade,

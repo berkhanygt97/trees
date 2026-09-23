@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  BOUNDS, PLAZA, ROADS, SHOPS, ORDERS_BOARD, PLOTS, PLOT_SIZE, GATE, TRACK, RAMPS, CASINO, COTTAGES,
+  BOUNDS, PLAZA, ROADS, SHOPS, ORDERS_BOARD, PLOTS, PLOT_SIZE, GATE, TRACK, RAMPS, CASINO, COTTAGES, STRIP,
   shopCounter,
 } from '/shared/map.js';
 import { VEHICLES } from '/shared/catalog.js';
@@ -9,6 +9,7 @@ import {
   boardTexture, kerbTexture, checkerTexture, glowTexture,
   leafTexture, pineTexture, grassTuftTexture, roofTileTexture,
 } from './textures.js';
+import { buildPalms } from './palms.js';
 import { buildVehicle } from './vehicles.js';
 import { buildGun } from './guns.js';
 import { createAvatar } from './avatar.js';
@@ -122,6 +123,7 @@ export class Outdoor {
     this.lampPools = [];
     this.displays = [];     // spinning show cars
     this.keepers = [];
+    this.roadMats = [];
     this.t = 0;
 
     this._ground();
@@ -132,6 +134,83 @@ export class Outdoor {
     this._plots();
     this._track();
     this._trees();
+    this._props();
+  }
+
+  // ------------------------------------------------- palms, poles, billboards
+
+  _props() {
+    // Palms: along the Sunset Strip (between the lots), round the plaza and
+    // down the west side of main street.
+    const spots = [];
+    for (const x of [64, 90, 118, 154, 182, 196]) spots.push([x, STRIP.z0 - 3], [x, STRIP.z1 + 3]);
+    for (const [x, z] of [[-58, 44], [58, 44], [-58, 66], [58, 66], [-30, 66], [30, 66]]) spots.push([x, z]);
+    for (let z = 76; z <= 204; z += 16) spots.push([-9.4, z]);
+    const palms = buildPalms(spots);
+    this.group.add(palms.group);
+    this.obstacles.push(...palms.obstacles);
+
+    // Telegraph poles and sagging wires along the farm road.
+    const wood = phong(0x5a3f28);
+    const wireMat = new THREE.LineBasicMaterial({ color: 0x1a1a1a });
+    const poleXs = [];
+    for (let x = -255; x <= 255; x += 26) if (Math.abs(x) > 12) poleXs.push(x);
+    const top = [];
+    for (const x of poleXs) {
+      const z = 226;
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 8.5, 6), wood);
+      pole.position.set(x, 4.25, z);
+      this.group.add(pole);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 2.2), wood);
+      arm.position.set(x, 7.9, z);
+      this.group.add(arm);
+      top.push([x, z]);
+      this.obstacles.push({ x, z, r: 0.3 });
+    }
+    const pts = [];
+    for (let i = 0; i < top.length - 1; i++) {
+      for (const side of [-0.9, 0.9]) {
+        const [x0, z0] = top[i];
+        const [x1] = top[i + 1];
+        if (x1 - x0 > 40) continue;
+        // Each span sags in the middle.
+        for (let k = 0; k < 8; k++) {
+          const a = k / 8;
+          const b = (k + 1) / 8;
+          const sag = (t) => 7.9 - Math.sin(t * Math.PI) * 0.8;
+          pts.push(x0 + (x1 - x0) * a, sag(a), z0 + side, x0 + (x1 - x0) * b, sag(b), z0 + side);
+        }
+      }
+    }
+    const wireGeo = new THREE.BufferGeometry();
+    wireGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    this.group.add(new THREE.LineSegments(wireGeo, wireMat));
+
+    // Billboards facing the roads: made-up local businesses.
+    const boards = [
+      [-135, 231, Math.PI, 'CLUCKY\'S FRIED CORN', 'it is always corn o\'clock', '#ffcf3a'],
+      [135, 231, Math.PI, 'VALLEY FM 101.4', 'farm hits · all day · all night', '#35e0ff'],
+      [205, 70, -Math.PI / 2, 'SUNSET STRIP', 'eat · drink · be seen  →', '#ff3d9a'],
+      [-80, -60, Math.PI / 2, 'LOSE BIG AT CASINO ROYALE', 'the house always wins (legally)', '#f2c14e'],
+    ];
+    for (const [x, z, yaw, title, sub, color] of boards) {
+      const g = new THREE.Group();
+      for (const px of [-3.4, 3.4]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5, 0.3), phong(0x444a52));
+        leg.position.set(px, 2.5, 0);
+        g.add(leg);
+      }
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(9, 3.4), new THREE.MeshBasicMaterial({ map: boardTexture(title, color, sub) }));
+      face.position.set(0, 6.5, 0.12);
+      g.add(face);
+      const backing = new THREE.Mesh(new THREE.BoxGeometry(9.3, 3.7, 0.2), phong(0x2b2e33));
+      backing.position.set(0, 6.5, 0);
+      g.add(backing);
+      g.position.set(x, 0, z);
+      g.rotation.y = yaw;
+      this.group.add(g);
+      this.obstacles.push({ x: x + Math.cos(yaw) * 3.4, z: z - Math.sin(yaw) * 3.4, r: 0.4 }, { x: x - Math.cos(yaw) * 3.4, z: z + Math.sin(yaw) * 3.4, r: 0.4 });
+    }
   }
 
   // ---------------------------------------------------------------- ground
@@ -154,8 +233,9 @@ export class Outdoor {
       const z = pos.getZ(i);
       const big = n1(x / 60, z / 60);
       const small = n2(x / 14, z / 14);
-      const dry = Math.max(0, big - 0.55) * 1.6;
-      c.setRGB(0.92 + small * 0.16 + dry * 0.35, 0.95 + small * 0.12 + dry * 0.12, 0.85 + small * 0.1 - dry * 0.1);
+      // San Andreas countryside: plenty of sun-bleached, dusty patches.
+      const dry = Math.max(0, big - 0.45) * 1.8;
+      c.setRGB(0.92 + small * 0.16 + dry * 0.42, 0.95 + small * 0.12 + dry * 0.16, 0.85 + small * 0.1 - dry * 0.14);
       colors.push(c.r, c.g, c.b);
     }
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
@@ -164,13 +244,14 @@ export class Outdoor {
     g.material.map.repeat.set(w / 4, d / 4);
     this.group.add(g);
     // Hills on the horizon so the world does not end at a cliff of fog.
-    const hillMat = phong(0x3d6b35, { flatShading: true });
+    // Dusty, scrubby hills: some green, some baked ochre.
+    const hillMats = [0x3d6b35, 0x5f6e3a, 0x8a7a4a, 0x6b5a3a].map((c) => phong(c, { flatShading: true }));
     const rnd = seeded(7);
     for (let i = 0; i < 26; i++) {
       const a = (i / 26) * Math.PI * 2;
       const r = 420 + rnd() * 60;
       const h = 40 + rnd() * 70;
-      const hill = new THREE.Mesh(new THREE.ConeGeometry(90 + rnd() * 60, h, 7), hillMat);
+      const hill = new THREE.Mesh(new THREE.ConeGeometry(90 + rnd() * 60, h, 7), hillMats[Math.floor(rnd() * hillMats.length)]);
       hill.position.set(Math.cos(a) * r, h / 2 - 4, Math.sin(a) * r);
       this.group.add(hill);
     }
@@ -187,7 +268,9 @@ export class Outdoor {
     ROADS.forEach((r, i) => {
       const w = r.x1 - r.x0;
       const d = r.z1 - r.z0;
-      flat(this.group, r.x0, r.x1, r.z0, r.z1, 0.02 + i * 0.001, phong(0xffffff, { map: tiled(asphalt, w, d, 6) }));
+      const mat = phong(0xffffff, { map: tiled(asphalt, w, d, 6) });
+      this.roadMats.push(mat);
+      flat(this.group, r.x0, r.x1, r.z0, r.z1, 0.02 + i * 0.001, mat);
       // Dashed centre line along the long axis.
       const along = d > w;
       const len = along ? d : w;
@@ -706,8 +789,17 @@ export class Outdoor {
 
   // ------------------------------------------------------------- animation
 
-  update(dt, night) {
+  update(dt, night, wet = 0) {
     this.t += dt;
+    // Rain makes the tarmac dark and shiny, and the lights glint off it.
+    if (Math.abs((this._wet || 0) - wet) > 0.01) {
+      this._wet = wet;
+      for (const m of this.roadMats) {
+        m.color.setScalar(1 - wet * 0.35);
+        m.shininess = 8 + wet * 90;
+        m.specular.setScalar(0.07 + wet * 0.55);
+      }
+    }
     for (const d of this.displays) d.rotation.y += dt * 0.35;
     for (const k of this.keepers) k.update(dt, false, false);
     const glow = 0.35 + night * 0.65;

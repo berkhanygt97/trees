@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '/shared/config.js';
 import { buildVehicle, specOf } from './vehicles.js';
+import { glowTexture } from './textures.js';
 
 /**
  * Every vehicle in the valley. Parked ones sit where they were left (and are
@@ -92,7 +93,7 @@ export class Fleet {
     this.world.dynamicObstacles = [...this.items.values()].map((e) => ({ x: e.pos.x, z: e.pos.z, r: e.spec.radius * 0.9, vehicle: e.id }));
   }
 
-  update(dt, { myCarId, myPos, myYaw, mySpeed, mySteer, camera }) {
+  update(dt, { myCarId, myPos, myYaw, mySpeed, mySteer, camera, night = 0 }) {
     const now = performance.now();
     let moved = false;
     for (const e of this.items.values()) {
@@ -112,6 +113,13 @@ export class Fleet {
       e.mesh.update(dt, e.driver ? (e.id === myCarId ? e.speed : e.speed) : 0, e.id === myCarId ? e.steer : 0);
       const dist = camera.position.distanceTo(e.pos);
       e.mesh.showLabel(!e.driver, dist);
+      // Headlights throw a pool of light down the road after dark.
+      const lit = night > 0.25 && !!e.driver && dist < 160;
+      if (lit && !e.beam) e.beam = headlightPool(e);
+      if (e.beam) {
+        e.beam.visible = lit;
+        e.beam.material.opacity = Math.min(0.55, night * 0.6);
+      }
     }
     if (moved || myCarId) this._refreshObstacles();
   }
@@ -123,6 +131,15 @@ export class Fleet {
     const sin = Math.sin(e.yaw);
     return out.set(e.pos.x + sx * cos + sz * sin, e.pos.y + sy, e.pos.z - sx * sin + sz * cos);
   }
+}
+
+function headlightPool(e) {
+  const size = e.spec.radius * 2.6;
+  const beam = new THREE.Mesh(new THREE.PlaneGeometry(size * 1.1, size * 3).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ map: glowTexture(), color: 0xfff0c8, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+  beam.position.set(0, 0.06, -e.spec.radius - size * 1.3);
+  e.mesh.group.add(beam);
+  return beam;
 }
 
 function shortestAngle(from, to) {

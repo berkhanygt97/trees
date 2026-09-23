@@ -7,6 +7,7 @@ import {
   neonSignTexture, tileFloorTexture, decoWallTexture, awningTexture, menuBoardTexture, boardTexture,
   pavingTexture, glowTexture,
 } from './textures.js';
+import { makeHalo, dropHalo } from './neon.js';
 
 // The Sunset Strip: pastel art-deco restaurants with neon signs, a glass front
 // and a proper inside (tables, the counter, a kitchen), and "for sale" signs
@@ -100,6 +101,12 @@ export class RestaurantView {
     back.rotation.y = Math.PI / 2;
     back.position.x = 0.35;
     arch.add(back);
+    for (const [x, ry] of [[-0.45, -Math.PI / 2], [0.45, Math.PI / 2]]) {
+      const halo = makeHalo(STRIP.z1 - STRIP.z0 + 10, 2.6, '#35e0ff');
+      halo.rotation.y = ry;
+      halo.position.set(x, 8.4, (STRIP.z0 + STRIP.z1) / 2);
+      arch.add(halo);
+    }
     arch.position.set(STRIP.x0 + 3, 0, 0);
     g.add(arch);
     this.neonMats.push(face.material, back.material);
@@ -128,13 +135,14 @@ export class RestaurantView {
       this.group.remove(old.group);
       old.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
       this.neonMats = this.neonMats.filter((m) => !old.neon.includes(m));
+      for (const h of old.halos || []) dropHalo(h);
     }
     const g = new THREE.Group();
     const [cx, fz] = [(lot.x0 + lot.x1) / 2, lot.side === 'north' ? lot.z1 : lot.z0];
     g.position.set(cx, 0, fz);
     g.rotation.y = lotYaw(lot);
     this.group.add(g);
-    const entry = { group: g, key: r ? `${r.type}|${r.level}|${r.ownerName}|${r.open}` : 'sale', neon: [] };
+    const entry = { group: g, key: r ? `${r.type}|${r.level}|${r.ownerName}|${r.open}` : 'sale', neon: [], halos: [] };
     this.lots.set(lot.id, entry);
     if (r) this._restaurant(g, lot, r, entry);
     else this._forSale(g, lot);
@@ -208,6 +216,12 @@ export class RestaurantView {
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.52, W * 0.52 / 4), signMat);
     sign.position.set(0, H + 1.7, L(front) + 0.24);
     g.add(sign);
+    if (r.open) {
+      const halo = makeHalo(W * 0.52, W * 0.52 / 4, def.neon, { night: r.level >= 5 ? 0.95 : 0.7 });
+      halo.position.set(0, H + 1.7, L(front) + 0.3);
+      g.add(halo);
+      entry.halos.push(halo);
+    }
     // Level 5: neon tubes outline the whole front.
     if (r.level >= 5) {
       const tube = basic(new THREE.Color(def.neon).getHex());

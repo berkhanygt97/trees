@@ -3,6 +3,7 @@ import { Casino } from './casino.js';
 import { Outdoor } from './outdoor.js';
 import { FarmView } from './farmview.js';
 import { Sky } from './sky.js';
+import { makeHalo, updateHalos } from './neon.js';
 
 /**
  * Everything you can see: the casino building, the valley around it, the farms
@@ -15,6 +16,14 @@ export class World {
     this.outdoor = new Outdoor(scene);
     this.farms = new FarmView(scene);
     this.sky = new Sky(scene, this.casino);
+    // The big CASINO ROYALE sign glows gold after dark.
+    const sign = this.casino.outsideSign;
+    if (sign) {
+      const halo = makeHalo(40, 10, '#ffb84a', { day: 0.05, night: 0.55 });
+      halo.position.copy(sign.position);
+      halo.position.z += 0.1;
+      scene.add(halo);
+    }
 
     // Circles: casino furniture, trees, lamp posts. Boxes: walls and fences.
     this.staticObstacles = [...this.casino.obstacles, ...this.outdoor.obstacles];
@@ -41,8 +50,9 @@ export class World {
   update(dt, ctx) {
     const inside = insideCasino(ctx.camera.position.x, ctx.camera.position.z);
     this.sky.update(dt, ctx.worldTime, ctx.camera, inside);
-    this.outdoor.update(dt, this.sky.night);
+    this.outdoor.update(dt, this.sky.night, this.sky.wetness || 0);
     this.farms.update(dt, ctx.worldTime, this.sky.night);
+    updateHalos(dt, this.sky.inside > 0.5 ? 0 : this.sky.night);
     // The casino's animated games only need updating when you might see them.
     const cx = ctx.camera.position.x;
     const cz = ctx.camera.position.z;

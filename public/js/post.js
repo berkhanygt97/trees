@@ -24,6 +24,9 @@ uniform float vignette;
 uniform float hurt;
 uniform float fade;
 uniform float flash;
+uniform vec3 shadowTint;
+uniform vec3 highTint;
+uniform float lift;
 varying vec2 vUv;
 
 float bayer(vec2 p) {
@@ -52,6 +55,11 @@ void main() {
   c = mix(vec3(l), c, saturation);
   c = (c - 0.5) * contrast + 0.5;
   c *= tint;
+  // Split toning: shadows and highlights get their own colour (warm haze by
+  // day, purple and pink at dusk, teal and magenta at night), and the blacks
+  // are lifted a touch, like smog.
+  c *= mix(shadowTint, highTint, smoothstep(0.08, 0.85, l));
+  c = c * (1.0 - lift) + lift * shadowTint;
 
   vec2 d = vUv - 0.5;
   float v = dot(d, d);
@@ -100,6 +108,9 @@ export class Pipeline {
       hurt: { value: 0 },
       fade: { value: 0 },
       flash: { value: 0 },
+      shadowTint: { value: new THREE.Vector3(1, 1, 1) },
+      highTint: { value: new THREE.Vector3(1, 1, 1) },
+      lift: { value: 0 },
     };
     this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
       uniforms: this.uniforms, vertexShader: VERT, fragmentShader: FRAG, depthTest: false, depthWrite: false,
@@ -141,6 +152,23 @@ export class Pipeline {
     t.set(day[0] + (nite[0] - day[0]) * night, day[1] + (nite[1] - day[1]) * night, day[2] + (nite[2] - day[2]) * night);
     t.lerp(new THREE.Vector3(...room), inside);
     this.uniforms.saturation.value = 0.86 + inside * 0.14;
+    // Split tones: [shadows, highlights, lift] for day, dusk and night.
+    const dusk = (grade.dusk || 0) * (1 - inside);
+    const outside = 1 - inside;
+    const mix3 = (a, b, k) => a.map((v, i) => v + (b[i] - v) * k);
+    let sh = [1.04, 1.0, 0.9];
+    let hi = [1.04, 1.0, 0.92];
+    let lift = 0.035;
+    sh = mix3(sh, [1.0, 0.86, 1.12], dusk);
+    hi = mix3(hi, [1.1, 0.94, 0.92], dusk);
+    sh = mix3(sh, [0.82, 1.0, 1.14], night * outside);
+    hi = mix3(hi, [1.12, 0.9, 1.08], night * outside);
+    lift = lift + (0.02 - lift) * night;
+    sh = mix3(sh, [1, 1, 1], inside);
+    hi = mix3(hi, [1, 1, 1], inside);
+    this.uniforms.shadowTint.value.set(...sh);
+    this.uniforms.highTint.value.set(...hi);
+    this.uniforms.lift.value = lift * outside;
     this.hurt = Math.max(0, this.hurt - 1.6 * (grade.dt || 0.016));
     this.uniforms.hurt.value = this.hurt;
     this.uniforms.fade.value = grade.fade || 0;

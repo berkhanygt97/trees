@@ -133,7 +133,8 @@ export const hud = {
   setWallet(w) {
     const before = this.wallet;
     this.wallet = w;
-    this.el.money.textContent = money(w.money);
+    // San Andreas style: a green, zero-padded dollar counter.
+    this.el.money.textContent = `$${String(Math.max(0, Math.round(w.money))).padStart(8, '0')}`;
     this.el.worth.textContent = `net worth ${money(w.netWorth)}`;
     this.el.level.textContent = `LVL ${w.level}`;
     this.el.xp.style.width = `${Math.round(w.levelFrac * 100)}%`;
