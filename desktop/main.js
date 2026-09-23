@@ -198,7 +198,20 @@ ipcMain.handle('host:choose-saves', async () => {
     properties: ['openDirectory', 'createDirectory'],
   });
   if (res.canceled || !res.filePaths[0]) return status();
-  return restart({ saveDir: res.filePaths[0] });
+  const from = casino ? casino.saveDir : saveDir();
+  const to = path.resolve(res.filePaths[0]);
+  if (gameWindow && !gameWindow.isDestroyed()) gameWindow.close();
+  await shutdown();   // writes everything out first
+  // Bring the farms along, unless the folder already holds a valley of its own
+  // (then that one is loaded, which is how you switch between save sets).
+  if (to !== path.resolve(from) && fs.existsSync(from) && !fs.existsSync(path.join(to, 'world.json'))) {
+    fs.cpSync(from, to, { recursive: true });
+  }
+  settings = { ...settings, saveDir: to };
+  saveSettings();
+  await boot();
+  pushUpdate();
+  return status();
 });
 
 // ---------------------------------------------------------------- lifecycle

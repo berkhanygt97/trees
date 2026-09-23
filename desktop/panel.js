@@ -5,9 +5,9 @@ const FIELDS = ['startCash', 'port'];
 
 const FIREWALL = {
   win32: `<p><b>Windows</b> — the first time you host, Windows asks whether to let
-          Node.js communicate on the network. Tick <b>Private networks</b> and allow it.
+          <b>Harvest Royale</b> communicate on the network. Tick <b>Private networks</b> and allow it.
           If you dismissed that box: Windows Security → Firewall &amp; network protection →
-          Allow an app through firewall → find <b>Node.js</b> and tick Private.</p>`,
+          Allow an app through firewall → find <b>Harvest Royale</b> and tick Private.</p>`,
   darwin: `<p><b>macOS</b> — System Settings → Network → Firewall → Options, then allow
            incoming connections for <b>Harvest Royale</b> (or <b>node</b>). macOS usually
            prompts the first time you host; if you clicked Deny, this is where to undo it.</p>`,
