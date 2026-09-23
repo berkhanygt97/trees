@@ -4,6 +4,7 @@ import {
   CROP_BY_ID, ITEMS, HOUSES, ANIMAL_HOUSES, PROCESSORS, FIELD_MAX,
   cropProgress, isWatered, wateredFor, countsAgainstStorage, levelOf,
 } from '../shared/catalog.js';
+import { defaultLayout, cleanLayout } from '../shared/map.js';
 
 export const TILE_COUNT = FIELD_MAX * FIELD_MAX;
 
@@ -176,7 +177,15 @@ export function newProfile({ name, slug, color, hat, plot, cash, pos, yaw }) {
     gun: 'boltrifle',
     nextVid: 1,
     charityDay: 0,
-    stats: { harvested: 0, sold: 0, wagered: 0, biggestWin: 0, orders: 0, boars: 0, playSeconds: 0 },
+    // Where each building and the field sit on the plot (the farm planner).
+    layout: defaultLayout(),
+    workers: [],
+    nextWid: 1,
+    restaurant: null,
+    stats: {
+      harvested: 0, sold: 0, wagered: 0, biggestWin: 0, orders: 0, boars: 0, playSeconds: 0,
+      served: 0, deliveries: 0, wagesPaid: 0,
+    },
   };
 }
 
@@ -196,6 +205,12 @@ export function migrateProfile(p) {
   out.guns = Array.isArray(p.guns) ? p.guns.filter((g) => typeof g === 'string') : [];
   if (!out.guns.includes('boltrifle')) out.guns.unshift('boltrifle');
   if (!out.guns.includes(out.gun)) out.gun = 'boltrifle';
+  // 2.2: farm layouts, workers and restaurants. Farms from before keep every
+  // building exactly where it was.
+  out.layout = cleanLayout(p.layout);
+  out.workers = Array.isArray(p.workers) ? p.workers.filter((w) => w && typeof w === 'object' && w.id && w.role) : [];
+  out.nextWid = Number.isFinite(p.nextWid) ? p.nextWid : out.workers.length + 1;
+  out.restaurant = p.restaurant && typeof p.restaurant === 'object' && p.restaurant.lot ? p.restaurant : null;
   return out;
 }
 

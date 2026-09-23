@@ -101,22 +101,32 @@ const FIELD_X = 4;          // local x of the field's west edge
 const FIELD_Z = 66;         // local z of the field's south edge
 export const GATE = [46, 58];
 
-export function tileCenter(plot, i, j) {
-  return [plot.x0 + FIELD_X + TILE * i + TILE / 2, plot.z0 + FIELD_Z - TILE * j - TILE / 2];
+// Where a farm's field corner is. Farmers can move it with the planner; a
+// missing layout means the original spot, so old saves look the same.
+function fieldCorner(layout) {
+  const f = layout && layout.field;
+  return f ? [f.x, f.z] : [FIELD_X, FIELD_Z];
+}
+
+export function tileCenter(plot, i, j, layout) {
+  const [fx, fz] = fieldCorner(layout);
+  return [plot.x0 + fx + TILE * i + TILE / 2, plot.z0 + fz - TILE * j - TILE / 2];
 }
 
 /** Tile coordinates under a world point, or null if it is off the field. */
-export function tileAt(plot, x, z, size) {
-  const i = Math.floor((x - plot.x0 - FIELD_X) / TILE);
-  const j = Math.floor((plot.z0 + FIELD_Z - z) / TILE);
+export function tileAt(plot, x, z, size, layout) {
+  const [fx, fz] = fieldCorner(layout);
+  const i = Math.floor((x - plot.x0 - fx) / TILE);
+  const j = Math.floor((plot.z0 + fz - z) / TILE);
   if (i < 0 || j < 0 || i >= size || j >= size) return null;
   return [i, j];
 }
 
 export const tileIndex = (i, j) => j * 20 + i;
 
-// Building pads on each plot, in plot-local coordinates. Every building faces
-// south; its station sits on the doorstep.
+// Building pads on each plot, in plot-local coordinates. By default every
+// building faces south; its station sits on the doorstep. A farmer's layout
+// can move each one and turn it in quarter turns.
 export const PADS = {
   house:  { x: 58, z: 14, w: 16, d: 16 },
   coop:   { x: 10, z: 13, w: 10, d: 8 },
@@ -127,9 +137,110 @@ export const PADS = {
   bin:    { x: 64, z: 60, w: 2.4, d: 1.6 },
 };
 
-export function padWorld(plot, pad) {
+export const PAD_KEYS = Object.keys(PADS);
+
+/** The layout every farm starts with (and every save from before layouts). */
+export function defaultLayout() {
+  return {
+    pads: Object.fromEntries(PAD_KEYS.map((k) => [k, { x: PADS[k].x, z: PADS[k].z, rot: 0 }])),
+    field: { x: FIELD_X, z: FIELD_Z },
+  };
+}
+
+/**
+ * A pad's world centre and footprint. `rot` is quarter turns: 0 faces south
+ * (+z), 1 east, 2 north, 3 west. `yaw` is the matching three.js rotation.y,
+ * and `door` the unit vector out of the front door.
+ */
+export function padWorld(plot, pad, layout) {
   const p = PADS[pad];
-  return { x: plot.x0 + p.x, z: plot.z0 + p.z, w: p.w, d: p.d };
+  const l = layout && layout.pads && layout.pads[pad];
+  const rot = l ? ((l.rot | 0) % 4 + 4) % 4 : 0;
+  const swap = rot % 2 === 1;
+  const yaw = rot * (Math.PI / 2);
+  return {
+    x: plot.x0 + (l ? l.x : p.x), z: plot.z0 + (l ? l.z : p.z),
+    w: swap ? p.d : p.w, d: swap ? p.w : p.d,
+    rot, yaw, door: [Math.round(Math.sin(yaw)), Math.round(Math.cos(yaw))],
+  };
+}
+
+/** Where a farm building's station (its doorstep) is, given the owner's layout. */
+export function padStation(plot, pad, layout) {
+  const p = padWorld(plot, pad, layout);
+  const out = pad === 'bin' ? 1.8 : PADS[pad].d / 2 + 2;
+  return [p.x + p.door[0] * out, 0, p.z + p.door[1] * out];
+}
+
+// ------------------------------------------------------------ farm planner
+
+export const LAYOUT_MARGIN = 1;          // metres kept clear inside the fence
+// Nothing may sit in front of the gate: the lane from the gate into the farm.
+export const GATE_LANE = { x0: GATE[0] - 1, x1: GATE[1] + 1, z0: PLOT_SIZE - 12, z1: PLOT_SIZE };
+export const FIELD_MAX_M = 40;           // a 20 x 20 field of 2 m tiles
+
+/** Plot-local rectangles of everything in a layout, for overlap checks. */
+export function layoutRects(layout) {
+  const out = [];
+  for (const k of PAD_KEYS) {
+    const w = padWorld({ x0: 0, z0: 0 }, k, layout);
+    out.push({ id: k, x0: w.x - w.w / 2, x1: w.x + w.w / 2, z0: w.z - w.d / 2, z1: w.z + w.d / 2 });
+  }
+  const [fx, fz] = fieldCorner(layout);
+  // The field is checked at its biggest, so buying land later never lands on a building.
+  out.push({ id: 'field', x0: fx, x1: fx + FIELD_MAX_M, z0: fz - FIELD_MAX_M, z1: fz });
+  return out;
+}
+
+const overlaps = (a, b, gap = 0) => a.x0 < b.x1 + gap && b.x0 < a.x1 + gap && a.z0 < b.z1 + gap && b.z0 < a.z1 + gap;
+
+/**
+ * Checks a proposed layout. Returns { ok: true } or { ok: false, bad: [ids],
+ * error }. Shared, so the planner shows exactly what the server will accept.
+ */
+export function validateLayout(layout) {
+  if (!layout || typeof layout !== 'object' || !layout.pads || !layout.field) return { ok: false, bad: [], error: 'No layout' };
+  for (const k of PAD_KEYS) {
+    const l = layout.pads[k];
+    if (!l || ![l.x, l.z].every(Number.isFinite) || ![0, 1, 2, 3].includes(l.rot)) return { ok: false, bad: [k], error: 'Bad layout' };
+  }
+  if (![layout.field.x, layout.field.z].every(Number.isFinite)) return { ok: false, bad: ['field'], error: 'Bad layout' };
+  const rects = layoutRects(layout);
+  const bad = new Set();
+  let error = null;
+  for (const r of rects) {
+    const m = r.id === 'field' ? 2 : LAYOUT_MARGIN;
+    if (r.x0 < m || r.z0 < m || r.x1 > PLOT_SIZE - m || r.z1 > PLOT_SIZE - m) { bad.add(r.id); error = error || 'Keep everything inside the fence'; }
+    if (overlaps(r, GATE_LANE)) { bad.add(r.id); error = error || 'Keep the lane from the gate clear'; }
+  }
+  for (let a = 0; a < rects.length; a++) {
+    for (let b = a + 1; b < rects.length; b++) {
+      if (overlaps(rects[a], rects[b], 1)) {
+        bad.add(rects[a].id); bad.add(rects[b].id);
+        error = error || (rects[a].id === 'field' || rects[b].id === 'field'
+          ? 'Buildings cannot go where the field can grow to (the dashed square)'
+          : 'Buildings cannot overlap');
+      }
+    }
+  }
+  return bad.size ? { ok: false, bad: [...bad], error } : { ok: true, bad: [] };
+}
+
+/** A layout from a save or a client, cleaned up; anything odd falls back to the default. */
+export function cleanLayout(raw) {
+  const def = defaultLayout();
+  if (!raw || typeof raw !== 'object') return def;
+  const out = { pads: {}, field: { ...def.field } };
+  for (const k of PAD_KEYS) {
+    const l = raw.pads && raw.pads[k];
+    out.pads[k] = l && Number.isFinite(l.x) && Number.isFinite(l.z)
+      ? { x: Math.round(l.x * 2) / 2, z: Math.round(l.z * 2) / 2, rot: ((l.rot | 0) % 4 + 4) % 4 }
+      : { ...def.pads[k] };
+  }
+  if (raw.field && Number.isFinite(raw.field.x) && Number.isFinite(raw.field.z)) {
+    out.field = { x: Math.round(raw.field.x), z: Math.round(raw.field.z) };
+  }
+  return validateLayout(out).ok ? out : def;
 }
 
 export function plotContains(plot, x, z) {
@@ -194,15 +305,13 @@ export const TOWN_STATIONS = [
 ];
 
 /** Plot stations only work for the plot's owner, and only once built. */
-export const PLOT_STATIONS = PLOTS.flatMap((plot) => ['house', 'coop', 'barn', 'mill', 'dairy', 'bakery', 'bin'].map((pad) => {
-  const p = padWorld(plot, pad);
-  const doorstep = pad === 'bin' ? 1.8 : p.d / 2 + 2;
-  return {
-    id: `p${plot.index}-${pad}`, game: pad === 'bin' ? 'bin' : pad, plot: plot.index, pad,
-    name: pad === 'bin' ? 'Shipping Bin' : pad[0].toUpperCase() + pad.slice(1),
-    pos: [p.x, 0, p.z + doorstep], yaw: 0, radius: pad === 'bin' ? 3 : 4, solid: 0,
-  };
-}));
+// `pos` here is the default layout's doorstep; the real one depends on the
+// owner's layout (see padStation), which the server and client both apply.
+export const PLOT_STATIONS = PLOTS.flatMap((plot) => PAD_KEYS.map((pad) => ({
+  id: `p${plot.index}-${pad}`, game: pad === 'bin' ? 'bin' : pad, plot: plot.index, pad,
+  name: pad === 'bin' ? 'Shipping Bin' : pad[0].toUpperCase() + pad.slice(1),
+  pos: padStation(plot, pad), yaw: 0, radius: pad === 'bin' ? 3 : 4, solid: 0,
+})));
 
 export const ALL_STATIONS = [...CASINO_STATIONS, ...TOWN_STATIONS, ...PLOT_STATIONS];
 export const STATION_BY_ID = new Map(ALL_STATIONS.map((s) => [s.id, s]));
@@ -218,8 +327,8 @@ export const STATIC_BOXES = [
 ];
 
 /** Footprints of farm buildings, which only exist once they are bought. */
-export function padBox(plot, pad, shrink = 0) {
-  const p = padWorld(plot, pad);
+export function padBox(plot, pad, shrink = 0, layout) {
+  const p = padWorld(plot, pad, layout);
   return { x0: p.x - p.w / 2 + shrink, x1: p.x + p.w / 2 - shrink, z0: p.z - p.d / 2 + shrink, z1: p.z + p.d / 2 - shrink };
 }
 

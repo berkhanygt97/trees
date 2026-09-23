@@ -8,7 +8,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const SAVE_VERSION = 1;
+// 2: farm layouts, workers, restaurants (2.2). Older saves are migrated on load.
+export const SAVE_VERSION = 2;
 
 export function slugOf(name) {
   const base = String(name).toLowerCase().normalize('NFKD')
