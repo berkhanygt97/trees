@@ -171,7 +171,7 @@ export function boarStats(level) {
 // ------------------------------------------------------------ restaurants
 //
 // A restaurant on the Sunset Strip turns farm produce into dishes worth about
-// 1.7x their ingredients. Customers walk in, order what is in the pantry, wait
+// 1.8x their ingredients. Customers walk in, order what is in the pantry, wait
 // for the kitchen, eat, pay and leave. Levels come from dishes served.
 
 // A recipe can ask for "patty": beef from your cattle pen, or boar you shot.
@@ -213,11 +213,11 @@ export const RESTAURANTS = {
 };
 export const DISH_BY_ID = Object.fromEntries(Object.values(RESTAURANTS).flatMap((r) => r.dishes.map((d) => [d.id, d])));
 
-/** Menu price at 100%: about 1.7x what the ingredients fetch at the market. */
+/** Menu price at 100%: about 1.8x what the ingredients fetch at the market. */
 export function dishPrice(dish) {
   let v = 0;
   for (const [k, n] of Object.entries(dish.in)) v += ingredientPrice(k) * n;
-  return Math.round((v * 1.7 + 20) / 5) * 5;
+  return Math.round((v * 1.8 + 20) / 5) * 5;
 }
 
 export const RESTO_LEVELS = [0, 40, 150, 400, 900];     // dishes served to reach levels 1..5

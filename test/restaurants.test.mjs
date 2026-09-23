@@ -160,6 +160,8 @@ at(p, 'lot2-counter');
 act(p, 'resto', { action: 'open', on: false });
 room.restaurants.rt.get(2).customers.clear();
 room.restaurants.rt.get(2).orders = [];
+room.restaurants.rt.get(2).deliveries = [];
+p.carrying = null;
 const mr = p.money;
 act(p, 'resto', { action: 'remodel', type: 'bakery' });
 check('remodel into a bakery café for a quarter of the lot price', p.restaurant.type === 'bakery' && mr - p.money === LOT_BY_ID.get(2).price / 4);

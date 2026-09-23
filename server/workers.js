@@ -381,7 +381,7 @@ export class Staff {
             if (tile && typeof tile === 'object') waterTile(tile, t);
           }
           room.broadcast('tiles', { plot: p.plot, t: [[best.idx, p.field.tiles[best.idx]]] });
-          if (p.ws) room.sendWallet(p);
+          room.walletSoon(p);
         },
       },
     };
@@ -418,7 +418,7 @@ export class Staff {
           if (res.error) return;
           if (res.xp) room._gainXp(p, res.xp);
           room.broadcast('plot', room.publicPlot(p.plot));
-          if (p.ws) room.sendWallet(p);
+          room.walletSoon(p);
         },
       },
     };
@@ -462,7 +462,7 @@ export class Staff {
             const res = collectProcessor(p, best.kind, t);
             if (res.got) for (const g of res.got) room._gainXp(p, g.xp);
           }
-          if (p.ws) room.sendWallet(p);
+          room.walletSoon(p);
         },
       },
     };
@@ -499,7 +499,7 @@ export class Staff {
           room.marketDirty = true;
           if (p.ws) {
             room.send(p.id, 'toast', { text: `${w.name} sold ${count} goods for ${money(total)}.`, kind: 'info' });
-            room.sendWallet(p);
+            room.walletSoon(p);
           }
         },
       },

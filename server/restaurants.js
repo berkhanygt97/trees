@@ -270,7 +270,7 @@ export class Restaurants {
     const weather = this.room.clock.raining ? 0.7 : 1;
     const priceF = Math.max(0.3, 1.4 - 0.4 * res.price);
     const f = HOUR_RUSH[hour] * (0.5 + res.rep / 100) * priceF * weather * (0.8 + 0.1 * this.level(p));
-    const mean = 45_000 / Math.max(0.05, f);
+    const mean = 32_000 / Math.max(0.05, f);
     return (mean * (0.5 + rnd())) / this.pace;
   }
 
@@ -349,7 +349,7 @@ export class Restaurants {
     this.room._gainXp(p, paid / 60);
     this._leave(p, lot, r, c, now, true);
     this._levelCheck(p, before);
-    if (p.ws) this.room.sendWallet(p);
+    this.room.walletSoon(p);
   }
 
   _levelCheck(p, before) {
@@ -579,7 +579,7 @@ export class Restaurants {
 
       if (res.autostock && now - r.lastStock > AUTOSTOCK_MS / this.pace) {
         r.lastStock = now;
-        if (this._autostock(p)) { r.dirty = true; if (p.ws) this.room.sendWallet(p); }
+        if (this._autostock(p)) { r.dirty = true; this.room.walletSoon(p); }
       }
 
       // Customers only come in if somebody can cook: you (online) or a cook.

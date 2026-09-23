@@ -376,6 +376,14 @@ export class Room {
     });
   }
 
+  /**
+   * For updates that can happen many times a second (workers, restaurants):
+   * the wallet goes out at most four times a second instead of every time.
+   */
+  walletSoon(p) {
+    if (p.ws) p._walletDirty = true;
+  }
+
   /** Takes the stake off a player. Returns false if they cannot cover it. */
   wager(p, amount) {
     const amt = Math.round(amount);
@@ -1359,6 +1367,10 @@ export class Room {
     this.wildlife.tick();
     this.staff.tick(now);
     this.restaurants.tick(now);
+    if (now - (this.lastWalletFlush || 0) >= 250) {
+      this.lastWalletFlush = now;
+      for (const p of this.players.values()) if (p._walletDirty) { p._walletDirty = false; this.sendWallet(p); }
+    }
     this._healthTick(now, 1 / CONFIG.TICK_HZ);
 
     this.round.tick(now);

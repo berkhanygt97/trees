@@ -11,11 +11,20 @@ lot on red.
 
 Every so often **wild boars** come out of the woods and start eating your crops.
 Grandpa left you a slow old bolt rifle; Rusty's Guns in town sells better ones.
-It all looks like a 2004 console game on purpose: low-poly, soft, warm, and
-light enough to run on an old laptop.
+
+Once the farm is going: **plan it** (move and turn every building and the field),
+**hire hands** at the Job Centre to farm it for you, and open a **burger joint,
+pizzeria or bakery café on the Sunset Strip**. Your restaurant cooks with what
+your farm grows, customers walk in off the street, and from level 3 the phone
+rings with delivery orders to ride out on your scooter.
+
+It all looks like a 2004 console game on purpose: dusty San Andreas days, pink
+Vice City sunsets and neon nights, low-poly and light enough for an old laptop.
 
 **Everything is saved on the host's computer, one file per player.** Come back
-tomorrow with the same name and your farm is exactly where you left it.
+tomorrow with the same name and your farm is exactly where you left it. Saves
+from every earlier version load as they are: money, fields, buildings, cars and
+guns all come across, and every building stays exactly where it was.
 
 No installs for your guests, no accounts, no internet required once it is
 running — everything, including three.js, is served off your machine.
@@ -105,7 +114,12 @@ The server also tolerates a few missed heartbeats before giving up on anyone.
 
 The network load is small: player positions go out 20 times a second, boars 10
 times a second, and a player whose connection is struggling simply skips a
-position update rather than falling further behind. Shots and money are
+position update rather than falling further behind. Workers and restaurant
+customers are never streamed: each gets one short message when they start
+walking somewhere, and every screen walks them there itself. Casino regulars
+and people on the street cost nothing at all (every screen works out the same
+crowd from the clock). With four players, 24 workers and three busy
+restaurants, each player receives about 5 KB a second. Shots and money are
 decided on the host, so nobody can cheat by editing their browser.
 
 ### If nobody can connect
@@ -204,6 +218,10 @@ Every purchase has a shop in town, run by someone with a name tag:
 | **Tractor Barn** | tractor, plow, seeder, water tank, combine harvester |
 | **Motors** | seven cars from a $1,500 Rust Bucket to a $220,000 Hypercar |
 | **Rusty's Guns** | four better guns than Grandpa's (see below) |
+| **Job Centre** | hired hands for the farm and the restaurant (see below) |
+
+Cluck & Moo also sells a **Cattle Pen** and beef steers (for burgers), and the
+Land Office sells the **restaurant lots** on the Sunset Strip.
 
 - **Machines** — drive a tractor over your field with a plow, seeder or water
   tank hitched and it works three rows at once. The combine harvests five.
@@ -220,6 +238,81 @@ Every purchase has a shop in town, run by someone with a name tag:
 Rough pacing from the simulation in development: first car after about ten
 minutes, a tractor after about forty, a farmhouse after a few hours, a mansion
 after several evenings.
+
+### Planning your farm
+
+Your house has a **Plan my farm** button. It opens a blueprint of your plot:
+drag any building, the shipping bin or the whole field to a new spot, and `R`
+turns the selected building a quarter turn. Anything the builders would refuse
+goes red: outside the fence, in the lane from the gate, overlapping, or on the
+dashed square the field can grow to. They charge $100 for each thing they move.
+Crops move with the field. Everyone sees your new layout straight away.
+
+### Hired hands
+
+The **Job Centre** at the south end of main street has six people looking for
+work every morning. Each has a **speed** (0.6× to 1.6×), a **trait** (early bird,
+night owl, keen, easy-going, green thumb…) and a daily **wage** that goes up
+with speed. Give them a name when you hire them, and rename them any time.
+
+| Job | What they do |
+| --- | --- |
+| Field hand | plows, plants the crop you pick (buys seed when you run out, if you let them), waters, harvests |
+| Animal keeper | keeps the troughs full and collects eggs, milk and beef |
+| Workshop hand | loads the mill, dairy and bakery and empties them |
+| Seller | ships your goods to market twice a day, at 90% |
+| Cook · Waiter · Delivery driver | run your restaurant (see below) |
+
+Workers keep working **whenever the host is running**, even while you are away.
+Wages come out every morning; anyone you cannot pay takes the day off (they do
+not quit). Your house decides how many farm hands you can have: 1 in a tent, 2
+in a cabin, 4 in a farmhouse, 6 in a mansion. Manage them from the **Staff**
+button at your house or restaurant: rename, reassign, or let them go.
+
+### The Sunset Strip
+
+A palm-lined boulevard east of the plaza with eight restaurant lots: corner
+spots ($15,000, 4 tables), strip units ($35,000, 8) and boulevard lots ($80,000,
+12). Buy one at the **Land Office** from farm level 4 and pick what it is:
+
+| | Dishes | Needs |
+| --- | --- | --- |
+| 🍔 **Burger Joint** | burgers, fries, veggie burgers, cheeseburgers, shakes | flour, beef or boar, tomatoes, potatoes, cheese, milk |
+| 🍕 **Pizzeria** | soup, wedges, harvest pizza, margherita, wild boar pizza, pumpkin special | flour, tomatoes, corn, cheese, pumpkins, meat |
+| 🥐 **Bakery Café** | toast & eggs, coffee, tarts, carrot cake, cake | bread, eggs, milk, flour, strawberries, carrots, cake |
+
+A dish sells for about 1.8× what its ingredients fetch at the market. Stock the
+**pantry** from your farm storage at the counter (or leave auto-stock on). If
+you run short, the wholesaler will sell you ingredients at 1.5× market price.
+
+Customers walk in off the pavement, sit down and order **only what the pantry
+can make**. Cook and serve at the counter yourself, or hire a cook and a
+waiter. Wait too long and they walk out, and your reputation drops. Set prices
+between 80% and 150%: dearer means fewer customers.
+
+Restaurants level up by dishes served:
+
+| Level | Unlocks |
+| --- | --- |
+| 2 | more tables, more staff, more dishes |
+| 3 | **phone orders**: ride them out on your free delivery scooter |
+| 4 | more dishes and tables, potted palms |
+| 5 | VIP customers who pay double, and a neon outline on the front |
+
+**Deliveries.** Take an order at the counter and a pink beacon marks the door
+(a cottage on the farm road, somebody's farm gate, the casino…). Ride there
+before the timer runs out: the faster you are, the bigger the tip. Crash hard
+on the way and the food gets thrown about, which halves the tip. Late orders
+pay half. A hired driver takes the orders you leave for 25 seconds.
+
+You can **refit** into another kind of restaurant for a quarter of the lot price.
+
+### City life
+
+The casino has regulars now: they come in through the doors, play the slot
+machines and the tables, drink at the bar, watch the rocket and the horses,
+and cheer the odd win. More at night. People stroll down main street, round
+the plaza and along the Strip.
 
 ### Wild boars
 
@@ -308,6 +401,8 @@ server/
   save.js         atomic JSON saves with .bak recovery
   casino-events.js the rotating casino events
   boars.js        boar raids, charges and every gunshot, judged in one place
+  workers.js      hired hands: job board, wages, and their jobs through the farm rules
+  restaurants.js  the Sunset Strip: customers, orders, pantry, levels, deliveries
   games/          one module per casino game; outcomes decided here, never on a client
 shared/
   catalog.js      every crop, item, building, vehicle and price, plus crop growth
@@ -328,8 +423,16 @@ public/js/
   guns.js         every gun, built from boxes with wood and steel textures
   weapons.js      your gun: aiming, firing, reloading, recoil, tracers
   cockpit.js      dashboards, instrument clusters and the steering wheel
+  people.js       low-poly townsfolk: five draw calls a person
+  workersview.js  hired hands, played back from their job events
+  npcs.js         restaurant customers and crowds, walked along their paths
+  crowd.js        casino regulars and passers-by, the same on every screen
+  restaurantview.js the Strip: restaurants inside and out, cottages
+  palms.js · neon.js palm trees; neon glow
   boarsview.js    boars on screen, between the server's snapshots
   ui/             one panel per shop, farm building and casino game
+                  (planner.js: the farm blueprint; jobs.js: hiring and staff;
+                   restaurant.js: the counter)
 desktop/          Electron host app: runs the server in-process, shows the panel
 ```
 
