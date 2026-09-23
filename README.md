@@ -9,6 +9,11 @@ tractor, a combine, chickens and cows, a windmill and a bakery, a bigger house,
 and a car that is far too fast for a farm road. Or skip all that and put the
 lot on red.
 
+Every so often **wild boars** come out of the woods and start eating your crops.
+Grandpa left you a slow old bolt rifle; Rusty's Guns in town sells better ones.
+It all looks like a 2004 console game on purpose: low-poly, soft, warm, and
+light enough to run on an old laptop.
+
 **Everything is saved on the host's computer, one file per player.** Come back
 tomorrow with the same name and your farm is exactly where you left it.
 
@@ -91,6 +96,18 @@ Documents\Harvest Royale\saves\       (desktop app; `saves/` next to the server 
 Built for 3–4 players; there are six farms, so a couple of new names can still
 turn up and get land.
 
+### If someone's Wi-Fi drops
+
+Their game notices and quietly reconnects on its own, back where they were. If
+the host has not noticed yet that the old connection died, the new one simply
+takes it over (it is the same browser), so nobody sees "already playing".
+The server also tolerates a few missed heartbeats before giving up on anyone.
+
+The network load is small: player positions go out 20 times a second, boars 10
+times a second, and a player whose connection is struggling simply skips a
+position update rather than falling further behind. Shots and money are
+decided on the host, so nobody can cheat by editing their browser.
+
 ### If nobody can connect
 
 - **Firewall on the host.** On Windows, the first time you host it asks whether
@@ -114,11 +131,15 @@ turn up and get land.
 | Mouse | Look (click to capture the pointer) |
 | `E` or left click | Use what you are standing at, or **farm the tile you are looking at** — hold it and walk along a row |
 | `1`–`7`, mouse wheel | Pick a seed |
+| `Q` | Get your gun out / put it away |
+| Left click · right click | With the gun out: fire · aim down the sights |
+| `R` · `T` | Reload · switch to your next gun |
 | `F` | Get in / out of your vehicle |
 | `V` | Driver's seat or chase camera |
 | `G` | Swap the tractor's implement |
-| `Q` / `Esc` | Leave a shop or table |
+| `Esc` (or `Q`) | Leave a shop or table |
 | `Tab` | Rich list and your storage |
+| `P` | Graphics: PS2 (soft) → Sharp → Potato |
 | `H` | Help |
 | `C` | Smoke your cigar |
 | `M` | Mute |
@@ -182,6 +203,7 @@ Every purchase has a shop in town, run by someone with a name tag:
 | **Land Office** | field expansions: 8×8 → 12×12 → 16×16 → 20×20 |
 | **Tractor Barn** | tractor, plow, seeder, water tank, combine harvester |
 | **Motors** | seven cars from a $1,500 Rust Bucket to a $220,000 Hypercar |
+| **Rusty's Guns** | four better guns than Grandpa's (see below) |
 
 - **Machines** — drive a tractor over your field with a plow, seeder or water
   tank hitched and it works three rows at once. The combine harvests five.
@@ -198,6 +220,42 @@ Every purchase has a shop in town, run by someone with a name tag:
 Rough pacing from the simulation in development: first car after about ten
 minutes, a tractor after about forty, a farmhouse after a few hours, a mansion
 after several evenings.
+
+### Wild boars
+
+While you are online and have crops in the ground, a herd raids your field
+every 7–13 minutes or so (the first one waits at least 6 minutes after you
+arrive). They trot out of the woods behind your plot, eat a tile at a time, and
+leave once they are full or have been at it for a couple of minutes.
+
+- **Get close and one will charge.** It paws the ground and grunts first — that
+  is your warning — then runs at you in a straight line. **Step sideways** and
+  it thunders past. Only one boar goes for a given farmer at a time.
+- **Shoot one** and it comes for you, even from across the field.
+- **Hits hurt.** Health comes back on its own after a few seconds out of
+  trouble. At zero you are knocked flat and wake up at your gate a few seconds
+  later. You lose nothing.
+- **A kill pays** a bounty, XP and boar meat (which sells at the market).
+  Headshots do double damage. Running one over with any vehicle works too.
+- **They grow with your farm.** Stats by farm level:
+
+| Farm level | Boars per raid | Health | Hit | Bounty |
+| --- | --- | --- | --- | --- |
+| 1 | 2 | 100 | 14 | $55 |
+| 5 | 3 | 180 | 22 | $115 |
+| 10 | 4 | 280 | 32 | $190 |
+| 15 | 5 | 380 | 42 | $265 |
+
+There is no friendly fire: bullets only hit boars. Ammo is free; you just have
+to reload.
+
+| Gun | Price | Level | Damage | Rounds | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Grandpa's Bolt Rifle | free | 1 | 55 | 5 | 1.7 s to work the bolt |
+| Lever-Action .30 | $2,500 | 3 | 50 | 8 | twice as quick |
+| Pump Shotgun | $4,500 | 4 | 8 × 17 | 6 | brutal up close, useless past ~30 m |
+| Semi-Auto Rifle | $9,000 | 6 | 40 | 15 | as fast as you can click |
+| Big Game Rifle | $18,000 | 8 | 170 | 4 | with a scope |
 
 ### The casino
 
@@ -225,6 +283,10 @@ Out past the back of the casino. A loop with kerbs, a grandstand and three
 ramps. No timing, no rules — it is just somewhere to find out what the Hypercar
 does off a ramp.
 
+You drive from the driver's seat: a dashboard, a working speedometer and rev
+counter (the tractor gets its own farm-style gauges), and your hands on a wheel
+that turns. `V` swaps to a chase camera with the same dials on screen.
+
 ### The rich list
 
 Net worth = cash + half the price of everything you own (vehicles, buildings,
@@ -245,6 +307,7 @@ server/
   clock.js        world time and weather; only moves while the server runs
   save.js         atomic JSON saves with .bak recovery
   casino-events.js the rotating casino events
+  boars.js        boar raids, charges and every gunshot, judged in one place
   games/          one module per casino game; outcomes decided here, never on a client
 shared/
   catalog.js      every crop, item, building, vehicle and price, plus crop growth
@@ -260,6 +323,12 @@ public/js/
   fleet.js        every vehicle in the world, parked or moving
   sky.js          sun, moon, stars, rain, lightning, indoor/outdoor lighting
   controls.js     walking, driving, ramps and collision
+  post.js         the PS2 look: low-res render, colour grade, dither; hands drawn on top
+  avatar.js       farmer avatars and your first-person hands
+  guns.js         every gun, built from boxes with wood and steel textures
+  weapons.js      your gun: aiming, firing, reloading, recoil, tracers
+  cockpit.js      dashboards, instrument clusters and the steering wheel
+  boarsview.js    boars on screen, between the server's snapshots
   ui/             one panel per shop, farm building and casino game
 desktop/          Electron host app: runs the server in-process, shows the panel
 ```
@@ -273,6 +342,11 @@ Crops cost nothing to simulate: each tile stores when it was planted and
 watered, and growth is worked out from the world clock whenever someone looks.
 That is also why offline farms keep growing and why stopping the clock is
 enough to freeze the whole valley.
+
+Gunshots are judged on the host too: it checks the shot came from where you are
+standing, that the gun was ready and loaded, and then traces it against where
+each boar was on your screen a moment ago (your view is always about a tenth of
+a second behind) as well as where it is now.
 
 There are still no image, audio or font files in the project. Every texture is
 drawn into a `<canvas>` at startup and every sound is synthesised.

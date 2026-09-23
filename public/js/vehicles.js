@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { VEHICLE_BY_ID } from '/shared/catalog.js';
-import { labelSprite } from './textures.js';
+import { labelSprite, shadowTexture } from './textures.js';
 
 // Every vehicle is built from boxes and cylinders, like the rest of the world.
 // Local frame: forward is -Z (the same as a player's yaw), up is +Y.
@@ -23,8 +23,8 @@ export const SPECS = {
   coupe:   { radius: 1.4, seat: [-0.4, 0.35, 0.4],   cam: [0, 3.0, 8],    eye: 0.9 },
   limo:    { radius: 1.6, seat: [-0.4, 0.45, -2.4],  cam: [0, 4.0, 11.5], eye: 1.05 },
   hyper:   { radius: 1.4, seat: [-0.35, 0.28, 0.3],  cam: [0, 2.8, 7.8],  eye: 0.8 },
-  tractor: { radius: 1.6, seat: [0, 1.25, 0.5],      cam: [0, 4.6, 9],    eye: 2.3, work: 3.4 },
-  combine: { radius: 2.8, seat: [0, 2.6, -1.2],      cam: [0, 7.5, 14],   eye: 3.7, work: -4.6 },
+  tractor: { radius: 1.6, seat: [0, 1.3, 0.75],      cam: [0, 4.6, 9],    eye: 0.95, work: 3.4 },
+  combine: { radius: 2.8, seat: [0, 3.4, -1.0],      cam: [0, 7.5, 14],   eye: 1.0, work: -4.6 },
 };
 
 export const specOf = (modelId) => SPECS[(VEHICLE_BY_ID[modelId] || {}).body] || SPECS.sedan;
@@ -222,6 +222,16 @@ export function buildVehicle(modelId, color = '#d93a3a', { implement = null, lab
   BUILDERS[model.body](body, wheels, paint);
 
   const spec = SPECS[model.body];
+
+  // A soft blob shadow under the car, sized from its footprint.
+  const bbox = new THREE.Box3().setFromObject(body);
+  const size = bbox.getSize(new THREE.Vector3());
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(size.x * 1.25, size.z * 1.15),
+    new THREE.MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false }));
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.set((bbox.min.x + bbox.max.x) / 2, 0.035, (bbox.min.z + bbox.max.z) / 2);
+  group.add(shadow);
+
   const hitch = new THREE.Group();
   hitch.position.set(0, 0, spec.work || 3.4);
   body.add(hitch);
@@ -238,7 +248,7 @@ export function buildVehicle(modelId, color = '#d93a3a', { implement = null, lab
   let tag = null;
   if (label) {
     tag = labelSprite(label, color, 0.45);
-    tag.position.y = spec.eye + 2.2;
+    tag.position.y = bbox.max.y + 0.9;
     tag.userData.base = { x: tag.scale.x, y: tag.scale.y };
     group.add(tag);
   }
@@ -250,6 +260,9 @@ export function buildVehicle(modelId, color = '#d93a3a', { implement = null, lab
     spec,
     setImplement,
     get implement() { return currentImpl; },
+    body,
+    /** Keeps the shadow on the ground while the car flies off a ramp. */
+    setAir(h) { shadow.position.y = 0.035 - h; shadow.material.opacity = Math.max(0.15, 1 - h / 6); },
     setColor(c) { paint.color.set(c); },
     showLabel(v, distance = 10) {
       if (!tag) return;

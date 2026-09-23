@@ -24,9 +24,11 @@ export class Controls {
     this.onStep = null;
     this.onBump = null;
 
-    // Set while driving: { id, model, spec, yaw, speed, steer, vy, air, chase }.
+    // Set while driving: { id, model, spec, yaw, speed, steer, vy, air }.
     this.car = null;
-    this.chase = true;
+    this.chase = false;     // first person from the driver's seat by default
+    this.frozen = false;    // knocked out: no control until you come round
+    this.aiming = false;
     this.lookYaw = 0;       // mouse look relative to the car
     this.lookPitch = -0.12;
 
@@ -43,9 +45,13 @@ export class Controls {
     });
     document.addEventListener('mousemove', (e) => {
       if (!this.locked) return;
-      const s = SENS_BASE * this.sensitivity;
+      // Slower while aiming down the sights, so small corrections are easy.
+      const s = SENS_BASE * this.sensitivity * (this.aiming ? 0.55 : 1);
+      if (this.frozen) return;
       if (this.car) {
-        this.lookYaw -= e.movementX * s;
+        // In the seat you can turn your head, not spin round like an owl.
+        const lim = this.chase ? Math.PI : 1.9;
+        this.lookYaw = Math.max(-lim, Math.min(lim, this.lookYaw - e.movementX * s));
         this.lookPitch = Math.max(-0.9, Math.min(0.5, this.lookPitch - e.movementY * s));
         return;
       }
@@ -72,7 +78,16 @@ export class Controls {
     this.car = { id, model, spec, yaw, speed: 0, steer: 0, vy: 0, air: false };
     this.pos.set(pos[0], pos[1] || 0, pos[2]);
     this.lookYaw = 0;
-    this.lookPitch = -0.12;
+    this.lookPitch = this.chase ? -0.12 : -0.08;
+  }
+
+  /** A boar hit you: shove you away from it and up off your feet. */
+  knock(dx, dz, strength = 9) {
+    const len = Math.hypot(dx, dz) || 1;
+    this.vel.x += (dx / len) * strength;
+    this.vel.z += (dz / len) * strength;
+    this.vel.y = 4.5;
+    this.onGround = false;
   }
 
   /** Step out beside the driver's door. Returns where the car was left. */
@@ -101,7 +116,7 @@ export class Controls {
 
   _walk(dt) {
     const k = this.keys;
-    const active = this.locked && this.enabled;
+    const active = this.locked && this.enabled && !this.frozen;
 
     let fwd = 0;
     let strafe = 0;
@@ -112,8 +127,8 @@ export class Controls {
       if (k.has('KeyA') || k.has('ArrowLeft')) strafe -= 1;
     }
 
-    const sprinting = active && (k.has('ShiftLeft') || k.has('ShiftRight')) && fwd > 0;
-    const speed = sprinting ? CONFIG.SPRINT_SPEED : CONFIG.WALK_SPEED;
+    const sprinting = active && (k.has('ShiftLeft') || k.has('ShiftRight')) && fwd > 0 && !this.aiming;
+    const speed = (sprinting ? CONFIG.SPRINT_SPEED : CONFIG.WALK_SPEED) * (this.aiming ? 0.5 : 1);
     const moving = fwd !== 0 || strafe !== 0;
 
     const sin = Math.sin(this.yaw);
@@ -128,8 +143,8 @@ export class Controls {
       dz = (-cos * f - sin * s) * speed;
     }
 
-    // Snappy but not frictionless.
-    const accel = this.onGround ? 14 : 3;
+    // Snappy but not frictionless (and no steering at all mid-knockback).
+    const accel = this.onGround ? 14 : 1.5;
     this.vel.x += (dx - this.vel.x) * Math.min(1, accel * dt);
     this.vel.z += (dz - this.vel.z) * Math.min(1, accel * dt);
 
@@ -232,7 +247,7 @@ export class Controls {
 
     // Camera: chase cam by default, V for the driver's seat.
     const lookYaw = c.yaw + this.lookYaw;
-    if (!k.has('KeyV')) this.lookYaw *= Math.pow(0.35, dt * (Math.abs(c.speed) > 3 ? 1 : 0.2));
+    if (this.chase) this.lookYaw *= Math.pow(0.35, dt * (Math.abs(c.speed) > 3 ? 1 : 0.2));
     if (this.chase) {
       const [, h, dist] = c.spec.cam;
       const back = new THREE.Vector3(Math.sin(lookYaw), 0, Math.cos(lookYaw));

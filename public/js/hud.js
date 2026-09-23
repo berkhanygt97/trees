@@ -1,6 +1,7 @@
 import { CONFIG, money } from '/shared/config.js';
 import { CROPS, ITEMS, DAY_MS, HOUR_MS } from '/shared/catalog.js';
 import { sfx } from './sfx.js';
+import { drawCluster } from './cockpit.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -46,7 +47,16 @@ export const hud = {
       help: $('#help'),
       seedbar: $('#seedbar'),
       speedo: $('#speedo'),
-      kmh: $('#s-kmh'),
+      cluster: $('#s-cluster'),
+      crosshair: $('#crosshair'),
+      hitmark: $('#hitmark'),
+      health: $('#health'),
+      hpFill: $('#hp-fill'),
+      ammo: $('#ammo'),
+      ammoMag: $('#ammo-mag'),
+      ammoMax: $('#ammo-max'),
+      ammoName: $('#ammo-name'),
+      ko: $('#ko'),
       carName: $('#s-name'),
       carHint: $('#s-hint'),
       panel: $('#panel'),
@@ -219,17 +229,61 @@ export const hud = {
 
   // ---------------------------------------------------------------- speedo
 
+  /** The instrument cluster: drawn on screen in chase view; in the seat it is on the dashboard. */
   setSpeedo(car) {
     if (!car) { this.el.speedo.hidden = true; return; }
     this.el.speedo.hidden = false;
-    const kmh = Math.round(Math.abs(car.speed) * 3.6);
-    if (kmh !== this._kmh) { this._kmh = kmh; this.el.kmh.textContent = kmh; }
-    if (car.label !== this._carLabel) {
+    this.el.speedo.classList.toggle('cockpit', !!car.cockpit);
+    if (!car.cockpit) {
+      const now = performance.now();
+      if (!this._clusterAt || now - this._clusterAt > 33) {
+        this._clusterAt = now;
+        const cv = this.el.cluster;
+        drawCluster(cv.getContext('2d'), cv.width, cv.height, { speed: car.speed, top: car.top, body: car.body, night: car.night });
+      }
+    }
+    if (car.label !== this._carLabel || car.hint !== this._carHint) {
       this._carLabel = car.label;
+      this._carHint = car.hint;
       this.el.carName.textContent = car.label;
       this.el.carHint.innerHTML = car.hint;
     }
   },
+
+  // ----------------------------------------------------------- guns, health
+
+  setHealth(hp) {
+    this.el.health.hidden = hp >= 100;
+    this.el.hpFill.style.width = `${Math.max(0, Math.min(100, hp))}%`;
+  },
+
+  setAmmo(state) {
+    if (!state) { this.el.ammo.hidden = true; return; }
+    this.el.ammo.hidden = false;
+    const text = state.reloading ? '…' : String(state.mag);
+    if (text !== this._magShown) { this._magShown = text; this.el.ammoMag.textContent = text; }
+    this.el.ammoMax.textContent = `/ ${state.max}`;
+    this.el.ammoName.textContent = state.name.toUpperCase();
+    this.el.ammo.querySelector('.count').classList.toggle('low', !state.reloading && state.mag <= 1);
+  },
+
+  setCrosshair(mode) {
+    if (mode === this._cross) return;
+    this._cross = mode;
+    this.el.crosshair.classList.toggle('gun', mode === 'gun');
+    this.el.crosshair.classList.toggle('hide', mode === 'hide' || mode === 'scope');
+    document.getElementById('scope').hidden = mode !== 'scope';
+  },
+
+  hitmark(kill) {
+    const el = this.el.hitmark;
+    el.hidden = false;
+    el.classList.toggle('kill', !!kill);
+    clearTimeout(this._hitTimer);
+    this._hitTimer = setTimeout(() => { el.hidden = true; }, kill ? 420 : 180);
+  },
+
+  showKo(v) { this.el.ko.hidden = !v; },
 
   // --------------------------------------------------------------- prompt
 

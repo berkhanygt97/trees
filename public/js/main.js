@@ -3,7 +3,7 @@ import { CONFIG, money } from '/shared/config.js';
 import {
   CROP_BY_ID, ITEMS, VEHICLE_BY_ID, IMPLEMENT_BY_ID, nextAction, cropProgress, isWatered,
 } from '/shared/catalog.js';
-import { ALL_STATIONS, PLOTS, TILE, tileAt, tileCenter } from '/shared/map.js';
+import { ALL_STATIONS, PLOTS, TILE, tileAt, tileCenter, groundHeight } from '/shared/map.js';
 import { net } from './net.js';
 import { sfx } from './sfx.js';
 import { hud } from './hud.js';
@@ -13,6 +13,11 @@ import { Controls } from './controls.js';
 import { createAvatar, createViewModel } from './avatar.js';
 import { Smoke } from './fx.js';
 import { GAME_UIS } from './ui/index.js';
+import { Pipeline } from './post.js';
+import { BoarView } from './boarsview.js';
+import { Weapons } from './weapons.js';
+import { buildCockpit } from './cockpit.js';
+import { shadowTexture } from './textures.js';
 
 const canvas = document.getElementById('scene');
 const joinScreen = document.getElementById('join');
@@ -20,7 +25,11 @@ const nameInput = document.getElementById('name');
 const enterBtn = document.getElementById('enter');
 const joinStatus = document.getElementById('join-status');
 
-let renderer, scene, camera, world, fleet, controls, viewModel, smoke, selfAvatar;
+let renderer, scene, camera, world, fleet, controls, viewModel, smoke, selfAvatar, pipeline, boars, weapons;
+let cockpit = null;              // { id, obj } for the vehicle you are sitting in
+let hp = 100;
+let koUntil = 0;
+let koSpawn = null;
 const tmpVec = new THREE.Vector3();
 let me = null;
 const avatars = new Map();       // playerId -> { avatar, target, shadow }
@@ -45,22 +54,39 @@ nameInput.value = localStorage.getItem('valley.name') || localStorage.getItem('c
 nameInput.focus();
 nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') enterBtn.click(); });
 
+let autoJoin = false;
 enterBtn.addEventListener('click', async () => {
   const name = nameInput.value.trim();
   if (!name) { joinStatus.textContent = 'Type a name — your farm is saved under it.'; return; }
   enterBtn.disabled = true;
-  joinStatus.textContent = 'Walking in…';
+  joinStatus.textContent = autoJoin ? 'Reconnecting to the valley…' : 'Walking in…';
   localStorage.setItem('valley.name', name);
   try {
     sfx.unlock();
     await net.connect(name);
   } catch (err) {
-    joinStatus.textContent = err.message;
     enterBtn.disabled = false;
+    if (autoJoin) {
+      // The host may be restarting: keep knocking quietly.
+      joinStatus.textContent = 'Host not answering yet — retrying…';
+      setTimeout(() => enterBtn.click(), 3000);
+    } else {
+      joinStatus.textContent = err.message;
+    }
   }
 });
 
+// After a dropped connection the page reloads itself and walks straight back in.
+try {
+  if (sessionStorage.getItem('valley.autojoin') && nameInput.value) {
+    autoJoin = true;
+    setTimeout(() => enterBtn.click(), 300);
+  }
+} catch { /* storage blocked: the player just clicks */ }
+
 net.on('denied', (d) => {
+  autoJoin = false;
+  try { sessionStorage.removeItem('valley.autojoin'); } catch { /* ignore */ }
   joinStatus.textContent = d.reason;
   enterBtn.disabled = false;
 });
@@ -70,7 +96,8 @@ const worldTime = () => clock.time + (net.now() - clock.serverNow) * clock.rate;
 // ------------------------------------------------------------------ scene
 
 function initScene() {
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  // No MSAA: the world is drawn at a reduced resolution and scaled up soft anyway.
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -85,13 +112,22 @@ function initScene() {
   fleet = new Fleet(scene, world);
   smoke = new Smoke(scene);
   controls = new Controls(camera, canvas, world);
+  pipeline = new Pipeline(renderer);
+  boars = new BoarView(scene);
+  const heard = (e) => Math.max(0, 1 - camera.position.distanceTo(e.pos) / 90);
+  boars.onCharge = (e) => sfx.grunt(heard(e));
+  boars.onHurt = (e) => sfx.squeal(heard(e) * 0.7);
+  boars.onDeath = (e) => sfx.squeal(heard(e));
+  weapons = new Weapons({ scene, camera, net, hud, sfx, boars, controls });
   controls.onStep = () => sfx.step();
   controls.onBump = (v) => { if (v > 9) sfx.deny(); };
   world.sky.onThunder = () => sfx.alarm && sfx.alarm();
 
   // Debug handle: useful when you are hosting and want to poke at the valley.
   window.casino = {
-    controls, world, fleet, scene, camera, net, hud, gameStates,
+    controls, world, fleet, scene, camera, net, hud, gameStates, pipeline, boars, weapons,
+    get cockpit() { return cockpit; },
+    get hp() { return hp; },
     get panel() { return activePanel; },
     get viewModel() { return viewModel; },
     smoke,
@@ -105,12 +141,14 @@ function initScene() {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
+    pipeline.resize();
   });
 }
 
 // ------------------------------------------------------------- net handlers
 
 net.on('welcome', (d) => {
+  try { sessionStorage.setItem('valley.autojoin', '1'); } catch { /* ignore */ }
   if (d.config) Object.assign(CONFIG, d.config);
   me = d.you;
   hud.meId = me.id;
@@ -125,8 +163,9 @@ net.on('welcome', (d) => {
   world.sky.setWeather(clock.weather);
 
   viewModel = createViewModel(me.color);
-  camera.add(viewModel.group);
-  scene.add(camera);
+  pipeline.overlayCamera.add(viewModel.group);
+  weapons.attach(viewModel);
+  boars.apply(d.boars || []);
 
   selfAvatar = createAvatar({ name: me.name, color: me.color, hat: me.hat, showLabel: false });
   selfAvatar.group.visible = false;
@@ -169,10 +208,11 @@ net.on('players', (list) => {
 });
 
 net.on('snap', (rows) => {
-  for (const [id, x, y, z, yaw, , vid] of rows) {
+  for (const [id, x, y, z, yaw, , vid, , gun] of rows) {
     if (id === me.id) continue;
     const a = avatars.get(id);
     if (!a) continue;
+    a.avatar.setGun(gun || null);
     a.prev.copy(a.target);
     a.target.set(x, y, z);
     a.targetYaw = yaw;
@@ -184,6 +224,7 @@ net.on('snap', (rows) => {
 
 net.on('wallet', (w) => {
   hud.setWallet(w);
+  if (weapons) weapons.setOwned(w.guns, w.gun);
   if (activePanel && activePanel.ui.onWallet) activePanel.ui.onWallet(w);
 });
 
@@ -224,6 +265,35 @@ net.on('vehicles', (list) => {
     const e = fleet.get(controls.car.id);
     if (!e || (e.driver && e.driver !== me.id)) leaveCar(false);
   }
+});
+
+// ---------------------------------------------------------- boars and guns
+
+net.on('boars', (rows) => { if (boars) boars.apply(rows); });
+net.on('shotres', (d) => { if (weapons) weapons.onShotRes(d); });
+net.on('ammo', (d) => { if (weapons) weapons.onAmmo(d); });
+net.on('shot', (d) => {
+  if (!weapons) return;
+  weapons.onRemoteShot(d, camera.position);
+});
+
+net.on('hurt', (d) => {
+  hp = d.hp;
+  hud.setHealth(hp);
+  pipeline.ouch(Math.min(1, 0.35 + d.dmg / 40));
+  sfx.hurt();
+  if (!controls.car && d.dir) controls.knock(d.dir[0], d.dir[1], 7 + d.dmg * 0.1);
+});
+
+net.on('hp', (d) => { hp = d.hp; hud.setHealth(hp); });
+
+net.on('ko', (d) => {
+  koUntil = performance.now() + d.ms;
+  koSpawn = d;
+  controls.frozen = true;
+  weapons.holster();
+  if (activePanel) closePanel();
+  hud.showKo(true);
 });
 
 // Somebody took a draw — puff smoke from their cigar.
@@ -270,8 +340,12 @@ net.on('toast', (t) => {
 
 net.on('__closed', () => {
   if (!me) return;   // a refused join closes the socket too
+  // Connection dropped: show it, then reload and rejoin under the same name.
+  // The server hands the farm straight back to this browser.
   document.getElementById('disconnected').hidden = false;
   if (controls) controls.unlock();
+  try { sessionStorage.setItem('valley.autojoin', '1'); } catch { /* ignore */ }
+  setTimeout(() => location.reload(), 2000);
 });
 
 // ---------------------------------------------------------------- avatars
@@ -280,8 +354,8 @@ function addAvatar(p) {
   const avatar = createAvatar({ name: p.name, color: p.color, hat: p.hat });
   scene.add(avatar.group);
   const shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(0.6, 16),
-    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.32 }),
+    new THREE.PlaneGeometry(1.3, 1.3),
+    new THREE.MeshBasicMaterial({ map: shadowTexture(), transparent: true, depthWrite: false }),
   );
   shadow.rotation.x = -Math.PI / 2;
   shadow.position.y = 0.02;
@@ -430,6 +504,7 @@ function workAim() {
   if (now - lastWorkSent < 190) return;
   lastWorkSent = now;
   net.send('work', { tiles: [[aim.i, aim.j]], seed: hud.seed });
+  if (viewModel) viewModel.gesture();
   if (aim.action === 'plow') sfx.step();
   else if (aim.action === 'water') sfx.click();
 }
@@ -477,7 +552,12 @@ function enterCar(e) {
   controls.enterCar({ id: e.id, model, spec: e.spec, pos: [e.pos.x, e.pos.y, e.pos.z], yaw: e.yaw });
   e.driver = me.id;
   net.send('drive', { vid: e.id });
+  weapons.holster();
   viewModel.group.visible = false;
+  // Build the inside of the car: dashboard, cluster, wheel and your hands.
+  cockpit = { id: e.id, obj: buildCockpit(model.body, e.spec, me.color) };
+  e.mesh.group.add(cockpit.obj.group);
+  cockpit.obj.group.visible = !controls.chase;
   hud.showSeeds(model.kind === 'machine');
   sfx.click();
   sfx.engineStart(model.kind === 'machine');
@@ -489,9 +569,18 @@ function leaveCar(tellServer = true) {
   if (tellServer) net.send('drive', { vid: null, pos: parked.pos, yaw: parked.yaw });
   viewModel.group.visible = true;
   selfAvatar.group.visible = false;
+  dropCockpit();
   hud.setSpeedo(null);
   hud.showSeeds(hud.wallet.plot >= 0);
   sfx.engineStop();
+}
+
+function dropCockpit() {
+  if (!cockpit) return;
+  const e = fleet.get(cockpit.id);
+  if (e) e.mesh.group.remove(cockpit.obj.group);
+  cockpit.obj.dispose();
+  cockpit = null;
 }
 
 function cycleImplement() {
@@ -558,7 +647,22 @@ addEventListener('keydown', (e) => {
     else if (nearCar) enterCar(nearCar);
     return;
   }
-  if (e.code === 'KeyV' && controls.car) { controls.chase = !controls.chase; return; }
+  if (e.code === 'KeyV' && controls.car) {
+    controls.chase = !controls.chase;
+    controls.lookYaw = 0;
+    controls.lookPitch = controls.chase ? -0.12 : -0.08;
+    if (cockpit) cockpit.obj.group.visible = !controls.chase;
+    return;
+  }
+  if (e.code === 'KeyP') {
+    const q = pipeline.cycleQuality();
+    hud.toast(`Graphics: ${q.name}`, 'info');
+    return;
+  }
+  if (controls.frozen) return;
+  if (e.code === 'KeyQ' && !controls.car) { weapons.toggle(); return; }
+  if (e.code === 'KeyR') { weapons.reload(); return; }
+  if (e.code === 'KeyT' && !controls.car) { weapons.cycle(); return; }
   if (e.code === 'KeyG') { cycleImplement(); return; }
 
   if (e.code === 'KeyC') {
@@ -586,12 +690,19 @@ addEventListener('keyup', (e) => {
 });
 
 addEventListener('mousedown', (e) => {
-  if (!me || activePanel || !controls.locked || e.button !== 0) return;
+  if (!me || activePanel || !controls.locked || controls.frozen) return;
+  if (e.button === 2) { weapons.setAiming(true); return; }
+  if (e.button !== 0) return;
+  if (weapons.out && !controls.car) { weapons.fire(); return; }
   holding = true;
   lastWorkSent = 0;
   workAim();
 });
-addEventListener('mouseup', (e) => { if (e.button === 0) holding = false; });
+addEventListener('mouseup', (e) => {
+  if (e.button === 0) holding = false;
+  if (e.button === 2 && weapons) weapons.setAiming(false);
+});
+addEventListener('contextmenu', (e) => e.preventDefault());
 addEventListener('wheel', (e) => {
   if (!me || activePanel || !controls || !controls.locked) return;
   hud.cycleSeed(e.deltaY > 0 ? 1 : -1);
@@ -607,6 +718,25 @@ function loop(now) {
   last = now;
   const serverNow = net.now();
   const wt = worldTime();
+
+  // Knocked out: fade to black, come round at your gate.
+  let fade = 0;
+  if (koUntil) {
+    const left = koUntil - performance.now();
+    fade = left > 700 ? Math.min(1, (performance.now() - (koUntil - koSpawn.ms)) / 500) : Math.max(0, left / 700);
+    if (left <= 700 && koSpawn.spawn) {
+      controls.pos.set(koSpawn.spawn[0], 0, koSpawn.spawn[2]);
+      controls.yaw = koSpawn.yaw || 0;
+      controls.pitch = 0;
+      controls.vel.set(0, 0, 0);
+      koSpawn.spawn = null;
+    }
+    if (left <= 0) {
+      koUntil = 0;
+      controls.frozen = false;
+      hud.showKo(false);
+    }
+  }
 
   const move = controls.update(dt);
   const { moving, sprinting } = move;
@@ -654,7 +784,12 @@ function loop(now) {
       selfAvatar.group.rotation.y = car.yaw + Math.PI;
       selfAvatar.update(dt, false, false);
     }
-    hud.setSpeedo({ speed: car.speed, ...carLabel(car) });
+    hud.setSpeedo({
+      speed: car.speed, top: car.model.top, body: car.model.body, night: world.sky.night,
+      cockpit: !controls.chase, ...carLabel(car),
+    });
+    if (cockpit) cockpit.obj.update(dt, car.speed, car.model.top, car.steer, world.sky.night);
+    if (e) e.mesh.setAir(Math.max(0, controls.pos.y - groundHeight(controls.pos.x, controls.pos.z)));
     sfx.engineSpeed(car.speed / car.model.top);
     machineWork();
   }
@@ -667,6 +802,7 @@ function loop(now) {
       y: round2(controls.yaw),
       a: moving ? (sprinting ? 2 : 1) : 0,
       vy: car ? round2(car.yaw) : undefined,
+      g: weapons.held || undefined,
     });
   }
 
@@ -680,12 +816,9 @@ function loop(now) {
     robots: gameStates.robots,
   });
 
-  if (viewModel && !car) {
-    const sway = Math.sin(controls.bob) * (moving ? 0.02 : 0.005);
-    viewModel.group.position.x = sway;
-    viewModel.group.position.y = -Math.abs(sway) * 0.6;
-    viewModel.update(dt);
-  }
+  if (viewModel && !car) viewModel.update(dt, { moving, sprinting, aiming: weapons.aiming });
+  weapons.update(dt);
+  boars.update(dt);
   smoke.update(dt);
 
   // What can you do right now?
@@ -712,7 +845,15 @@ function loop(now) {
   if (activePanel && activePanel.ui.tick) activePanel.ui.tick(serverNow);
   hud.setClock(wt, clock.weather);
 
-  renderer.render(scene, camera);
+  pipeline.render(scene, camera, {
+    night: world.sky.inside > 0.5 ? 0 : world.sky.night,
+    inside: world.sky.inside,
+    fade,
+    flash: world.sky.flash * 0.25 * (1 - world.sky.inside),
+    dt,
+    overlayFov: 58 * (0.86 + 0.14 * camera.fov / 78),
+    ambient: world.casino.ambient,
+  });
 }
 
 const round2 = (v) => Math.round(v * 100) / 100;

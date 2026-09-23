@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { DAY_MS } from '/shared/catalog.js';
+import { cloudTexture, glowTexture } from './textures.js';
 
 // Sun, moon, stars, rain and lightning. Also decides how the scene is lit:
 // outdoors follows the time of day, and stepping into the casino fades over to
@@ -86,6 +87,32 @@ export class Sky {
     this.moon = new THREE.DirectionalLight(0x8fa4ff, 0.25);
     scene.add(this.sun, this.moon, this.sun.target, this.moon.target);
 
+    // A drifting cloud layer, tinted by the sky, and a glare round the sun.
+    const clouds = cloudTexture();
+    // Fades to nothing towards its rim, so the layer has no visible edge and
+    // never reaches the camera's far plane.
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 128;
+    const g = cv.getContext('2d');
+    const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    gr.addColorStop(0, '#fff');
+    gr.addColorStop(0.55, '#fff');
+    gr.addColorStop(1, '#000');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 128, 128);
+    this.clouds = new THREE.Mesh(
+      new THREE.PlaneGeometry(1800, 1800),
+      new THREE.MeshBasicMaterial({ map: clouds, alphaMap: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false, fog: false, opacity: 0.8 }),
+    );
+    this.clouds.rotation.x = Math.PI / 2;
+    this.clouds.renderOrder = -9;
+    scene.add(this.clouds);
+    this.glare = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexture(), color: 0xfff0c0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    }));
+    this.glare.scale.set(320, 320, 1);
+    scene.add(this.glare);
+
     this._rain(scene);
   }
 
@@ -142,6 +169,16 @@ export class Sky {
     this.moonDisc.visible = moonDir.y > -0.05 && this.grey < 0.6;
 
     const sunUp = Math.max(0, Math.min(1, sunDir.y * 3));
+
+    // Clouds drift with the camera, lit by the sky: white by day, orange at dusk.
+    this.clouds.position.set(camera.position.x, camera.position.y + 260, camera.position.z);
+    const cm = this.clouds.material;
+    cm.map.offset.set((camera.position.x / 1800) * 3 + worldTime * 1e-6, (camera.position.z / 1800) * -3);
+    cm.color.copy(this.horizon).lerp(C(0xffffff), 0.55 * (1 - this.night));
+    cm.opacity = 0.35 + this.grey * 0.6;
+    this.glare.position.copy(camera.position).addScaledVector(sunDir, 780);
+    this.glare.material.opacity = sunDir.y > -0.05 ? (0.55 - this.grey * 0.5) * Math.min(1, (sunDir.y + 0.05) * 6) : 0;
+    this.glare.material.color.setHSL(0.1, 0.7, 0.6 + sunUp * 0.25);
     this.night = 1 - Math.max(0, Math.min(1, (sunDir.y + 0.08) * 5));
     this.stars.material.opacity = this.night * (1 - this.grey);
 

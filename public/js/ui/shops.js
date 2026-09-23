@@ -1,6 +1,6 @@
 import {
   CROPS, ITEMS, HOUSES, ANIMAL_HOUSES, PROCESSORS, FIELD_SIZES, FIELD_PRICES, FIELD_LEVELS,
-  VEHICLES, IMPLEMENTS, money,
+  VEHICLES, IMPLEMENTS, GUNS, boarStats, money,
 } from '/shared/catalog.js';
 import { div, esc } from './util.js';
 import { sfx } from '../sfx.js';
@@ -213,5 +213,40 @@ export function createMachinery(ctx) {
   }, (act, arg) => {
     if (act === 'vehicle') ctx.send('buy', { station, sku: `vehicle:${arg}`, color: '#d93a3a' });
     if (act === 'implement') ctx.send('buy', { station, sku: `implement:${arg}` });
+  });
+}
+
+// --------------------------------------------------------------- gun shop
+
+export function createGunShop(ctx) {
+  const station = ctx.station.id;
+  const bar = (v, max) => `<i style="--v:${Math.round(Math.min(1, v / max) * 100)}%"></i>`;
+  return listPanel(ctx, (w) => {
+    const boar = boarStats(w.level);
+    const rows = GUNS.map((g) => {
+      const owned = (w.guns || []).includes(g.id);
+      const locked = w.level < g.level;
+      const dps = (g.damage * g.pellets) / g.rate;
+      const shotsToKill = Math.ceil(boar.hp / (g.damage * g.pellets));
+      return row({
+        icon: { boltrifle: '🪵', lever: '🤠', shotgun: '💥', semiauto: '⚙️', biggame: '🦏' }[g.id],
+        name: g.name, owned, locked: locked && !owned,
+        desc: `${g.blurb}
+          <div class="stat">DAMAGE ${bar(g.damage * g.pellets, 180)} ${g.pellets > 1 ? `${g.pellets}×${g.damage}` : g.damage}</div>
+          <div class="stat">SPEED ${bar(1 / g.rate, 4)} ${g.rate}s a shot</div>
+          <div class="stat">MAGAZINE ${bar(g.mag, 15)} ${g.mag} · reload ${g.reload}s</div>
+          <div class="ds">${shotsToKill} body shot${shotsToKill === 1 ? '' : 's'} per boar at your level · ${Math.round(dps)} damage a second${locked ? `<br>🔒 Farm level ${g.level}` : ''}</div>`,
+        price: owned ? '' : g.price ? money(g.price) : 'free',
+        buttons: owned
+          ? (w.gun === g.id ? '<span class="pr">IN HAND</span>' : btn('USE', 'equip', g.id, { primary: false }))
+          : locked ? '' : btn('BUY', 'gun', g.id, { disabled: w.money < g.price }),
+      });
+    });
+    return `<p class="shop-note">"Boars at your level have <b>${boar.hp} health</b> and come ${boar.count} at a time. Grandpa's rifle
+      will do it, if you are patient." Ammo is on the house. <kbd>Q</kbd> gets your gun out anywhere.</p>
+      <div class="shop-list">${rows.join('')}</div>`;
+  }, (act, arg) => {
+    if (act === 'gun') ctx.send('buy', { station, sku: `gun:${arg}` });
+    if (act === 'equip') ctx.send('equip', { gun: arg });
   });
 }

@@ -7,8 +7,10 @@ import { VEHICLES } from '/shared/catalog.js';
 import {
   grassTexture, asphaltTexture, pavingTexture, dirtTexture, plankTexture, brickTexture,
   boardTexture, kerbTexture, checkerTexture, glowTexture,
+  leafTexture, pineTexture, grassTuftTexture, roofTileTexture,
 } from './textures.js';
 import { buildVehicle } from './vehicles.js';
+import { buildGun } from './guns.js';
 import { createAvatar } from './avatar.js';
 
 const phong = (color, o = {}) => new THREE.MeshPhongMaterial({ color, shininess: 8, specular: 0x111111, ...o });
@@ -57,7 +59,57 @@ const SHOPKEEPERS = {
   cardealer: ['Slick Vinny', '#ff5d5d', 'tophat'],
   machinery: ['Hank', '#e3c25a', 'cowboy'],
   landoffice: ['Ms. Deeds', '#c471e8', 'crown'],
+  gunshop: ['Rusty', '#9aa7ff', 'cowboy'],
 };
+
+// Cheap smooth value noise, for painting variation into the ground.
+function valueNoise(seed) {
+  const rnd = seeded(seed);
+  const N = 64;
+  const grid = new Float32Array(N * N).map(() => rnd());
+  const at = (i, j) => grid[((j % N + N) % N) * N + ((i % N + N) % N)];
+  return (x, y) => {
+    const i = Math.floor(x);
+    const j = Math.floor(y);
+    const fx = x - i;
+    const fy = y - j;
+    const sx = fx * fx * (3 - 2 * fx);
+    const sy = fy * fy * (3 - 2 * fy);
+    const a = at(i, j) + (at(i + 1, j) - at(i, j)) * sx;
+    const b = at(i, j + 1) + (at(i + 1, j + 1) - at(i, j + 1)) * sx;
+    return a + (b - a) * sy;
+  };
+}
+
+/** Three crossed quads: the classic cheap tree crown. */
+function crossCards(w, h, cards = 3) {
+  const geos = [];
+  for (let k = 0; k < cards; k++) {
+    const g = new THREE.PlaneGeometry(w, h);
+    g.rotateY((k / cards) * Math.PI);
+    geos.push(g);
+  }
+  const pos = [];
+  const uv = [];
+  const nor = [];
+  const idx = [];
+  let base = 0;
+  for (const g of geos) {
+    pos.push(...g.attributes.position.array);
+    uv.push(...g.attributes.uv.array);
+    // Normals point up-ish so the cards light like a round canopy, not flat sheets.
+    for (let i = 0; i < g.attributes.position.count; i++) nor.push(0, 1, 0);
+    idx.push(...g.index.array.map((i) => i + base));
+    base += g.attributes.position.count;
+    g.dispose();
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  out.setIndex(idx);
+  return out;
+}
 
 export class Outdoor {
   constructor(scene) {
@@ -86,9 +138,30 @@ export class Outdoor {
   _ground() {
     const w = BOUNDS.maxX - BOUNDS.minX + 400;
     const d = BOUNDS.maxZ - BOUNDS.minZ + 400;
-    // Sits a hair below the casino carpet so the two never fight.
-    const g = flat(this.group, -w / 2, w / 2, -d / 2, d / 2, -0.03, phong(0xffffff, { map: grassTexture() }));
+    // A subdivided plane with colour painted into its vertices: lighter and
+    // darker patches, dry grass and bare earth, so the texture does not tile
+    // into an obvious grid. Sits a hair below the casino carpet.
+    const geo = new THREE.PlaneGeometry(w, d, 180, 180);
+    geo.rotateX(-Math.PI / 2);
+    const n1 = valueNoise(11);
+    const n2 = valueNoise(23);
+    const colors = [];
+    const pos = geo.attributes.position;
+    const c = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const z = pos.getZ(i);
+      const big = n1(x / 60, z / 60);
+      const small = n2(x / 14, z / 14);
+      const dry = Math.max(0, big - 0.55) * 1.6;
+      c.setRGB(0.92 + small * 0.16 + dry * 0.35, 0.95 + small * 0.12 + dry * 0.12, 0.85 + small * 0.1 - dry * 0.1);
+      colors.push(c.r, c.g, c.b);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    const g = new THREE.Mesh(geo, phong(0xffffff, { map: grassTexture(), vertexColors: true }));
+    g.position.y = -0.03;
     g.material.map.repeat.set(w / 4, d / 4);
+    this.group.add(g);
     // Hills on the horizon so the world does not end at a cliff of fog.
     const hillMat = phong(0x3d6b35, { flatShading: true });
     const rnd = seeded(7);
@@ -173,7 +246,8 @@ export class Outdoor {
     box(g, T, H, d, backX, H / 2, cz, wallD);
 
     // Roof overhangs the open front like an awning.
-    const roof = box(g, w + 1.4, 0.4, d + 1.2, cx + (s.open === 'east' ? 0.7 : -0.7), H + 0.2, cz, phong(0x3a2a30));
+    const roof = box(g, w + 1.4, 0.4, d + 1.2, cx + (s.open === 'east' ? 0.7 : -0.7), H + 0.2, cz,
+      phong(0xffffff, { map: tiled(roofTileTexture(s.id === 'gunshop' ? '#4a4f5a' : '#7a3a2a'), w + 1.4, d + 1.2, 3) }));
     roof.userData.roof = true;
     const stripe = phong(new THREE.Color(s.color).multiplyScalar(0.9));
     box(g, 0.3, 0.8, d + 1.2, s.open === 'east' ? s.x1 + 1.3 : s.x0 - 1.3, H - 0.2, cz, stripe);
@@ -259,6 +333,19 @@ export class Outdoor {
       for (let i = 0; i < 5; i++) box(g, 3.6, 0.16, 0.5, deepX, 0.1 + i * 0.17, cz - 3, phong(0xc49a64));
       for (let i = 0; i < 3; i++) box(g, 1, 0.5, 2, deepX, 0.25 + i * 0.5, cz + 3, phong(0xa04a36));
       this.obstacles.push({ x: deepX, z: cz - 3, r: 1.8 }, { x: deepX, z: cz + 3, r: 1.2 });
+    } else if (s.id === 'gunshop') {
+      // A rack of rifles on the back wall.
+      const wallX = s.open === 'east' ? s.x0 + 0.7 : s.x1 - 0.7;
+      box(g, 0.15, 2.2, 7, wallX, 2.2, cz, phong(0xffffff, { map: plankTexture('#5a3a22') }));
+      ['boltrifle', 'lever', 'shotgun', 'semiauto', 'biggame'].forEach((id, i) => {
+        const gun = buildGun(id).group;
+        gun.scale.setScalar(1.6);
+        gun.rotation.set(0, s.open === 'east' ? Math.PI / 2 : -Math.PI / 2, Math.PI / 2);
+        gun.position.set(wallX + (s.open === 'east' ? 0.12 : -0.12), 2.2, cz - 2.8 + i * 1.4);
+        g.add(gun);
+      });
+      box(g, 1.4, 1.0, 3, deepX + inward * -1, 0.5, cz, phong(0x2a1d15));
+      this.obstacles.push({ x: deepX + inward * -1, z: cz, r: 1.4 });
     } else if (s.id === 'landoffice') {
       box(g, 2.4, 0.9, 1.2, deepX, 0.45, cz, phong(0x5b3a1e));
       const map = new THREE.Mesh(new THREE.PlaneGeometry(6, 3.5), basic(0xffffff, { map: boardTexture('THE VALLEY', '#c471e8', 'six farms · one casino') }));
@@ -545,36 +632,72 @@ export class Outdoor {
       spots.push([x, z, 1.4 + rnd() * 0.8, rnd()]);
     }
 
-    const trunkGeo = new THREE.CylinderGeometry(0.25, 0.35, 2.6, 7);
-    const pineGeo = new THREE.ConeGeometry(1.8, 4.6, 8);
-    const roundGeo = new THREE.IcosahedronGeometry(2.1, 0);
-    const trunks = new THREE.InstancedMesh(trunkGeo, phong(0x6b4a2e), spots.length);
-    const pines = new THREE.InstancedMesh(pineGeo, phong(0xffffff, { flatShading: true }), spots.length);
-    const rounds = new THREE.InstancedMesh(roundGeo, phong(0xffffff, { flatShading: true }), spots.length);
+    const trunkGeo = new THREE.CylinderGeometry(0.2, 0.32, 2.6, 6);
+    const leafMat = phong(0xffffff, { map: leafTexture(), alphaTest: 0.45, side: THREE.DoubleSide });
+    const pineMat = phong(0xffffff, { map: pineTexture(), alphaTest: 0.45, side: THREE.DoubleSide });
+    const trunks = new THREE.InstancedMesh(trunkGeo, phong(0xffffff, { map: plankTexture('#5a4030') }), spots.length);
+    const pines = new THREE.InstancedMesh(crossCards(3.6, 7.2), pineMat, spots.length);
+    const rounds = new THREE.InstancedMesh(crossCards(5.2, 4.6), leafMat, spots.length * 2);
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const s = new THREE.Vector3();
     const c = new THREE.Color();
+    const up = new THREE.Vector3(0, 1, 0);
     let np = 0;
     let nr = 0;
     spots.forEach(([x, z, k, v], i) => {
       s.set(k, k, k);
+      q.setFromAxisAngle(up, v * 6.28);
       m.compose(new THREE.Vector3(x, 1.3 * k, z), q, s);
       trunks.setMatrixAt(i, m);
       if (v < 0.5) {
-        m.compose(new THREE.Vector3(x, 4.4 * k, z), q, s);
+        m.compose(new THREE.Vector3(x, 5.0 * k, z), q, s);
         pines.setMatrixAt(np, m);
-        pines.setColorAt(np++, c.setHSL(0.33 + v * 0.05, 0.45, 0.24 + v * 0.1));
+        pines.setColorAt(np++, c.setHSL(0.3, 0.2, 0.75 + v * 0.3));
       } else {
-        m.compose(new THREE.Vector3(x, 3.7 * k, z), q, s);
+        // Two crowns stacked, so broadleaf trees have some depth.
+        m.compose(new THREE.Vector3(x, 4.2 * k, z), q, s);
         rounds.setMatrixAt(nr, m);
-        rounds.setColorAt(nr++, c.setHSL(0.22 + (v - 0.5) * 0.2, 0.5, 0.32 + (v - 0.5) * 0.12));
+        rounds.setColorAt(nr++, c.setHSL(0.2 + (v - 0.5) * 0.1, 0.25, 0.75 + (v - 0.5) * 0.3));
+        q.setFromAxisAngle(up, v * 6.28 + 0.8);
+        m.compose(new THREE.Vector3(x + 0.4, 5.6 * k, z - 0.3), q, s.clone().multiplyScalar(0.75));
+        rounds.setMatrixAt(nr, m);
+        rounds.setColorAt(nr++, c.setHSL(0.22, 0.25, 0.85));
       }
-      if (Math.abs(x) < BOUNDS.maxX + 5 && Math.abs(z) < BOUNDS.maxZ + 5) this.obstacles.push({ x, z, r: 0.5 * k });
+      if (Math.abs(x) < BOUNDS.maxX + 5 && Math.abs(z) < BOUNDS.maxZ + 5) this.obstacles.push({ x, z, r: 0.45 * k });
     });
     pines.count = np;
     rounds.count = nr;
     this.group.add(trunks, pines, rounds);
+    this._grass(blocked, rnd);
+  }
+
+  /** Tufts of long grass across the open ground: one draw call for thousands. */
+  _grass(blocked, rnd) {
+    const geo = crossCards(1.1, 0.7, 2);
+    geo.translate(0, 0.33, 0);
+    const mat = phong(0xffffff, { map: grassTuftTexture(), alphaTest: 0.4, side: THREE.DoubleSide });
+    const N = 6000;
+    const tufts = new THREE.InstancedMesh(geo, mat, N);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const up = new THREE.Vector3(0, 1, 0);
+    const c = new THREE.Color();
+    let n = 0;
+    let guard = 0;
+    while (n < N && guard++ < 60000) {
+      const x = BOUNDS.minX + rnd() * (BOUNDS.maxX - BOUNDS.minX);
+      const z = BOUNDS.minZ + rnd() * (BOUNDS.maxZ - BOUNDS.minZ);
+      if (blocked(x, z)) continue;
+      const k = 0.7 + rnd() * 0.8;
+      q.setFromAxisAngle(up, rnd() * 6.28);
+      m.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(k, k * (0.8 + rnd() * 0.5), k));
+      tufts.setMatrixAt(n, m);
+      tufts.setColorAt(n, c.setHSL(0.2 + rnd() * 0.06, 0.2, 0.7 + rnd() * 0.25));
+      n++;
+    }
+    tufts.count = n;
+    this.group.add(tufts);
   }
 
   // ------------------------------------------------------------- animation

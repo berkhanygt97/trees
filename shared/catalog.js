@@ -37,6 +37,7 @@ export const ITEMS = {
   cheese: { name: 'Cheese', icon: '🧀', price: 260, kind: 'goods' },
   bread:  { name: 'Bread',  icon: '🍞', price: 110, kind: 'goods' },
   cake:   { name: 'Cake',   icon: '🎂', price: 340, kind: 'goods' },
+  boar:   { name: 'Boar Meat', icon: '🥩', price: 45, kind: 'game' },
   feed:   { name: 'Animal Feed', icon: '🌰', price: 4, kind: 'feed', sell: false },
   ...Object.fromEntries(CROPS.map((c) => [`seed:${c.id}`, {
     name: `${c.name} Seeds`, icon: c.icon, price: c.seed, kind: 'seed', sell: false,
@@ -120,6 +121,45 @@ export const IMPLEMENTS = [
   { id: 'tank',   name: 'Water Tank', price: 1500, action: 'water', blurb: 'Waters growing crops.' },
 ];
 export const IMPLEMENT_BY_ID = Object.fromEntries(IMPLEMENTS.map((i) => [i.id, i]));
+
+// -------------------------------------------------------------------- guns
+//
+// Everyone owns Grandpa's old bolt rifle: accurate, hard-hitting, painfully
+// slow to cycle and slower to reload. The gun shop sells the upgrades. Ammo is
+// free; the magazine and the reload are what you pay for with time.
+// `rate` and `reload` are seconds; `spread` is radians; damage is per pellet.
+
+export const GUNS = [
+  { id: 'boltrifle', name: "Grandpa's Bolt Rifle", price: 0,     level: 1, damage: 55,  pellets: 1, rate: 1.7,  mag: 5,  reload: 3.6, spread: 0.004, range: 130, zoom: 1.7, action: 'bolt',  blurb: 'Older than the farm. Hits hard, if you are patient.' },
+  { id: 'lever',     name: 'Lever-Action .30',     price: 2500,  level: 3, damage: 50,  pellets: 1, rate: 0.75, mag: 8,  reload: 2.8, spread: 0.008, range: 110, zoom: 1.5, action: 'lever', blurb: 'Cowboy classic. Twice as quick as Grandpa.' },
+  { id: 'shotgun',   name: 'Pump Shotgun',         price: 4500,  level: 4, damage: 17,  pellets: 8, rate: 1.0,  mag: 6,  reload: 3.4, spread: 0.075, range: 32,  zoom: 1.2, action: 'pump',  blurb: 'For when the boar is already in the carrots.' },
+  { id: 'semiauto',  name: 'Semi-Auto Rifle',      price: 9000,  level: 6, damage: 40,  pellets: 1, rate: 0.28, mag: 15, reload: 2.4, spread: 0.012, range: 120, zoom: 1.6, action: 'semi',  blurb: 'Squeeze as fast as you like.' },
+  { id: 'biggame',   name: 'Big Game Rifle',       price: 18000, level: 8, damage: 170, pellets: 1, rate: 1.3,  mag: 4,  reload: 3.0, spread: 0.002, range: 170, zoom: 2.4, action: 'bolt',  blurb: 'Drops anything with tusks in one or two.' },
+];
+export const GUN_BY_ID = Object.fromEntries(GUNS.map((g) => [g.id, g]));
+
+// ------------------------------------------------------------------- boars
+//
+// Wild boars raid planted fields. They grow tougher with the farm's level:
+// more of them, more health, faster charges and harder hits.
+
+export const PLAYER_HP = 100;
+
+export function boarStats(level) {
+  const l = Math.max(1, level);
+  return {
+    hp: Math.round(100 * (1 + 0.2 * (l - 1))),
+    count: Math.min(6, 2 + Math.floor(l / 4)),
+    walk: 1.8,
+    charge: 9 + 0.3 * l,                        // m/s; you sprint at 12.5
+    windup: Math.max(0.55, 1.1 - 0.035 * l),    // seconds of warning before it goes
+    steer: 0.5 + 0.08 * l,                      // rad/s it can bend a charge
+    damage: Math.round(14 + 2 * (l - 1)),
+    bounty: 40 + 15 * l,
+    xp: 30 + 10 * l,
+    meat: 1 + Math.floor(l / 4),
+  };
+}
 
 // What you get back if you ever tally it up. Used for the net-worth board.
 export const RESALE = 0.5;

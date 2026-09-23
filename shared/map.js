@@ -64,6 +64,7 @@ export const SHOPS = [
   { id: 'cardealer',  name: 'Car Dealer',        sign: 'MOTORS',        sub: 'no refunds, ever',           color: '#ff5d5d', x0: 12,  x1: 42,  z0: 72,  z1: 100, open: 'west' },
   { id: 'machinery',  name: 'Machinery Dealer',  sign: 'TRACTOR BARN',  sub: 'tractors · implements',      color: '#e3c25a', x0: 12,  x1: 36,  z0: 108, z1: 130, open: 'west' },
   { id: 'landoffice', name: 'Land Office',       sign: 'LAND OFFICE',   sub: 'bigger fields, bigger dreams', color: '#c471e8', x0: 12, x1: 36,  z0: 140, z1: 156, open: 'west' },
+  { id: 'gunshop',    name: 'Gun Shop',          sign: "RUSTY'S GUNS",  sub: 'boar problem? we can help',  color: '#9aa7ff', x0: 12,  x1: 36,  z0: 164, z1: 184, open: 'west' },
 ];
 
 const SHOP_WALL = 0.6;

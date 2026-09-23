@@ -172,9 +172,11 @@ export function newProfile({ name, slug, color, hat, plot, cash, pos, yaw }) {
     buildings: { coop: null, barn: null, mill: null, dairy: null, bakery: null },
     vehicles: [],
     implements: [],
+    guns: ['boltrifle'],
+    gun: 'boltrifle',
     nextVid: 1,
     charityDay: 0,
-    stats: { harvested: 0, sold: 0, wagered: 0, biggestWin: 0, orders: 0, playSeconds: 0 },
+    stats: { harvested: 0, sold: 0, wagered: 0, biggestWin: 0, orders: 0, boars: 0, playSeconds: 0 },
   };
 }
 
@@ -190,6 +192,10 @@ export function migrateProfile(p) {
   out.stats = { ...fresh.stats, ...(p.stats || {}) };
   out.vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
   out.implements = Array.isArray(p.implements) ? p.implements : [];
+  // Everyone has Grandpa's rifle, including farmers from before guns existed.
+  out.guns = Array.isArray(p.guns) ? p.guns.filter((g) => typeof g === 'string') : [];
+  if (!out.guns.includes('boltrifle')) out.guns.unshift('boltrifle');
+  if (!out.guns.includes(out.gun)) out.gun = 'boltrifle';
   return out;
 }
 

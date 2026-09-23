@@ -5,6 +5,16 @@ let latency = 0;
 let clockSeeded = false;
 let pingSentAt = 0;
 
+// A random id this browser keeps, so a dropped connection can take its own
+// session back instead of being told the name is already playing.
+function browserKey() {
+  try {
+    let k = localStorage.getItem('valley.key');
+    if (!k) { k = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('valley.key', k); }
+    return k;
+  } catch { return null; }
+}
+
 export const net = {
   connect(name) {
     return new Promise((resolve, reject) => {
@@ -13,7 +23,7 @@ export const net = {
       const fail = () => reject(new Error('Could not reach the casino server.'));
 
       socket.addEventListener('open', () => {
-        socket.send(JSON.stringify({ t: 'join', d: { name } }));
+        socket.send(JSON.stringify({ t: 'join', d: { name, key: browserKey() } }));
         resolve();
       });
       socket.addEventListener('error', fail);

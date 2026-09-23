@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { CROPS, CROP_BY_ID, cropProgress, isWatered } from '/shared/catalog.js';
 import { PLOTS, PLOT_SIZE, GATE, TILE, tileCenter, tileIndex, padWorld } from '/shared/map.js';
-import { soilTexture, plankTexture, brickTexture, boardTexture } from './textures.js';
+import { soilTexture, plankTexture, brickTexture, boardTexture, roofTileTexture, metalTexture, plasterTexture } from './textures.js';
 
 // Draws every farm in the valley: soil, crops, buildings and animals.
 // Crops are one InstancedMesh per crop (plus one for its fruit), so a whole
@@ -157,6 +157,14 @@ function windows(parent, xs, y, z, lit) {
   }
 }
 
+// Extruded roofs have UVs in metres; scale the texture to suit.
+function roofMat(tex, per = 2.5) {
+  const t = tex.clone();
+  t.needsUpdate = true;
+  t.repeat.set(1 / per, 1 / per);
+  return phong(0xffffff, { map: t });
+}
+
 // Houses face south (+z). Their front sits on the edge of the house pad so the
 // doorstep, and the station, is in the same place for every tier.
 const HOUSE_SIZE = [[4.5, 4], [8, 7], [11, 9], [15, 13]];
@@ -179,14 +187,14 @@ function buildHouse(tier, color, lit) {
   } else if (tier === 1) {
     const logs = phong(0xffffff, { map: plankTexture('#8a5a30') });
     box(g, w, 3.2, d, 0, 1.6, 0, logs);
-    gable(g, w, d, 2.2, 3.2, phong(0x5a3a2a));
+    gable(g, w, d, 2.2, 3.2, roofMat(roofTileTexture('#5a3a2a')));
     door(g, 0, front + 0.06);
     windows(g, [-2.4, 2.4], 1.7, front + 0.06, lit);
     box(g, 0.7, 2, 0.7, w / 2 - 1, 4.6, 0, phong(0x7a6a5a));
   } else if (tier === 2) {
-    const walls = phong(0xf0e6d2);
+    const walls = phong(0xffffff, { map: plasterTexture('#efe4cc') });
     box(g, w, 6, d, 0, 3, 0, walls);
-    gable(g, w, d, 3, 6, phong(0x8a2a2a));
+    gable(g, w, d, 3, 6, roofMat(roofTileTexture('#8a2a2a')));
     door(g, 0, front + 0.06, 1.4, 2.4, 0x2a4a7a);
     windows(g, [-3.5, 3.5], 1.8, front + 0.06, lit);
     windows(g, [-3.5, 0, 3.5], 4.4, front + 0.06, lit);
@@ -238,7 +246,7 @@ function buildBarn() {
   const red = phong(0xa8322a);
   const white = phong(0xf0e6d2);
   box(g, 12, 5, 9, 0, 2.5, 0, red);
-  gable(g, 12, 9, 3.6, 5, phong(0x4a3a3a));
+  gable(g, 12, 9, 3.6, 5, roofMat(metalTexture('#5a5f66'), 3));
   box(g, 3.4, 3.8, 0.1, 0, 1.9, 4.56, white);
   box(g, 3.0, 3.4, 0.12, 0, 1.8, 4.6, red);
   // The white X on the doors.
@@ -288,7 +296,7 @@ function buildDairy(lit) {
 function buildBakery(lit) {
   const g = new THREE.Group();
   box(g, 9, 4.2, 7, 0, 2.1, 0, phong(0xffffff, { map: brickTexture('#b8663a') }));
-  gable(g, 9, 7, 2, 4.2, phong(0x6a3a2a));
+  gable(g, 9, 7, 2, 4.2, roofMat(roofTileTexture('#6a3a2a')));
   box(g, 1, 3, 1, 3, 6, -1, phong(0x7a6a5a));
   door(g, 0, 3.56, 1.4, 2.4, 0xf2c14e);
   windows(g, [-2.8, 2.8], 2, 3.56, lit);

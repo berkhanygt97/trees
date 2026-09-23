@@ -36,8 +36,10 @@
       <div><kbd>F</kbd><span>Get in / out of your vehicle</span></div>
       <div><kbd>V</kbd><span>Driver's seat / chase camera</span></div>
       <div><kbd>G</kbd><span>Swap tractor implement</span></div>
+      <div><kbd>Q</kbd><span>Rifle out / away · <kbd>R</kbd> reload</span></div>
+      <div><kbd>LMB</kbd> <kbd>RMB</kbd><span>Shoot · aim down the sights</span></div>
       <div><kbd>Tab</kbd><span>Rich list + your storage</span></div>
-      <div><kbd>H</kbd><span>Help</span></div>
+      <div><kbd>H</kbd><span>Help · <kbd>P</kbd> graphics</span></div>
     </div>
 
     <p class="fineprint">
@@ -50,6 +52,8 @@
 <!-- -------------------------------------------------------------- hud -->
 <div id="hud" hidden>
   <div id="crosshair"></div>
+  <div id="scope" hidden></div>
+  <div id="hitmark" hidden></div>
 
   <div id="wallet">
     <div class="money" id="w-money">$0</div>
@@ -79,10 +83,18 @@
   <div id="seedbar" hidden></div>
 
   <div id="speedo" hidden>
-    <div class="kmh"><b id="s-kmh">0</b><span>km/h</span></div>
+    <canvas id="s-cluster" width="360" height="180"></canvas>
     <div class="name" id="s-name"></div>
     <div class="hint" id="s-hint"><kbd>F</kbd> get out · <kbd>V</kbd> camera</div>
   </div>
+
+  <div id="health" hidden><b>♥</b><span class="bar"><i id="hp-fill"></i></span></div>
+  <div id="ammo" hidden>
+    <div class="count"><b id="ammo-mag">5</b><span id="ammo-max">/ 5</span></div>
+    <div class="name" id="ammo-name"></div>
+    <div class="hint"><kbd>R</kbd> reload · <kbd>T</kbd> switch · <kbd>Q</kbd> put away</div>
+  </div>
+  <div id="ko" hidden><h2>FLATTENED BY A WILD BOAR</h2><p>You come round at your gate…</p></div>
 
   <div id="board" class="screen" hidden>
     <div class="board-card">
@@ -111,7 +123,13 @@
         <div><h4>🎰 THE CASINO</h4>
           <p>North of the plaza. Same money as everything else. A rotating event is always about to start.</p></div>
         <div><h4>🏁 THE TRACK</h4>
-          <p>Past the casino, north. Buy a car at <b>Motors</b> and go jump the ramps.</p></div>
+          <p>Past the casino, north. Buy a car at <b>Motors</b> and go jump the ramps. You drive from the seat; <kbd>V</kbd> swaps to a chase camera.</p></div>
+        <div><h4>🐗 WILD BOARS</h4>
+          <p>Every so often a herd charges out of the woods and starts eating your crops. <kbd>Q</kbd> gets Grandpa's rifle out, <kbd>RMB</kbd> aims, <kbd>LMB</kbd> fires, <kbd>R</kbd> reloads. Headshots count double.</p>
+          <p>Get close and a boar paws the ground and grunts — that is your warning. Then it charges in a straight line: <b>step sideways</b> and it runs past. Only one comes at you at a time. Get hit too often and you wake up at your gate (you lose nothing).</p>
+          <p>Boars get bigger and meaner as your farm levels up; <b>Rusty's Guns</b> in town sells better guns. Or just run them over.</p></div>
+        <div><h4>🖥️ GRAPHICS</h4>
+          <p><kbd>P</kbd> cycles PS2 (soft), Sharp, and Potato for slow laptops.</p></div>
       </div>
       <p class="fineprint">Everything saves on the host's computer automatically. Come back with the same name to pick up where you left off.</p>
     </div>
@@ -129,8 +147,8 @@
   <div id="disconnected" class="screen" hidden>
     <div class="join-card">
       <h1>CONNECTION LOST</h1>
-      <p class="tagline">The host closed the valley. Your farm is saved — refresh to walk back in.</p>
-      <button onclick="location.reload()">RECONNECT</button>
+      <p class="tagline">Your farm is saved. Reconnecting you automatically…</p>
+      <button onclick="location.reload()">RECONNECT NOW</button>
     </div>
   </div>
 </div>

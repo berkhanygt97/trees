@@ -132,4 +132,50 @@ export const sfx = {
     for (let i = 0; i < 3; i++) tone({ freq: 740, type: 'square', dur: 0.14, gain: 0.2, delay: i * 0.2 });
   },
   step() { noise({ dur: 0.04, gain: 0.04, bandpass: 420 }); },
+
+  // --------------------------------------------------------------- guns
+  /** `vol` falls off with distance for other people's shots. */
+  gunshot(kind = 'rifle', vol = 1) {
+    if (vol < 0.02) return;
+    const heavy = kind === 'shotgun' || kind === 'biggame';
+    noise({ dur: heavy ? 0.5 : 0.35, gain: 0.55 * vol, bandpass: heavy ? 500 : 900 });
+    noise({ dur: 0.08, gain: 0.5 * vol, bandpass: 3000 });
+    tone({ freq: heavy ? 70 : 110, type: 'sawtooth', dur: 0.25, gain: 0.3 * vol, slide: -50 });
+    // The echo coming back off the hills.
+    noise({ dur: 0.6, gain: 0.08 * vol, bandpass: 400, delay: 0.25 });
+  },
+  bolt() {
+    noise({ dur: 0.05, gain: 0.18, bandpass: 2400, delay: 0.1 });
+    noise({ dur: 0.05, gain: 0.2, bandpass: 1800, delay: 0.35 });
+  },
+  pump() {
+    noise({ dur: 0.07, gain: 0.25, bandpass: 1400, delay: 0.08 });
+    noise({ dur: 0.07, gain: 0.25, bandpass: 1100, delay: 0.28 });
+  },
+  reloadSound(seconds = 3) {
+    noise({ dur: 0.06, gain: 0.16, bandpass: 2600, delay: 0.2 });
+    noise({ dur: 0.06, gain: 0.16, bandpass: 2200, delay: seconds * 0.5 });
+    noise({ dur: 0.08, gain: 0.22, bandpass: 1500, delay: seconds * 0.9 });
+  },
+  dryFire() { tone({ freq: 1800, type: 'square', dur: 0.03, gain: 0.08 }); },
+  hitmark(kill = false) {
+    tone({ freq: kill ? 520 : 1300, type: 'triangle', dur: kill ? 0.18 : 0.06, gain: 0.18 });
+    if (kill) tone({ freq: 780, type: 'triangle', dur: 0.18, gain: 0.14, delay: 0.08 });
+  },
+
+  // -------------------------------------------------------------- boars
+  squeal(vol = 1) {
+    if (vol < 0.03) return;
+    tone({ freq: 900 + Math.random() * 300, type: 'sawtooth', dur: 0.35, gain: 0.16 * vol, slide: 500 });
+    tone({ freq: 1300, type: 'square', dur: 0.2, gain: 0.06 * vol, slide: -400, delay: 0.15 });
+  },
+  grunt(vol = 1) {
+    if (vol < 0.03) return;
+    tone({ freq: 90 + Math.random() * 30, type: 'sawtooth', dur: 0.22, gain: 0.2 * vol, slide: -20 });
+    noise({ dur: 0.15, gain: 0.08 * vol, bandpass: 300 });
+  },
+  hurt() {
+    noise({ dur: 0.25, gain: 0.35, bandpass: 220 });
+    tone({ freq: 160, type: 'sine', dur: 0.3, gain: 0.3, slide: -80 });
+  },
 };

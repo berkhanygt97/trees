@@ -6,7 +6,7 @@ import { createCrash } from './crash.js';
 import { createHorses } from './horses.js';
 import { createCigar } from './cigar.js';
 import { createRobots } from './robots.js';
-import { createFarmShop, createAnimalShop, createBuilder, createLandOffice, createMachinery } from './shops.js';
+import { createFarmShop, createAnimalShop, createBuilder, createLandOffice, createMachinery, createGunShop } from './shops.js';
 import { createMarket, createBin, createOrders } from './market.js';
 import { createCarDealer } from './dealer.js';
 import { createHouse, createCoop, createBarn, createMill, createDairy, createBakery } from './farm.js';
@@ -31,6 +31,7 @@ export const GAME_UIS = {
   cardealer: { title: 'MOTORS — SLICK VINNY', chips: false, create: createCarDealer },
   machinery: { title: 'TRACTOR BARN — HANK', chips: false, create: createMachinery },
   orders: { title: 'ORDERS BOARD', chips: false, create: createOrders },
+  gunshop: { title: "RUSTY'S GUNS", chips: false, create: createGunShop },
 
   // Your farm.
   house: { title: 'HOME', chips: false, create: createHouse },

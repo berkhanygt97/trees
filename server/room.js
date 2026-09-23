@@ -2,7 +2,7 @@ import { CONFIG, AVATAR_COLORS, HATS, CIGAR, money } from '../shared/config.js';
 import {
   CROP_BY_ID, ITEMS, SELLABLE, HOUSES, ANIMAL_HOUSES, PROCESSORS, PROCESS_QUEUE_MAX,
   FIELD_SIZES, FIELD_PRICES, FIELD_LEVELS, VEHICLE_BY_ID, MAX_VEHICLES,
-  IMPLEMENT_BY_ID, PAINTS, RESALE, levelOf, levelProgress,
+  IMPLEMENT_BY_ID, PAINTS, RESALE, GUN_BY_ID, PLAYER_HP, levelOf, levelProgress,
 } from '../shared/catalog.js';
 import {
   BOUNDS, PLOTS, STATION_BY_ID, TOWN_SPAWN, plotSpawn, tileCenter, tileIndex,
@@ -12,6 +12,7 @@ import { CasinoEvents } from './casino-events.js';
 import { Clock } from './clock.js';
 import { Market, Orders } from './economy.js';
 import { slugOf } from './save.js';
+import { Wildlife } from './boars.js';
 import {
   workTile, rainOn, lightningOn, settleBuildings, settleAnimals, settleProcessor,
   storageUsed, storageCap, storageFree, addItem, takeItem, newProfile, migrateProfile, toSave,
@@ -34,8 +35,12 @@ const RAIN_EVERY_MS = 20_000;
 const SHOP_OF = {
   seed: 'farmshop', feed: 'animalshop', animal: 'animalshop', coop: 'animalshop', barn: 'animalshop',
   mill: 'builder', dairy: 'builder', bakery: 'builder', house: 'builder',
-  field: 'landoffice', implement: 'machinery',
+  field: 'landoffice', implement: 'machinery', gun: 'gunshop',
 };
+
+const KO_MS = 4000;
+const REGEN_DELAY_MS = 5000;
+const REGEN_PER_S = 6;
 
 export class Room {
   /**
@@ -63,6 +68,7 @@ export class Room {
     this.orders.refill(this.clock.time, this._topLevel());
 
     this.round = new CasinoEvents(this);
+    this.wildlife = new Wildlife(this);
 
     const hub = {
       broadcast: (type, data) => this.broadcast(type, data),
@@ -89,14 +95,26 @@ export class Room {
 
   // ---------------------------------------------------------------- players
 
-  /** Returns the profile, or { denied } if that name is already in the game. */
-  addPlayer(ws, rawName) {
+  /**
+   * Returns the profile, or { denied } if that name is already in the game.
+   * `key` is a random id the browser keeps, so a player whose connection
+   * dropped can walk straight back in and take over their own old session.
+   */
+  addPlayer(ws, rawName, key = null) {
     const name = this._cleanName(rawName);
     if (!name) return { denied: 'Type a name — it is how your farm is saved.' };
     const slug = slugOf(name);
+    key = typeof key === 'string' ? key.slice(0, 64) : null;
 
     let p = this.profiles.get(slug);
-    if (p && p.ws) return { denied: `${p.name} is already playing. Pick another name.` };
+    if (p && p.ws) {
+      const sameBrowser = key && p.key === key;
+      const stale = Date.now() - (p.lastSeen || 0) > 6000;
+      if (!sameBrowser && !stale) return { denied: `${p.name} is already playing. Pick another name.` };
+      const old = p.ws;
+      this._detach(p);
+      try { old.terminate(); } catch { /* already gone */ }
+    }
 
     const isNew = !p;
     if (isNew) {
@@ -117,7 +135,8 @@ export class Room {
 
     const id = String(this.nextId++);
     Object.assign(p, {
-      id, ws,
+      id, ws, key,
+      lastSeen: Date.now(),
       anim: 0,
       station: null,
       betCooldowns: {},
@@ -127,10 +146,18 @@ export class Room {
       vehicle: null,
       lastWorkAt: 0,
       joinedAt: Date.now(),
+      // Health and the gun in your hands live only as long as the session.
+      hp: PLAYER_HP,
+      lastHurt: 0,
+      koUntil: 0,
+      mag: GUN_BY_ID[p.gun].mag,
+      reloadUntil: 0,
+      lastShot: 0,
     });
     this.players.set(id, p);
     this.byId.set(id, p);
     settleBuildings(p, this.clock.time);
+    this.wildlife.greet(p);
 
     this.send(id, 'welcome', {
       id,
@@ -145,6 +172,7 @@ export class Room {
       orders: this.orders.state(),
       plots: this.publicPlots(),
       vehicles: this.publicVehicles(),
+      boars: this.wildlife.snapshot(),
       games: {
         roulette: this.games.roulette.publicState(),
         crash: this.games.crash.publicState(),
@@ -166,19 +194,24 @@ export class Room {
   removePlayer(id) {
     const p = this.players.get(id);
     if (!p) return;
-    // A blackjack hand in play is voided rather than lost.
-    const hand = this.games.blackjack.hands.get(id);
-    if (hand && hand.phase === 'player') p.money += hand.bet;
-    this.games.blackjack.clear(id);
-    this._leaveVehicle(p);
-    this.players.delete(id);
-    p.ws = null;
-    p.stats.playSeconds += Math.round((Date.now() - p.joinedAt) / 1000);
-    p.joinedAt = Date.now();
+    this._detach(p);
     this.saveProfile(p);
     this.broadcast('players', this.publicPlayers());
     this.broadcast('plot', this.publicPlot(p.plot));
     this.toastAll(`${p.name} went home for the night.`, 'info');
+  }
+
+  /** Ends a session without touching the farm: used on leave and on reconnect. */
+  _detach(p) {
+    // A blackjack hand in play is voided rather than lost.
+    const hand = this.games.blackjack.hands.get(p.id);
+    if (hand && hand.phase === 'player') p.money += hand.bet;
+    this.games.blackjack.clear(p.id);
+    this._leaveVehicle(p);
+    this.players.delete(p.id);
+    p.ws = null;
+    p.stats.playSeconds += Math.round((Date.now() - p.joinedAt) / 1000);
+    p.joinedAt = Date.now();
   }
 
   _cleanName(raw) {
@@ -274,6 +307,7 @@ export class Room {
     let assets = 0;
     for (const v of p.vehicles) assets += (VEHICLE_BY_ID[v.model] || { price: 0 }).price;
     for (const i of p.implements) assets += (IMPLEMENT_BY_ID[i] || { price: 0 }).price;
+    for (const g of p.guns) assets += (GUN_BY_ID[g] || { price: 0 }).price;
     assets += HOUSES[p.house].price;
     for (let k = 0; k < FIELD_SIZES.length; k++) if (FIELD_SIZES[k] <= p.field.size) assets += FIELD_PRICES[k];
     for (const [kind, def] of Object.entries(ANIMAL_HOUSES)) {
@@ -314,6 +348,8 @@ export class Room {
       plot: p.plot,
       fieldSize: p.field.size,
       implements: p.implements,
+      guns: p.guns,
+      gun: p.gun,
       buildings: p.buildings,
       charity: this._charityAvailable(p),
       vehicle: p.vehicle,
@@ -392,10 +428,16 @@ export class Room {
     p.ws.send(JSON.stringify({ t: type, d: data }));
   }
 
-  broadcast(type, data) {
+  /**
+   * `droppable` messages (position snapshots) are skipped for a client whose
+   * socket is backed up, so one slow laptop never piles up lag for itself.
+   */
+  broadcast(type, data, droppable = false) {
     const payload = JSON.stringify({ t: type, d: data });
     for (const p of this.players.values()) {
-      if (p.ws && p.ws.readyState === 1) p.ws.send(payload);
+      if (!p.ws || p.ws.readyState !== 1) continue;
+      if (droppable && p.ws.bufferedAmount > 256 * 1024) continue;
+      p.ws.send(payload);
     }
   }
 
@@ -431,6 +473,7 @@ export class Room {
   // ---------------------------------------------------------------- message
 
   handle(p, msg) {
+    p.lastSeen = Date.now();
     switch (msg.t) {
       case 'move': return this.onMove(p, msg.d);
       case 'enter': return this.onEnter(p, msg.d);
@@ -446,6 +489,9 @@ export class Room {
       case 'charity': return this.onCharity(p, msg.d);
       case 'drive': return this.onDrive(p, msg.d);
       case 'implement': return this.onImplement(p, msg.d);
+      case 'shoot': return this.onShoot(p, msg.d);
+      case 'reload': return this.onReload(p);
+      case 'equip': return this.onEquip(p, msg.d);
       case 'ping': return this.send(p.id, 'pong', { c: msg.d && msg.d.c, serverNow: Date.now() });
       default: return undefined;
     }
@@ -460,9 +506,19 @@ export class Room {
     p.pos[2] = clamp(z, BOUNDS.minZ, BOUNDS.maxZ);
     if (Number.isFinite(d.y)) p.yaw = d.y;
     p.anim = d.a | 0;
+    // Which gun you are holding out, so everyone sees you carrying it.
+    p.gunOut = typeof d.g === 'string' && p.guns.includes(d.g) ? d.g : null;
     if (p.vehicle) {
       const v = this._findVehicle(p, p.vehicle);
       if (v) {
+        // Speed is only used to decide how hard a vehicle hits a boar.
+        const now = Date.now();
+        const dtm = (now - (v.movedAt || now)) / 1000;
+        if (dtm > 0.01 && dtm < 1) {
+          const inst = Math.hypot(p.pos[0] - v.pos[0], p.pos[2] - v.pos[2]) / dtm;
+          v.speed = (v.speed || 0) * 0.5 + Math.min(inst, 80) * 0.5;
+        }
+        v.movedAt = now;
         v.pos = [p.pos[0], p.pos[1], p.pos[2]];
         if (Number.isFinite(d.vy)) v.yaw = d.vy;
       }
@@ -673,6 +729,20 @@ export class Room {
       return this._bought(p, shop, `a ${p.field.size}×${p.field.size} field`);
     }
 
+    if (kind === 'gun') {
+      const def = GUN_BY_ID[arg];
+      if (!def) return deny('No such gun');
+      if (p.guns.includes(def.id)) return deny('You already own one');
+      if (lvl < def.level) return deny(`Rusty will not sell you that before farm level ${def.level}`);
+      if (!this._spend(p, def.price)) return deny(`The ${def.name} costs ${money(def.price)}`);
+      p.guns.push(def.id);
+      p.gun = def.id;
+      p.mag = def.mag;
+      p.reloadUntil = 0;
+      this.send(p.id, 'ammo', { gun: p.gun, mag: p.mag, reloadUntil: 0 });
+      return this._bought(p, shop, `a ${def.name}`);
+    }
+
     if (kind === 'implement') {
       const def = IMPLEMENT_BY_ID[arg];
       if (!def) return deny('No such implement');
@@ -872,6 +942,107 @@ export class Room {
     v.implement = want;
     this.broadcast('vehicles', this.publicVehicles());
     return undefined;
+  }
+
+  // ================================================================== guns
+
+  onShoot(p, d) {
+    const gun = GUN_BY_ID[p.gun];
+    const now = Date.now();
+    if (!gun || !d || !Array.isArray(d.o) || !Array.isArray(d.d)) return;
+    if (p.vehicle || now < p.koUntil) return;
+    const o = d.o.map(Number);
+    let dir = d.d.map(Number);
+    if (![...o, ...dir].every(Number.isFinite)) return;
+    const len = Math.hypot(dir[0], dir[1], dir[2]);
+    if (len < 0.5) return;
+    dir = dir.map((v) => v / len);
+    // The muzzle has to be roughly where you are standing.
+    if (Math.hypot(o[0] - p.pos[0], o[2] - p.pos[2]) > 3 || Math.abs(o[1] - p.pos[1] - 1.6) > 2) return;
+    // Rate of fire (a little slack for LAN jitter), magazine and reload.
+    if (now - p.lastShot < gun.rate * 1000 - 90 || now < p.reloadUntil || p.mag <= 0) {
+      return this.send(p.id, 'ammo', { gun: p.gun, mag: p.mag, reloadUntil: p.reloadUntil });
+    }
+    p.lastShot = now;
+    p.mag--;
+    // How old the boars on the shooter's screen were (interpolation + half a
+    // round trip); boars.js caps it.
+    const res = this.wildlife.shoot(p, gun, o, dir, Number(d.lag) || 0);
+    this.send(p.id, 'shotres', { hits: res.hits, mag: p.mag });
+    // Everyone else hears it and sees the tracer.
+    const payload = JSON.stringify({ t: 'shot', d: { pid: p.id, gun: gun.id, o: o.map(r2), e: res.end.map(r2) } });
+    for (const q of this.players.values()) {
+      if (q !== p && q.ws && q.ws.readyState === 1 && q.ws.bufferedAmount < 256 * 1024) q.ws.send(payload);
+    }
+  }
+
+  onReload(p) {
+    const gun = GUN_BY_ID[p.gun];
+    const now = Date.now();
+    if (!gun || now < p.reloadUntil || p.mag >= gun.mag) return;
+    p.reloadUntil = now + gun.reload * 1000;
+    p.mag = gun.mag;   // usable once the reload finishes
+    this.send(p.id, 'ammo', { gun: p.gun, mag: p.mag, reloadUntil: p.reloadUntil });
+  }
+
+  onEquip(p, d) {
+    const gun = GUN_BY_ID[d && d.gun];
+    if (!gun || !p.guns.includes(gun.id)) return;
+    if (gun.id === p.gun) return;
+    p.gun = gun.id;
+    p.mag = gun.mag;
+    // Swapping is not a free reload: getting the other gun ready takes a moment.
+    p.reloadUntil = Date.now() + 800;
+    this.send(p.id, 'ammo', { gun: p.gun, mag: p.mag, reloadUntil: p.reloadUntil });
+    this.sendWallet(p);
+  }
+
+  // ---------------------------------------------------------------- health
+
+  hurtPlayer(p, dmg, dir, cause) {
+    const now = Date.now();
+    if (now < p.koUntil) return;
+    p.hp = Math.max(0, p.hp - dmg);
+    p.lastHurt = now;
+    this.send(p.id, 'hurt', { hp: p.hp, dmg, dir, cause });
+    if (p.hp <= 0) {
+      p.koUntil = now + KO_MS;
+      const plot = p.plot >= 0 ? PLOTS[p.plot] : null;
+      const spawn = plot ? plotSpawn(plot) : TOWN_SPAWN;
+      this.send(p.id, 'ko', { ms: KO_MS, spawn: spawn.pos, yaw: spawn.yaw });
+      this.toastAll(`${p.name} got flattened by a wild boar.`, 'warn');
+    }
+  }
+
+  _healthTick(now, dt) {
+    for (const p of this.players.values()) {
+      if (p.koUntil && now >= p.koUntil) {
+        p.koUntil = 0;
+        p.hp = PLAYER_HP;
+        this.send(p.id, 'hp', { hp: p.hp });
+        continue;
+      }
+      if (p.hp < PLAYER_HP && !p.koUntil && now - p.lastHurt > REGEN_DELAY_MS) {
+        const before = Math.floor(p.hp);
+        p.hp = Math.min(PLAYER_HP, p.hp + REGEN_PER_S * dt);
+        if (Math.floor(p.hp) !== before && (Math.floor(p.hp) % 10 === 0 || p.hp >= PLAYER_HP)) this.send(p.id, 'hp', { hp: Math.floor(p.hp) });
+      }
+    }
+  }
+
+  /** Bounty, meat and bragging rights for whoever dropped it. */
+  boarKilled(p, b) {
+    const st = b.st;
+    p.money += st.bounty;
+    p.stats.boars = (p.stats.boars || 0) + 1;
+    this._gainXp(p, st.xp);
+    const meat = Math.min(st.meat, storageFree(p));
+    if (meat > 0) addItem(p, 'boar', meat);
+    this.sendWallet(p);
+    this.send(p.id, 'harvest', { item: 'boar', qty: meat });
+    const owner = this.profiles.get(b.owner);
+    const whose = owner && owner !== p ? ` on ${owner.name}'s farm` : '';
+    this.toastAll(`${p.name} dropped a wild boar${whose} (+${money(st.bounty)}).`, 'info');
   }
 
   // ================================================================= casino
@@ -1085,6 +1256,9 @@ export class Room {
       this._rain();
     }
 
+    this.wildlife.tick();
+    this._healthTick(now, 1 / CONFIG.TICK_HZ);
+
     this.round.tick(now);
     this.games.roulette.tick(now);
     this.games.crash.tick(now);
@@ -1096,9 +1270,9 @@ export class Room {
       const snap = [];
       for (const p of this.players.values()) {
         const v = p.vehicle ? this._findVehicle(p, p.vehicle) : null;
-        snap.push([p.id, r2(p.pos[0]), r2(p.pos[1]), r2(p.pos[2]), r2(p.yaw), p.anim, p.vehicle || 0, v ? r2(v.yaw) : 0]);
+        snap.push([p.id, r2(p.pos[0]), r2(p.pos[1]), r2(p.pos[2]), r2(p.yaw), p.anim, p.vehicle || 0, v ? r2(v.yaw) : 0, p.gunOut || 0]);
       }
-      if (snap.length) this.broadcast('snap', snap);
+      if (snap.length) this.broadcast('snap', snap, true);
     }
 
     if (now - this.lastClockSync >= 10_000) {

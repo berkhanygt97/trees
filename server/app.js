@@ -93,12 +93,15 @@ export function startCasino(settings = {}) {
 
   const store = new SaveStore(settings.saveDir || DEFAULT_SAVE_DIR);
   const room = new Room({ store, timeScale: CONFIG.TIME_SCALE });
-  const wss = new WebSocketServer({ server, maxPayload: 16 * 1024 });
+  const wss = new WebSocketServer({ server, maxPayload: 64 * 1024, perMessageDeflate: false });
 
   wss.on('connection', (ws) => {
+    // The profile object outlives this socket (a reconnect takes it over), so
+    // remember which session *this* socket owns and only ever act for that.
     let player = null;
-    ws.isAlive = true;
-    ws.on('pong', () => { ws.isAlive = true; });
+    let sessionId = null;
+    ws.missed = 0;
+    ws.on('pong', () => { ws.missed = 0; });
 
     ws.on('message', (raw) => {
       let msg;
@@ -107,15 +110,17 @@ export function startCasino(settings = {}) {
 
       if (!player) {
         if (msg.t !== 'join') return;
-        const res = room.addPlayer(ws, msg.d && msg.d.name);
+        const res = room.addPlayer(ws, msg.d && msg.d.name, msg.d && msg.d.key);
         if (res.denied) {
           ws.send(JSON.stringify({ t: 'denied', d: { reason: res.denied } }));
           ws.close();
           return;
         }
         player = res;
+        sessionId = res.id;
         return;
       }
+      if (player.ws !== ws) return;   // taken over by a newer connection
       try {
         room.handle(player, msg);
       } catch (err) {
@@ -123,17 +128,22 @@ export function startCasino(settings = {}) {
       }
     });
 
-    const drop = () => { if (player) { room.removePlayer(player.id); player = null; } };
+    const drop = () => {
+      if (sessionId) room.removePlayer(sessionId);
+      player = null;
+      sessionId = null;
+    };
     ws.on('close', drop);
     ws.on('error', drop);
   });
 
-  // Drop connections that stopped answering (laptop lid closed mid-session).
+  // Drop connections that stopped answering, but only after three missed
+  // pings in a row (45 s): a laptop busy loading the valley must not be kicked.
   const heartbeat = setInterval(() => {
     for (const ws of wss.clients) {
-      if (!ws.isAlive) { ws.terminate(); continue; }
-      ws.isAlive = false;
-      ws.ping();
+      if (ws.missed >= 3) { ws.terminate(); continue; }
+      ws.missed++;
+      try { ws.ping(); } catch { /* socket already closing */ }
     }
   }, 15000);
 
