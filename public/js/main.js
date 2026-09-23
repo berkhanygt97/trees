@@ -3,7 +3,7 @@ import { CONFIG, money } from '/shared/config.js';
 import {
   CROP_BY_ID, ITEMS, VEHICLE_BY_ID, IMPLEMENT_BY_ID, nextAction, cropProgress, isWatered,
 } from '/shared/catalog.js';
-import { ALL_STATIONS, PLOTS, TILE, tileAt, tileCenter, groundHeight } from '/shared/map.js';
+import { ALL_STATIONS, PLOTS, TILE, tileAt, tileCenter, groundHeight, padStation } from '/shared/map.js';
 import { net } from './net.js';
 import { sfx } from './sfx.js';
 import { hud } from './hud.js';
@@ -243,7 +243,11 @@ net.on('orders', (o) => {
   if (activePanel && activePanel.ui.onOrders) activePanel.ui.onOrders(o);
 });
 
-net.on('plot', (p) => { if (world && p) world.farms.setPlot(p); });
+net.on('plot', (p) => {
+  if (!world || !p) return;
+  world.farms.setPlot(p);
+  if (activePanel && activePanel.ui.onPlot && p.index === hud.wallet.plot) activePanel.ui.onPlot(p);
+});
 
 net.on('tiles', (d) => {
   if (!world) return;
@@ -381,13 +385,27 @@ function stationUsable(st) {
   return !!(hud.wallet.buildings && hud.wallet.buildings[st.pad]);
 }
 
+/** Your farm's layout (where the planner put everything), or undefined for the default. */
+function myLayout() {
+  const p = world && world.farms.plots.get(hud.wallet.plot);
+  return p && p.layout;
+}
+
+/** Where a station really is: farm buildings follow their owner's layout. */
+function stationPos(st) {
+  if (st.plot == null) return st.pos;
+  const p = world.farms.plots.get(st.plot);
+  return padStation(PLOTS[st.plot], st.pad, p && p.layout);
+}
+
 function findNearest() {
   if (!controls || controls.car) return null;
   let best = null;
   let bestD = Infinity;
   for (const st of ALL_STATIONS) {
-    const dx = controls.pos.x - st.pos[0];
-    const dz = controls.pos.z - st.pos[2];
+    const pos = stationPos(st);
+    const dx = controls.pos.x - pos[0];
+    const dz = controls.pos.z - pos[2];
     if (Math.abs(dx) > 12 || Math.abs(dz) > 12) continue;
     const d = Math.hypot(dx, dz);
     if (d <= st.radius && d < bestD && stationUsable(st)) { best = st; bestD = d; }
@@ -413,12 +431,17 @@ function panelCtx(station) {
     get market() { return market; },
     get orders() { return orders; },
     get vehicles() { return fleet ? [...fleet.items.values()].filter((e) => e.owner === me.slug) : []; },
+    get myPlot() { return world ? world.farms.plots.get(hud.wallet.plot) : null; },
+    /** Swap this panel for another one at the same spot (the house opens the planner). */
+    open: (game) => openPanel({ ...station, game }),
     worldTime,
   };
 }
 
 function openPanel(station) {
-  if (activePanel) closePanel();
+  // Swapping one panel for another (house -> planner) must not grab the mouse
+  // back in between, or the new panel could not be clicked.
+  if (activePanel) closePanel({ swap: true });
   const def = GAME_UIS[station.game];
   if (!def) return;
   const ui = def.create(panelCtx(station));
@@ -432,13 +455,13 @@ function openPanel(station) {
   sfx.click();
 }
 
-function closePanel() {
+function closePanel({ swap = false } = {}) {
   if (!activePanel) return;
   activePanel.ui.destroy();
   activePanel = null;
   hud.closePanel();
   net.send('exit', {});
-  relock();
+  if (!swap) relock();
 }
 
 let relockTimer = null;
@@ -472,9 +495,10 @@ function findAim() {
     x = controls.pos.x - Math.sin(controls.yaw) * 1.3;
     z = controls.pos.z - Math.cos(controls.yaw) * 1.3;
   }
-  const t = tileAt(plot, x, z, size);
+  const layout = myLayout();
+  const t = tileAt(plot, x, z, size, layout);
   if (!t) return null;
-  const [cx, cz] = tileCenter(plot, t[0], t[1]);
+  const [cx, cz] = tileCenter(plot, t[0], t[1], layout);
   const tile = world.farms.tile(plotIndex, t[0], t[1]);
   return { i: t[0], j: t[1], cx, cz, tile, action: nextAction(tile, worldTime()) };
 }
@@ -535,7 +559,7 @@ function machineWork() {
     const off = (k - (n - 1) / 2) * TILE;
     const x = controls.pos.x - fx * back + rx * off;
     const z = controls.pos.z - fz * back + rz * off;
-    const t = tileAt(plot, x, z, size);
+    const t = tileAt(plot, x, z, size, myLayout());
     if (!t) continue;
     const key = `${t[0]},${t[1]}`;
     if (seen.has(key)) continue;

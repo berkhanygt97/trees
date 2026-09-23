@@ -5,7 +5,8 @@ import {
   IMPLEMENT_BY_ID, PAINTS, RESALE, GUN_BY_ID, PLAYER_HP, levelOf, levelProgress,
 } from '../shared/catalog.js';
 import {
-  BOUNDS, PLOTS, STATION_BY_ID, TOWN_SPAWN, plotSpawn, tileCenter, tileIndex,
+  BOUNDS, PLOTS, STATION_BY_ID, TOWN_SPAWN, PAD_KEYS, plotSpawn, tileCenter, tileIndex,
+  padStation, validateLayout, cleanLayout, defaultLayout,
 } from '../shared/map.js';
 import { rnd, pick } from './rng.js';
 import { CasinoEvents } from './casino-events.js';
@@ -37,6 +38,8 @@ const SHOP_OF = {
   mill: 'builder', dairy: 'builder', bakery: 'builder', house: 'builder',
   field: 'landoffice', implement: 'machinery', gun: 'gunshop',
 };
+
+const LAYOUT_FEE = 100;           // per building (or field) moved with the planner
 
 const KO_MS = 4000;
 const REGEN_DELAY_MS = 5000;
@@ -254,6 +257,7 @@ export class Room {
       size: owner.field.size,
       tiles: owner.field.tiles,
       house: owner.house,
+      layout: owner.layout,
       buildings: {
         coop: b.coop ? b.coop.animals : null,
         barn: b.barn ? b.barn.animals : null,
@@ -451,11 +455,19 @@ export class Room {
 
   // --------------------------------------------------------------- stations
 
+  /** Where a station really is: farm buildings follow their owner's layout. */
+  stationPos(st) {
+    if (st.plot == null) return st.pos;
+    const owner = this._ownerOf(st.plot);
+    return padStation(PLOTS[st.plot], st.pad, owner && owner.layout);
+  }
+
   nearStation(p, stationId) {
     const st = STATION_BY_ID.get(stationId);
     if (!st) return null;
-    const dx = p.pos[0] - st.pos[0];
-    const dz = p.pos[2] - st.pos[2];
+    const pos = this.stationPos(st);
+    const dx = p.pos[0] - pos[0];
+    const dz = p.pos[2] - pos[2];
     // Generous slack: LAN latency should never cost somebody a bet.
     const reach = st.radius + 3.5;
     if (dx * dx + dz * dz > reach * reach) return null;
@@ -485,6 +497,7 @@ export class Room {
       case 'buy': return this.onBuy(p, msg.d);
       case 'sell': return this.onSell(p, msg.d);
       case 'farm': return this.onFarmBuilding(p, msg.d);
+      case 'layout': return this.onLayout(p, msg.d);
       case 'deliver': return this.onDeliver(p, msg.d);
       case 'charity': return this.onCharity(p, msg.d);
       case 'drive': return this.onDrive(p, msg.d);
@@ -588,7 +601,7 @@ export class Room {
       const i = pair[0] | 0;
       const j = pair[1] | 0;
       if (i < 0 || j < 0 || i >= size || j >= size) continue;
-      const [cx, cz] = tileCenter(plot, i, j);
+      const [cx, cz] = tileCenter(plot, i, j, p.layout);
       const dx = cx - reachFrom[0];
       const dz = cz - reachFrom[2];
       if (dx * dx + dz * dz > reach * reach) continue;
@@ -885,6 +898,30 @@ export class Room {
       return this.sendWallet(p);
     }
 
+    return undefined;
+  }
+
+  // ----------------------------------------------------------- farm planner
+
+  /** Moves and turns buildings and the field, from the planner at your house. */
+  onLayout(p, d) {
+    if (p.plot < 0) return this.error(p, 'You need a farm first');
+    if (!this.nearStation(p, `p${p.plot}-house`)) return this.error(p, 'Plan your farm from your house');
+    const want = d && d.reset ? defaultLayout() : d && d.layout;
+    const check = validateLayout(want);
+    if (!check.ok) return this.error(p, check.error || 'That layout does not fit');
+    const next = cleanLayout(want);
+    const old = p.layout;
+    const moved = PAD_KEYS.filter((k) => JSON.stringify(old.pads[k]) !== JSON.stringify(next.pads[k])).length
+      + (old.field.x !== next.field.x || old.field.z !== next.field.z ? 1 : 0);
+    if (!moved) return this.send(p.id, 'result', { game: 'planner', saved: true, moved: 0 });
+    const fee = moved * LAYOUT_FEE;
+    if (!this._spend(p, fee)) return this.error(p, `Moving ${moved} thing${moved > 1 ? 's' : ''} costs ${money(fee)}`);
+    p.layout = next;
+    this.sendWallet(p);
+    this.broadcast('plot', this.publicPlot(p.plot));
+    this.send(p.id, 'result', { game: 'planner', saved: true, moved, fee });
+    this.send(p.id, 'toast', { text: `The builders moved ${moved} thing${moved > 1 ? 's' : ''} for ${money(fee)}.`, kind: 'info' });
     return undefined;
   }
 

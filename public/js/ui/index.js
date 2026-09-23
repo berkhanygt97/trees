@@ -10,6 +10,7 @@ import { createFarmShop, createAnimalShop, createBuilder, createLandOffice, crea
 import { createMarket, createBin, createOrders } from './market.js';
 import { createCarDealer } from './dealer.js';
 import { createHouse, createCoop, createBarn, createMill, createDairy, createBakery } from './farm.js';
+import { createPlanner } from './planner.js';
 
 export const GAME_UIS = {
   // The casino.
@@ -35,6 +36,7 @@ export const GAME_UIS = {
 
   // Your farm.
   house: { title: 'HOME', chips: false, create: createHouse },
+  planner: { title: 'FARM PLANNER', chips: false, create: createPlanner },
   bin: { title: 'SHIPPING BIN', chips: false, create: createBin },
   coop: { title: 'CHICKEN COOP', chips: false, create: createCoop },
   barn: { title: 'COW BARN', chips: false, create: createBarn },

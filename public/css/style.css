@@ -641,3 +641,16 @@ tr.me td { background: rgba(242,193,78,.1); }
 
 #speedo canvas { display: block; width: 300px; height: 150px; margin-left: auto; }
 #speedo.cockpit canvas { display: none; }
+
+/* ------------------------------------------------------------- farm planner */
+.planner { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.planner canvas { width: min(430px, 100%); aspect-ratio: 1; border-radius: 10px; cursor: grab;
+  box-shadow: 0 0 0 1px rgba(160,200,255,.35), 0 8px 30px rgba(0,0,0,.5); }
+.planner canvas:active { cursor: grabbing; }
+.planner-side { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 10px; }
+.planner-sel .nm { font: 800 16px var(--font); color: #f4eee4; }
+.planner-sel .ds { font: 600 12px var(--font); color: #b0a698; margin-top: 3px; }
+.planner-msg { font: 700 13px var(--font); color: var(--green); min-height: 34px; }
+.planner-msg.bad { color: #ff6a5a; }
+.planner-btns { display: flex; flex-direction: column; gap: 8px; }
+.planner-btns .bet { width: 100%; }

@@ -39,9 +39,12 @@ export function createHouse(ctx) {
         ${row({ icon: '🌾', name: `Field ${w.fieldSize}×${w.fieldSize}`, desc: 'The Land Office in town sells bigger fields.' })}
         ${row({ icon: '📈', name: `Farm level ${w.level}`, desc: `${w.levelInto} / ${w.levelNeed || '—'} xp to the next level. Harvesting, selling and filling orders all count.` })}
         ${next ? row({ icon: '🏗️', name: `Next: ${next.name}`, desc: `${money(next.price)} at the Builder's Yard${w.level < next.level ? ` (level ${next.level})` : ''}. Stores ${next.storage.toLocaleString('en-US')}.` }) : ''}
+        ${row({ icon: '📐', name: 'Plan my farm', desc: 'Move and turn your buildings and the field on a blueprint of your plot.', buttons: btn('PLANNER', 'plan') })}
         ${row({ icon: '🧮', name: 'Lifetime', desc: `Harvested ${w.stats.harvested.toLocaleString('en-US')} · sold ${money(w.stats.sold)} · orders ${w.stats.orders} · gambled ${money(w.stats.wagered)}` })}
       </div>`;
-  }, () => {});
+  }, (act) => {
+    if (act === 'plan') ctx.open('planner');
+  });
 }
 
 // ---------------------------------------------------------------- animals

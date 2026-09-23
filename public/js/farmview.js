@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CROPS, CROP_BY_ID, cropProgress, isWatered } from '/shared/catalog.js';
-import { PLOTS, PLOT_SIZE, GATE, TILE, tileCenter, tileIndex, padWorld } from '/shared/map.js';
+import { PLOTS, PLOT_SIZE, GATE, TILE, PADS, tileCenter, tileIndex, padWorld } from '/shared/map.js';
 import { soilTexture, plankTexture, brickTexture, boardTexture, roofTileTexture, metalTexture, plasterTexture } from './textures.js';
 
 // Draws every farm in the valley: soil, crops, buildings and animals.
@@ -454,11 +454,12 @@ export class FarmView {
 
     // Field boundary stakes, so you can see how big your field is.
     const size = p.size;
-    const [ax] = tileCenter(plot, 0, 0);
-    const [, az] = tileCenter(plot, 0, size - 1);
+    const layout = p.layout;
+    const [ax, bz] = tileCenter(plot, 0, 0, layout);
+    const [, az] = tileCenter(plot, 0, size - 1, layout);
     const minX = ax - TILE / 2;
     const maxX = minX + size * TILE;
-    const maxZ = plot.z0 + 66;
+    const maxZ = bz + TILE / 2;
     const minZ = az - TILE / 2;
     const rope = phong(0xd8c39a);
     const stake = phong(0x6b4a2e);
@@ -468,35 +469,55 @@ export class FarmView {
     ]) box(g, w, 0.06, d, x, 0.45, z, rope);
     for (const [x, z] of [[minX, minZ], [maxX, minZ], [minX, maxZ], [maxX, maxZ]]) box(g, 0.14, 0.9, 0.14, x, 0.45, z, stake);
 
+    // Every building is modelled facing south (+z); the layout turns it in
+    // quarter turns and moves it anywhere on the plot.
     const place = (obj, pad, faceFront = true) => {
-      const w = padWorld(plot, pad);
-      obj.position.set(w.x, 0, faceFront ? w.z + w.d / 2 : w.z);
+      const w = padWorld(plot, pad, layout);
+      const out = faceFront ? PADS[pad].d / 2 : 0;
+      obj.position.set(w.x + w.door[0] * out, 0, w.z + w.door[1] * out);
+      obj.rotation.y = w.yaw;
       g.add(obj);
       return w;
     };
+    // A rectangle given in a building's own frame (x across, z towards the
+    // door), turned with it and returned as a world box.
+    const turned = (w, x0, x1, z0, z1) => {
+      const pts = [[x0, z0], [x1, z0], [x0, z1], [x1, z1]].map(([x, z]) => {
+        const c = Math.cos(w.yaw);
+        const sn = Math.sin(w.yaw);
+        return [w.x + x * c + z * sn, w.z - x * sn + z * c];
+      });
+      const xs = pts.map((q) => q[0]);
+      const zs = pts.map((q) => q[1]);
+      return { x0: Math.min(...xs), x1: Math.max(...xs), z0: Math.min(...zs), z1: Math.max(...zs) };
+    };
 
     const house = buildHouse(p.house, p.color, this.windowMats);
-    place(house.group, 'house');
+    const hp = place(house.group, 'house');
     view.fire = house.fire;
-    const hp = padWorld(plot, 'house');
-    view.boxes.push({ x0: hp.x - house.w / 2, x1: hp.x + house.w / 2, z0: hp.z + hp.d / 2 - house.d, z1: hp.z + hp.d / 2 });
+    const hd = PADS.house.d / 2;
+    view.boxes.push(turned(hp, -house.w / 2, house.w / 2, hd - house.d, hd));
 
     const b = p.buildings || {};
     const addBox = (pad, shrink = 0.3) => {
-      const w = padWorld(plot, pad);
+      const w = padWorld(plot, pad, layout);
       view.boxes.push({ x0: w.x - w.w / 2 + shrink, x1: w.x + w.w / 2 - shrink, z0: w.z - w.d / 2 + shrink, z1: w.z + w.d / 2 - shrink });
     };
+    // A spot a few metres from a building, in its own frame.
+    const beside = (w, x, z) => [w.x + x * Math.cos(w.yaw) + z * Math.sin(w.yaw), w.z - x * Math.sin(w.yaw) + z * Math.cos(w.yaw)];
     if (b.coop != null) {
       const coop = buildCoop(this.windowMats);
       const w = place(coop, 'coop', false);
       addBox('coop');
-      for (let i = 0; i < b.coop; i++) this._addAnimal(index, chicken(), w.x + 2.5, w.z, 2, 1.6);
+      const [cx, cz] = beside(w, 2.5, 0);
+      for (let i = 0; i < b.coop; i++) this._addAnimal(index, chicken(), cx, cz, 2, 1.6);
     }
     if (b.barn != null) {
-      place(buildBarn(), 'barn', false);
+      const w = place(buildBarn(), 'barn', false);
       addBox('barn');
-      const w = padWorld(plot, 'barn');
-      for (let i = 0; i < b.barn; i++) this._addAnimal(index, cow(), w.x, w.z + w.d / 2 + 2.5, 5, 1.2);
+      const [cx, cz] = beside(w, 0, PADS.barn.d / 2 + 2.5);
+      const turnedPen = w.rot % 2 === 1;
+      for (let i = 0; i < b.barn; i++) this._addAnimal(index, cow(), cx, cz, turnedPen ? 1.2 : 5, turnedPen ? 5 : 1.2);
     }
     if (b.mill) { const m = buildMill(); place(m, 'mill', false); view.hub = m.userData.hub; addBox('mill', 1); }
     if (b.dairy) { place(buildDairy(this.windowMats), 'dairy', false); addBox('dairy'); }
@@ -585,7 +606,7 @@ export class FarmView {
         for (let i = 0; i < p.size; i++) {
           const t = p.tiles[tileIndex(i, j)];
           if (t === null || t === undefined) continue;
-          const [x, z] = tileCenter(plot, i, j);
+          const [x, z] = tileCenter(plot, i, j, p.layout);
           m.makeTranslation(x, 0.015, z);
           this.soil.setMatrixAt(ns, m);
           this.soil.setColorAt(ns, t !== 0 && isWatered(t, now) ? soilWet : soilPlowed);

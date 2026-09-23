@@ -192,7 +192,7 @@ export class Wildlife {
       case 'approach': {
         if (!b.target || !Array.isArray(b.target)) b.target = this._pickTile(b, owner);
         if (!b.target) { b.state = 'flee'; break; }
-        const [cx, cz] = tileCenter(plot, b.target[0], b.target[1]);
+        const [cx, cz] = tileCenter(plot, b.target[0], b.target[1], owner.layout);
         // They rush the field at a trot, then slow down to graze.
         if (this._moveTo(b, cx, cz, b.st.walk * 2.5, dt) < 0.2) { b.state = 'eat'; b.t = EAT_MS / 1000; }
         break;
@@ -294,8 +294,8 @@ export class Wildlife {
     // Nearest few, picked at random, so the herd spreads out over the field.
     const plot = PLOTS[b.plot];
     planted.sort((a, c) => {
-      const [ax, az] = tileCenter(plot, a[0], a[1]);
-      const [cx, cz] = tileCenter(plot, c[0], c[1]);
+      const [ax, az] = tileCenter(plot, a[0], a[1], owner.layout);
+      const [cx, cz] = tileCenter(plot, c[0], c[1], owner.layout);
       return Math.hypot(ax - b.x, az - b.z) - Math.hypot(cx - b.x, cz - b.z);
     });
     return planted[Math.floor(rnd() * Math.min(6, planted.length))];
