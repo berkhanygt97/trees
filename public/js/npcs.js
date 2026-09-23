@@ -13,7 +13,7 @@ export class NpcView {
   constructor(scene) {
     this.scene = scene;
     this.items = new Map();
-    this.cap = 60;
+    this.cap = 80;
   }
 
   /**

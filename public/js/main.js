@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CONFIG, money } from '/shared/config.js';
 import {
   CROP_BY_ID, ITEMS, VEHICLE_BY_ID, IMPLEMENT_BY_ID, nextAction, cropProgress, isWatered,
-  DISH_BY_ID,
+  DISH_BY_ID, DAY_MS, HOUR_MS,
 } from '/shared/catalog.js';
 import { ALL_STATIONS, PLOTS, TILE, tileAt, tileCenter, groundHeight, padStation } from '/shared/map.js';
 import { net } from './net.js';
@@ -21,6 +21,7 @@ import { buildCockpit } from './cockpit.js';
 import { WorkerView } from './workersview.js';
 import { RestaurantView } from './restaurantview.js';
 import { NpcView } from './npcs.js';
+import { Crowd } from './crowd.js';
 import { shadowTexture } from './textures.js';
 
 const canvas = document.getElementById('scene');
@@ -31,7 +32,7 @@ const joinStatus = document.getElementById('join-status');
 
 let renderer, scene, camera, world, fleet, controls, viewModel, smoke, selfAvatar, pipeline, boars, weapons, workers;
 let jobs = [];                    // today's Job Centre candidates
-let restaurants, npcs;
+let restaurants, npcs, crowd;
 let restaurantList = [];          // who owns which lot on the Strip
 let resto = null;                 // your restaurant's live state, for the counter panel
 let beacon = null;                // the delivery destination marker
@@ -128,6 +129,7 @@ function initScene() {
   restaurants = new RestaurantView(scene);
   world.extraBoxes = restaurants.boxes;
   npcs = new NpcView(scene);
+  crowd = new Crowd(npcs);
   beacon = makeBeacon();
   scene.add(beacon);
   const heard = (e) => Math.max(0, 1 - camera.position.distanceTo(e.pos) / 90);
@@ -951,6 +953,7 @@ function loop(now) {
   weapons.update(dt);
   boars.update(dt);
   workers.update(dt, net.now(), camera.position);
+  crowd.update(dt, net.now(), (worldTime() % DAY_MS) / HOUR_MS);
   npcs.update(dt, net.now(), camera.position);
   restaurants.update(dt, world.sky.night);
   updateDelivery(dt);
