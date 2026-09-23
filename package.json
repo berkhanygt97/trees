@@ -1,7 +1,7 @@
 {
-  "name": "lan-casino-royale",
-  "version": "1.0.0",
-  "description": "A LAN-hosted first-person casino party game. 10-minute rounds, everyone starts with the same money, biggest profit wins. Ships as a desktop host app or a plain Node server.",
+  "name": "lan-harvest-royale",
+  "version": "2.0.0",
+  "description": "A LAN-hosted first-person farming game with a casino in town. Grow crops, buy tractors, cars and houses, gamble the profits. Progress is saved per player on the host.",
   "type": "module",
   "scripts": {
     "start": "node server/index.js",
@@ -27,9 +27,9 @@
   },
   "main": "desktop/main.js",
   "build": {
-    "appId": "com.lanparty.casinoroyale",
-    "productName": "Casino Royale",
-    "artifactName": "CasinoRoyale-${version}-${os}-${arch}.${ext}",
+    "appId": "com.lanparty.harvestroyale",
+    "productName": "Harvest Royale",
+    "artifactName": "HarvestRoyale-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -62,11 +62,11 @@
         "AppImage"
       ],
       "category": "Game",
-      "executableName": "casino-royale",
-      "synopsis": "LAN casino party game",
+      "executableName": "harvest-royale",
+      "synopsis": "LAN farming game with a casino",
       "syncDesktopName": true
     }
   },
   "author": "LAN Party",
-  "desktopName": "casino-royale.desktop"
+  "desktopName": "harvest-royale.desktop"
 }

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Casino Royale — LAN</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎰</text></svg>" />
+<title>Harvest Royale — LAN</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🌾</text></svg>" />
 <link rel="stylesheet" href="/css/style.css" />
 <script type="importmap">
 { "imports": { "three": "/vendor/three.module.js" } }
@@ -18,30 +18,31 @@
 <div id="join" class="screen">
   <div class="join-card">
     <div class="logo">
-      <span class="suit red">♦</span><span class="suit">♠</span>
-      <h1>CASINO ROYALE</h1>
-      <span class="suit">♣</span><span class="suit red">♥</span>
+      <span class="suit">🌾</span><span class="suit red">♦</span>
+      <h1>HARVEST ROYALE</h1>
+      <span class="suit">♠</span><span class="suit">🚜</span>
     </div>
-    <p class="tagline">Ten minutes. Same stack for everyone. Biggest profit takes the room.</p>
+    <p class="tagline">Grow it, sell it, bet it. Your farm is saved under your name.</p>
 
     <label for="name">WHAT DO THEY CALL YOU?</label>
-    <input id="name" maxlength="14" autocomplete="off" spellcheck="false" placeholder="High Roller" />
-    <button id="enter">ENTER THE CASINO</button>
+    <input id="name" maxlength="14" autocomplete="off" spellcheck="false" placeholder="Farmer Joe" />
+    <button id="enter">ENTER THE VALLEY</button>
     <div id="join-status" class="status"></div>
 
     <div class="controls-grid">
-      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Move</span></div>
-      <div><kbd>Shift</kbd><span>Sprint</span></div>
-      <div><kbd>Space</kbd><span>Jump</span></div>
-      <div><kbd>E</kbd><span>Play the thing you're looking at</span></div>
-      <div><kbd>Q</kbd> / <kbd>Esc</kbd><span>Leave the table</span></div>
-      <div><kbd>Tab</kbd><span>Full standings</span></div>
-      <div><kbd>M</kbd><span>Mute</span></div>
+      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>Walk / drive</span></div>
+      <div><kbd>E</kbd><span>Use / farm the tile you look at</span></div>
+      <div><kbd>1</kbd>–<kbd>7</kbd><span>Pick a seed</span></div>
+      <div><kbd>F</kbd><span>Get in / out of your vehicle</span></div>
+      <div><kbd>V</kbd><span>Driver's seat / chase camera</span></div>
+      <div><kbd>G</kbd><span>Swap tractor implement</span></div>
+      <div><kbd>Tab</kbd><span>Rich list + your storage</span></div>
+      <div><kbd>H</kbd><span>Help</span></div>
     </div>
 
     <p class="fineprint">
-      Broke? There are ATMs by the door. Every dollar you borrow is subtracted from your
-      final profit, so borrowing keeps you playing but never wins you the round.
+      Start with a small field and a bag of seeds. Plow, plant, water, harvest, then sell in town.
+      Save up for a tractor, animals, a real house and a ridiculous car — or double it all at the casino.
     </p>
   </div>
 </div>
@@ -52,38 +53,67 @@
 
   <div id="wallet">
     <div class="money" id="w-money">$0</div>
-    <div class="profit" id="w-profit">±$0</div>
-    <div class="loans" id="w-loans" hidden></div>
+    <div class="profit" id="w-worth">worth $0</div>
+    <div class="level"><b id="w-level">LVL 1</b><span class="xpbar"><i id="w-xp"></i></span></div>
+    <div class="storage" id="w-storage"></div>
   </div>
 
   <div id="roundbar">
-    <div class="rnum" id="r-num">ROUND 1</div>
-    <div class="clock" id="r-clock">10:00</div>
+    <div class="rnum" id="r-num">DAY 1</div>
+    <div class="clock" id="r-clock">07:00</div>
+    <div class="weather" id="r-weather"></div>
     <div class="event" id="r-event" hidden><b></b><i></i></div>
   </div>
 
   <div id="mini">
-    <div class="mini-title">STANDINGS</div>
+    <div class="mini-title">RICH LIST</div>
     <ol id="mini-list"></ol>
   </div>
 
   <div id="prompt" hidden><kbd>E</kbd> <span></span></div>
+  <div id="prompt2" hidden><kbd>F</kbd> <span></span></div>
   <div id="toasts"></div>
   <div id="feed"></div>
+  <div id="pops"></div>
+
+  <div id="seedbar" hidden></div>
+
+  <div id="speedo" hidden>
+    <div class="kmh"><b id="s-kmh">0</b><span>km/h</span></div>
+    <div class="name" id="s-name"></div>
+    <div class="hint" id="s-hint"><kbd>F</kbd> get out · <kbd>V</kbd> camera</div>
+  </div>
 
   <div id="board" class="screen" hidden>
     <div class="board-card">
-      <h2>STANDINGS</h2>
+      <h2>THE RICH LIST</h2>
       <table id="board-table"></table>
+      <h3>YOUR STORAGE <span id="board-storage"></span></h3>
+      <div id="board-inv" class="invgrid"></div>
     </div>
   </div>
 
-  <div id="finals" class="screen" hidden>
-    <div class="finals-card">
-      <h2>ROUND OVER</h2>
-      <div id="podium"></div>
-      <table id="finals-table"></table>
-      <div class="next" id="finals-next"></div>
+  <div id="help" class="screen" hidden>
+    <div class="board-card">
+      <h2>HOW TO PLAY</h2>
+      <div class="helpgrid">
+        <div><h4>🌱 FARMING</h4>
+          <p>Walk onto your field and look at a tile. <kbd>E</kbd> does the next job: plow, plant, water, harvest. Hold it and walk along a row.</p>
+          <p><kbd>1</kbd>–<kbd>7</kbd> or the mouse wheel picks which seed to plant. Watered crops grow 50% faster. Rain waters everything for free.</p></div>
+        <div><h4>💰 MONEY</h4>
+          <p>Sell at the <b>Market</b> in town for full price, or drop it in the <b>shipping bin</b> on your farm for 80%.</p>
+          <p>Prices drift every morning, and flooding the market with one crop drags its price down. The <b>Orders board</b> pays a bonus.</p></div>
+        <div><h4>🚜 MACHINES</h4>
+          <p>Buy a tractor at the <b>Tractor Barn</b>, then a plow, seeder or water tank. Drive over your field and it works three rows at once. <kbd>G</kbd> swaps implement.</p>
+          <p>The combine harvests five rows. <kbd>F</kbd> gets in and out, <kbd>V</kbd> changes camera.</p></div>
+        <div><h4>🏡 GROWING UP</h4>
+          <p><b>Builders</b> upgrade your house (more storage) and build a mill, dairy and bakery. The <b>Land Office</b> sells bigger fields. <b>Cluck &amp; Moo</b> sells coops, barns and animals.</p></div>
+        <div><h4>🎰 THE CASINO</h4>
+          <p>North of the plaza. Same money as everything else. A rotating event is always about to start.</p></div>
+        <div><h4>🏁 THE TRACK</h4>
+          <p>Past the casino, north. Buy a car at <b>Motors</b> and go jump the ramps.</p></div>
+      </div>
+      <p class="fineprint">Everything saves on the host's computer automatically. Come back with the same name to pick up where you left off.</p>
     </div>
   </div>
 
@@ -99,7 +129,7 @@
   <div id="disconnected" class="screen" hidden>
     <div class="join-card">
       <h1>CONNECTION LOST</h1>
-      <p class="tagline">The house closed the line. Refresh to walk back in.</p>
+      <p class="tagline">The host closed the valley. Your farm is saved — refresh to walk back in.</p>
       <button onclick="location.reload()">RECONNECT</button>
     </div>
   </div>

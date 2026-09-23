@@ -1,13 +1,22 @@
 import { CONFIG, money } from '/shared/config.js';
+import { CROPS, ITEMS, DAY_MS, HOUR_MS } from '/shared/catalog.js';
 import { sfx } from './sfx.js';
 
 const $ = (sel) => document.querySelector(sel);
 
+const WEATHER = {
+  clear: ['☀️', 'Clear'],
+  cloudy: ['⛅', 'Cloudy'],
+  rain: ['🌧️', 'Rain — fields watered'],
+  storm: ['⛈️', 'Storm — harvest ripe crops!'],
+};
+
 export const hud = {
   chipValue: CONFIG.CHIPS[2],
-  wallet: { money: 0, profit: 0, loans: 0, canLoan: false },
+  wallet: { money: 0, netWorth: 0, inv: {}, level: 1, storage: { used: 0, cap: 0 } },
   round: null,
   meId: null,
+  seed: 'wheat',
   _panelOpen: false,
   _onChip: null,
 
@@ -16,27 +25,37 @@ export const hud = {
     this.el = {
       hud: $('#hud'),
       money: $('#w-money'),
-      profit: $('#w-profit'),
-      loans: $('#w-loans'),
+      worth: $('#w-worth'),
+      level: $('#w-level'),
+      xp: $('#w-xp'),
+      storage: $('#w-storage'),
       rnum: $('#r-num'),
       clock: $('#r-clock'),
+      weather: $('#r-weather'),
       event: $('#r-event'),
       mini: $('#mini-list'),
       prompt: $('#prompt'),
+      prompt2: $('#prompt2'),
       toasts: $('#toasts'),
       feed: $('#feed'),
+      pops: $('#pops'),
       board: $('#board'),
       boardTable: $('#board-table'),
-      finals: $('#finals'),
-      finalsTable: $('#finals-table'),
-      podium: $('#podium'),
-      finalsNext: $('#finals-next'),
+      boardInv: $('#board-inv'),
+      boardStorage: $('#board-storage'),
+      help: $('#help'),
+      seedbar: $('#seedbar'),
+      speedo: $('#speedo'),
+      kmh: $('#s-kmh'),
+      carName: $('#s-name'),
+      carHint: $('#s-hint'),
       panel: $('#panel'),
       panelTitle: $('#panel-title'),
       panelBody: $('#panel-body'),
       chipbar: $('#chipbar'),
     };
     this._buildChips();
+    this._buildSeeds();
     this.el.hud.hidden = false;
   },
 
@@ -74,47 +93,98 @@ export const hud = {
     return Math.min(this.chipValue, maxAffordable);
   },
 
+  // ----------------------------------------------------------------- seeds
+
+  _buildSeeds() {
+    this.el.seedbar.innerHTML = CROPS.map((c, i) => `
+      <div class="seed" data-seed="${c.id}">
+        <kbd>${i + 1}</kbd><span class="ic">${c.icon}</span><b data-n>0</b>
+        <i class="lock">LVL ${c.level}</i>
+      </div>`).join('');
+    this.setSeed(this.seed);
+  },
+
+  setSeed(id) {
+    this.seed = id;
+    for (const el of this.el.seedbar.querySelectorAll('.seed')) el.classList.toggle('sel', el.dataset.seed === id);
+  },
+
+  cycleSeed(dir) {
+    const i = CROPS.findIndex((c) => c.id === this.seed);
+    const next = CROPS[(i + dir + CROPS.length) % CROPS.length];
+    this.setSeed(next.id);
+    return next;
+  },
+
+  showSeeds(v) { this.el.seedbar.hidden = !v; },
+
   // --------------------------------------------------------------- wallet
 
   setWallet(w) {
+    const before = this.wallet;
     this.wallet = w;
     this.el.money.textContent = money(w.money);
-    const sign = w.profit > 0 ? '+' : w.profit < 0 ? '-' : '±';
-    this.el.profit.textContent = `${sign}$${Math.abs(w.profit).toLocaleString('en-US')} profit`;
-    this.el.profit.className = `profit ${w.profit > 0 ? 'up' : w.profit < 0 ? 'down' : ''}`;
-    this.el.loans.hidden = !w.loans;
-    if (w.loans) this.el.loans.textContent = `borrowed ${money(w.loans)}`;
+    this.el.worth.textContent = `net worth ${money(w.netWorth)}`;
+    this.el.level.textContent = `LVL ${w.level}`;
+    this.el.xp.style.width = `${Math.round(w.levelFrac * 100)}%`;
+    const full = w.storage.used >= w.storage.cap;
+    this.el.storage.textContent = `📦 ${w.storage.used} / ${w.storage.cap}${full ? '  FULL' : ''}`;
+    this.el.storage.classList.toggle('full', full);
     for (const b of this.el.chipbar.querySelectorAll('.chip')) {
       b.disabled = Number(b.dataset.v) > w.money;
     }
+    for (const el of this.el.seedbar.querySelectorAll('.seed')) {
+      const crop = CROPS.find((c) => c.id === el.dataset.seed);
+      el.querySelector('[data-n]').textContent = w.inv[`seed:${crop.id}`] || 0;
+      el.classList.toggle('locked', w.level < crop.level);
+    }
+    this._renderInventory();
+    if (before && before.money != null && w.money !== before.money && Math.abs(w.money - before.money) >= 1 && !this._panelOpen) {
+      const d = w.money - before.money;
+      this.pop(`${d > 0 ? '+' : '-'}${money(Math.abs(d)).replace('-', '')}`, d > 0 ? 'win' : 'loss');
+    }
   },
 
-  // ---------------------------------------------------------------- round
+  _renderInventory() {
+    const w = this.wallet;
+    const entries = Object.entries(w.inv || {}).filter(([, n]) => n > 0)
+      .sort((a, b) => (ITEMS[a[0]].kind === 'seed') - (ITEMS[b[0]].kind === 'seed') || a[0].localeCompare(b[0]));
+    this.el.boardStorage.textContent = `${w.storage.used} / ${w.storage.cap}`;
+    this.el.boardInv.innerHTML = entries.length ? entries.map(([k, n]) => `
+      <div class="inv inv-${ITEMS[k].kind}"><span>${ITEMS[k].icon}</span><b>${n}</b><i>${esc(ITEMS[k].name)}</i></div>`).join('')
+      : '<div class="muted">Empty. Go grow something.</div>';
+  },
+
+  // ---------------------------------------------------------------- clock
+
+  setClock(worldTime, weather) {
+    const day = Math.floor(worldTime / DAY_MS) + 1;
+    const h = Math.floor((worldTime % DAY_MS) / HOUR_MS);
+    const m = Math.floor(((worldTime % HOUR_MS) / HOUR_MS) * 60 / 10) * 10;
+    const text = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    if (text !== this._clockShown) {
+      this._clockShown = text;
+      this.el.clock.textContent = text;
+      this.el.rnum.textContent = `DAY ${day}`;
+    }
+    if (weather !== this._weatherShown) {
+      this._weatherShown = weather;
+      const [icon, label] = WEATHER[weather] || WEATHER.clear;
+      this.el.weather.textContent = `${icon} ${label}`;
+    }
+  },
+
+  // ---------------------------------------------------------------- casino
 
   setRound(r) {
     this.round = r;
-    this.el.rnum.textContent = r.phase === 'lobby' ? 'WAITING' : `ROUND ${r.number}`;
     if (r.event) {
       this.el.event.hidden = false;
-      this.el.event.querySelector('b').textContent = r.event.name;
+      this.el.event.querySelector('b').textContent = `🎰 ${r.event.name}`;
       this.el.event.querySelector('i').textContent = r.event.desc;
     } else {
       this.el.event.hidden = true;
     }
-  },
-
-  tickClock(serverNow) {
-    const r = this.round;
-    if (!r) return;
-    if (r.phase === 'lobby') { this.el.clock.textContent = '--:--'; return; }
-    const left = Math.max(0, r.endsAt - serverNow) / 1000;
-    const whole = Math.floor(left);
-    if (whole === this._clockShown) return;   // only touch the DOM once a second
-    this._clockShown = whole;
-    const m = Math.floor(whole / 60);
-    const s = whole % 60;
-    this.el.clock.textContent = `${m}:${String(s).padStart(2, '0')}`;
-    this.el.clock.classList.toggle('urgent', r.phase === 'live' && left <= 60);
   },
 
   // ---------------------------------------------------------- leaderboard
@@ -122,65 +192,65 @@ export const hud = {
   setBoard(rows) {
     const top = rows.slice(0, 6);
     this.el.mini.innerHTML = top.map((r, i) => `
-      <li class="${r.id === this.meId ? 'me' : ''}">
+      <li class="${r.id === this.meId ? 'me' : ''} ${r.online ? '' : 'off'}">
         <span class="dot" style="background:${r.color}"></span>
         <span class="nm">${i + 1}. ${esc(r.name)}</span>
-        <span class="pf ${cls(r.profit)}">${fmt(r.profit)}</span>
+        <span class="pf">${short(r.netWorth)}</span>
       </li>`).join('');
 
     this.el.boardTable.innerHTML = `
-      <tr><th>#</th><th>PLAYER</th><th class="num">PROFIT</th><th class="num">CHIPS</th>
-          <th class="num">WAGERED</th><th class="num">BEST WIN</th><th class="num">BORROWED</th></tr>
+      <tr><th>#</th><th>FARMER</th><th class="num">NET WORTH</th><th class="num">CASH</th>
+          <th class="num">LVL</th><th class="num">HARVESTED</th><th class="num">GAMBLED</th><th class="num">BEST WIN</th></tr>
       ${rows.map((r, i) => `
-        <tr class="${r.id === this.meId ? 'me' : ''}">
+        <tr class="${r.id === this.meId ? 'me' : ''} ${r.online ? '' : 'off'}">
           <td>${i + 1}</td>
-          <td><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${r.color};margin-right:7px"></span>${esc(r.name)}</td>
-          <td class="num ${cls(r.profit)}">${fmt(r.profit)}</td>
+          <td><span class="dot" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${r.color};margin-right:7px"></span>${esc(r.name)}${r.online ? '' : ' <small>(asleep)</small>'}</td>
+          <td class="num up">${money(r.netWorth)}</td>
           <td class="num">${money(r.money)}</td>
+          <td class="num">${r.level}</td>
+          <td class="num">${(r.harvested || 0).toLocaleString('en-US')}</td>
           <td class="num">${money(r.wagered)}</td>
           <td class="num">${money(r.biggestWin)}</td>
-          <td class="num">${r.loans ? money(r.loans) : '—'}</td>
         </tr>`).join('')}`;
   },
 
   showBoard(v) { this.el.board.hidden = !v; },
+  toggleHelp(v) { this.el.help.hidden = v === undefined ? !this.el.help.hidden : !v; },
 
-  showFinals(rows) {
-    const podium = rows.slice(0, 3);
-    const order = [podium[1], podium[0], podium[2]];
-    this.el.podium.innerHTML = order.map((r, i) => {
-      if (!r) return '';
-      const place = r === podium[0] ? 1 : r === podium[1] ? 2 : 3;
-      return `<div class="plinth p${place}">
-        <div class="who" style="color:${r.color}">${esc(r.name)}</div>
-        <div class="bar">${place === 1 ? '👑' : place}</div>
-        <div class="amt ${cls(r.profit)}">${fmt(r.profit)}</div>
-      </div>`;
-    }).join('');
-    this.el.finalsTable.innerHTML = `
-      <tr><th>#</th><th>PLAYER</th><th class="num">PROFIT</th><th class="num">WAGERED</th><th class="num">BORROWED</th></tr>
-      ${rows.map((r, i) => `
-        <tr class="${r.id === this.meId ? 'me' : ''}">
-          <td>${i + 1}</td><td>${esc(r.name)}</td>
-          <td class="num ${cls(r.profit)}">${fmt(r.profit)}</td>
-          <td class="num">${money(r.wagered)}</td>
-          <td class="num">${r.loans ? money(r.loans) : '—'}</td>
-        </tr>`).join('')}`;
-    this.el.finals.hidden = false;
+  // ---------------------------------------------------------------- speedo
+
+  setSpeedo(car) {
+    if (!car) { this.el.speedo.hidden = true; return; }
+    this.el.speedo.hidden = false;
+    const kmh = Math.round(Math.abs(car.speed) * 3.6);
+    if (kmh !== this._kmh) { this._kmh = kmh; this.el.kmh.textContent = kmh; }
+    if (car.label !== this._carLabel) {
+      this._carLabel = car.label;
+      this.el.carName.textContent = car.label;
+      this.el.carHint.innerHTML = car.hint;
+    }
   },
-
-  updateFinalsCountdown(seconds) {
-    this.el.finalsNext.textContent = `NEXT ROUND IN ${Math.max(0, Math.ceil(seconds))}`;
-  },
-
-  hideFinals() { this.el.finals.hidden = true; },
 
   // --------------------------------------------------------------- prompt
 
-  setPrompt(text) {
+  setPrompt(text, key = 'E') {
     if (!text) { this.el.prompt.hidden = true; return; }
     this.el.prompt.hidden = false;
-    this.el.prompt.querySelector('span').textContent = text;
+    if (this._promptText !== text || this._promptKey !== key) {
+      this._promptText = text;
+      this._promptKey = key;
+      this.el.prompt.querySelector('kbd').textContent = key;
+      this.el.prompt.querySelector('span').textContent = text;
+    }
+  },
+
+  setPrompt2(text) {
+    if (!text) { this.el.prompt2.hidden = true; return; }
+    this.el.prompt2.hidden = false;
+    if (this._prompt2 !== text) {
+      this._prompt2 = text;
+      this.el.prompt2.querySelector('span').textContent = text;
+    }
   },
 
   // --------------------------------------------------------------- toasts
@@ -204,6 +274,17 @@ export const hud = {
     setTimeout(() => el.remove(), 9000);
   },
 
+  /** Little floating number by the crosshair: +3 🌾, +$45. */
+  pop(text, kind = '') {
+    const el = document.createElement('div');
+    el.className = `pop ${kind}`;
+    el.textContent = text;
+    el.style.left = `${50 + (Math.random() - 0.5) * 6}%`;
+    this.el.pops.appendChild(el);
+    setTimeout(() => el.remove(), 1400);
+    while (this.el.pops.children.length > 8) this.el.pops.firstChild.remove();
+  },
+
   // ---------------------------------------------------------------- panel
 
   openPanel(title, bodyEl, { chips = true } = {}) {
@@ -224,5 +305,5 @@ export const hud = {
 };
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const cls = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : 'flat');
-const fmt = (v) => `${v > 0 ? '+' : v < 0 ? '-' : '±'}$${Math.abs(v).toLocaleString('en-US')}`;
+const short = (v) => (v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e4 ? `$${Math.round(v / 1000)}K` : money(v));
+

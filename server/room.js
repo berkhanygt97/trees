@@ -1,6 +1,21 @@
-import { CONFIG, STATIONS, AVATAR_COLORS, HATS, CIGAR, profitOf, money } from '../shared/config.js';
-import { rnd, rndInt, pick } from './rng.js';
-import { Round } from './round.js';
+import { CONFIG, AVATAR_COLORS, HATS, CIGAR, money } from '../shared/config.js';
+import {
+  CROP_BY_ID, ITEMS, SELLABLE, HOUSES, ANIMAL_HOUSES, PROCESSORS, PROCESS_QUEUE_MAX,
+  FIELD_SIZES, FIELD_PRICES, FIELD_LEVELS, VEHICLE_BY_ID, MAX_VEHICLES,
+  IMPLEMENT_BY_ID, PAINTS, RESALE, levelOf, levelProgress,
+} from '../shared/catalog.js';
+import {
+  BOUNDS, PLOTS, STATION_BY_ID, TOWN_SPAWN, plotSpawn, tileCenter, tileIndex,
+} from '../shared/map.js';
+import { rnd, pick } from './rng.js';
+import { CasinoEvents } from './casino-events.js';
+import { Clock } from './clock.js';
+import { Market, Orders } from './economy.js';
+import { slugOf } from './save.js';
+import {
+  workTile, rainOn, lightningOn, settleBuildings, settleAnimals, settleProcessor,
+  storageUsed, storageCap, storageFree, addItem, takeItem, newProfile, migrateProfile, toSave,
+} from './farm.js';
 import * as Slots from './games/slots.js';
 import * as Dice from './games/dice.js';
 import { Blackjack } from './games/blackjack.js';
@@ -9,19 +24,45 @@ import { Crash } from './games/crash.js';
 import { Horses } from './games/horses.js';
 import { Robots } from './games/robots.js';
 
-const STATION_BY_ID = new Map(STATIONS.map((s) => [s.id, s]));
 const NAME_MAX = 14;
+const HAND_REACH = 4.5;          // metres from a player to a tile they work by hand
+const MACHINE_REACH = 8;         // metres from a tractor to a tile under its implement
+const AUTOSAVE_MS = 30_000;
+const RAIN_EVERY_MS = 20_000;
 
-const SILLY_NAMES = ['Chip', 'Bust', 'Doubler', 'Lucky', 'Tilted', 'Whale', 'Grinder', 'Snake Eyes'];
+// Which counter sells what. A purchase is refused anywhere else.
+const SHOP_OF = {
+  seed: 'farmshop', feed: 'animalshop', animal: 'animalshop', coop: 'animalshop', barn: 'animalshop',
+  mill: 'builder', dairy: 'builder', bakery: 'builder', house: 'builder',
+  field: 'landoffice', implement: 'machinery',
+};
 
 export class Room {
-  constructor() {
-    this.players = new Map();
+  /**
+   * `store` is a SaveStore (or null for a throwaway room in tests);
+   * `timeScale` speeds up the world clock.
+   */
+  constructor({ store = null, timeScale = CONFIG.TIME_SCALE } = {}) {
+    this.store = store;
+    this.players = new Map();    // session id -> profile, online only
+    this.byId = new Map();       // every session id ever issued -> profile (late payouts)
+    this.profiles = new Map();   // slug -> profile, online and offline
     this.nextId = 1;
 
-    // Round first: the timed games ask it which event is running the moment
-    // they are constructed.
-    this.round = new Round(this);
+    const world = store ? store.loadWorld() : null;
+    this.clock = new Clock(world && world.clock, timeScale);
+    this.market = new Market(world && world.market);
+    this.orders = new Orders(world && world.orders);
+
+    if (store) {
+      for (const raw of store.loadPlayers()) {
+        const p = migrateProfile(raw);
+        this.profiles.set(p.slug, p);
+      }
+    }
+    this.orders.refill(this.clock.time, this._topLevel());
+
+    this.round = new CasinoEvents(this);
 
     const hub = {
       broadcast: (type, data) => this.broadcast(type, data),
@@ -39,120 +80,244 @@ export class Room {
     };
     this.lastSnapshot = 0;
     this.lastBoard = 0;
+    this.lastSave = Date.now();
+    this.lastRain = 0;
+    this.lastClockSync = 0;
+    this.lastWorld = this.clock.time;
+    this.marketDirty = false;
   }
 
   // ---------------------------------------------------------------- players
 
+  /** Returns the profile, or { denied } if that name is already in the game. */
   addPlayer(ws, rawName) {
+    const name = this._cleanName(rawName);
+    if (!name) return { denied: 'Type a name — it is how your farm is saved.' };
+    const slug = slugOf(name);
+
+    let p = this.profiles.get(slug);
+    if (p && p.ws) return { denied: `${p.name} is already playing. Pick another name.` };
+
+    const isNew = !p;
+    if (isNew) {
+      const usedColors = new Set([...this.profiles.values()].map((q) => q.color));
+      const freeColors = AVATAR_COLORS.filter((c) => !usedColors.has(c));
+      const plot = this._freePlot();
+      const spawn = plot >= 0 ? plotSpawn(PLOTS[plot]) : TOWN_SPAWN;
+      p = newProfile({
+        name, slug,
+        color: freeColors.length ? pick(freeColors) : pick(AVATAR_COLORS),
+        hat: pick(HATS),
+        plot,
+        cash: CONFIG.STARTING_BANKROLL,
+        pos: [...spawn.pos], yaw: spawn.yaw,
+      });
+      this.profiles.set(slug, p);
+    }
+
     const id = String(this.nextId++);
-    const used = new Set([...this.players.values()].map((p) => p.color));
-    const free = AVATAR_COLORS.filter((c) => !used.has(c));
-    const player = {
+    Object.assign(p, {
       id, ws,
-      name: this._cleanName(rawName),
-      color: free.length ? pick(free) : pick(AVATAR_COLORS),
-      hat: pick(HATS),
-      money: CONFIG.STARTING_BANKROLL,
-      loans: 0,
-      wagered: 0,
-      biggestWin: 0,
-      pos: [rnd() * 14 - 7, 0, 34 + rnd() * 3],
-      yaw: 0,
       anim: 0,
       station: null,
-      lastLoanAt: 0,
       betCooldowns: {},
       freeSpins: null,
       cigar: null,
       lastPuffAt: 0,
+      vehicle: null,
+      lastWorkAt: 0,
       joinedAt: Date.now(),
-    };
-    this.players.set(id, player);
+    });
+    this.players.set(id, p);
+    this.byId.set(id, p);
+    settleBuildings(p, this.clock.time);
 
     this.send(id, 'welcome', {
       id,
       config: CONFIG,
-      you: this.publicPlayer(player),
+      you: this.publicPlayer(p),
+      isNew,
+      spawn: { pos: p.pos, yaw: p.yaw },
       players: this.publicPlayers(),
       round: this.round.state(),
+      clock: this.clock.state(),
+      market: this.market.state(),
+      orders: this.orders.state(),
+      plots: this.publicPlots(),
+      vehicles: this.publicVehicles(),
       games: {
         roulette: this.games.roulette.publicState(),
         crash: this.games.crash.publicState(),
         horses: this.games.horses.publicState(),
       },
     });
-    this.sendWallet(player);
+    this.sendWallet(p);
     this.broadcast('players', this.publicPlayers());
-    this.toastAll(`${player.name} walked in.`, 'info');
-    return player;
+    this.broadcast('plot', this.publicPlot(p.plot));
+    if (isNew) {
+      this.toastAll(`${p.name} moved to the valley.`, 'info');
+      if (p.plot < 0) this.error(p, 'All six farms are taken — you can still play the casino and drive.');
+    } else {
+      this.toastAll(`${p.name} is back.`, 'info');
+    }
+    return p;
   }
 
   removePlayer(id) {
     const p = this.players.get(id);
     if (!p) return;
+    // A blackjack hand in play is voided rather than lost.
+    const hand = this.games.blackjack.hands.get(id);
+    if (hand && hand.phase === 'player') p.money += hand.bet;
     this.games.blackjack.clear(id);
+    this._leaveVehicle(p);
     this.players.delete(id);
+    p.ws = null;
+    p.stats.playSeconds += Math.round((Date.now() - p.joinedAt) / 1000);
+    p.joinedAt = Date.now();
+    this.saveProfile(p);
     this.broadcast('players', this.publicPlayers());
-    this.toastAll(`${p.name} cashed out and left.`, 'info');
+    this.broadcast('plot', this.publicPlot(p.plot));
+    this.toastAll(`${p.name} went home for the night.`, 'info');
   }
 
   _cleanName(raw) {
-    let name = String(raw || '').replace(/[^\p{L}\p{N} _.'-]/gu, '').trim().slice(0, NAME_MAX);
-    if (!name) name = `${pick(SILLY_NAMES)}${rndInt(90) + 10}`;
-    const taken = new Set([...this.players.values()].map((p) => p.name.toLowerCase()));
-    let candidate = name;
-    let n = 2;
-    while (taken.has(candidate.toLowerCase())) candidate = `${name.slice(0, NAME_MAX - 2)}${n++}`;
-    return candidate;
+    return String(raw || '').replace(/[^\p{L}\p{N} _.'-]/gu, '').trim().slice(0, NAME_MAX);
+  }
+
+  _freePlot() {
+    const taken = new Set([...this.profiles.values()].map((p) => p.plot));
+    for (const plot of PLOTS) if (!taken.has(plot.index)) return plot.index;
+    return -1;
+  }
+
+  _topLevel() {
+    let lvl = 1;
+    for (const p of this.profiles.values()) lvl = Math.max(lvl, levelOf(p.xp));
+    return lvl;
   }
 
   publicPlayer(p) {
     // `cigar` rides along in the player list so everyone can see who is smoking.
-    return { id: p.id, name: p.name, color: p.color, hat: p.hat, cigar: !!p.cigar };
+    return { id: p.id, slug: p.slug, name: p.name, color: p.color, hat: p.hat, cigar: !!p.cigar, plot: p.plot };
   }
 
   publicPlayers() {
     return [...this.players.values()].map((p) => this.publicPlayer(p));
   }
 
-  resetBankrolls() {
-    for (const p of this.players.values()) {
-      p.money = CONFIG.STARTING_BANKROLL;
-      p.loans = 0;
-      p.freeSpins = null;
-      p.cigar = null;
-      p.wagered = 0;
-      p.biggestWin = 0;
-      p.joinedAt = Date.now();
-      this.games.blackjack.clear(p.id);
-      this.sendWallet(p);
+  // ------------------------------------------------------------------ plots
+
+  publicPlot(index) {
+    if (index == null || index < 0) return null;
+    const owner = [...this.profiles.values()].find((p) => p.plot === index);
+    if (!owner) return { index, owner: null };
+    const b = owner.buildings;
+    return {
+      index,
+      owner: owner.name,
+      color: owner.color,
+      online: !!owner.ws,
+      size: owner.field.size,
+      tiles: owner.field.tiles,
+      house: owner.house,
+      buildings: {
+        coop: b.coop ? b.coop.animals : null,
+        barn: b.barn ? b.barn.animals : null,
+        mill: !!b.mill, dairy: !!b.dairy, bakery: !!b.bakery,
+      },
+    };
+  }
+
+  publicPlots() {
+    return PLOTS.map((plot) => this.publicPlot(plot.index));
+  }
+
+  _ownerOf(index) {
+    for (const p of this.profiles.values()) if (p.plot === index) return p;
+    return null;
+  }
+
+  // --------------------------------------------------------------- vehicles
+
+  publicVehicles() {
+    const out = [];
+    for (const p of this.profiles.values()) {
+      for (const v of p.vehicles) {
+        out.push({
+          id: v.id, owner: p.slug, ownerName: p.name, model: v.model, color: v.color,
+          pos: v.pos, yaw: v.yaw, implement: v.implement || null, driver: v.driver || null,
+        });
+      }
     }
-    // Cigars are cleared above, so everyone needs a fresh player list or they
-    // will keep seeing smoke that no longer exists.
-    this.broadcast('players', this.publicPlayers());
+    return out;
+  }
+
+  _findVehicle(p, vid) {
+    return p.vehicles.find((v) => v.id === vid) || null;
+  }
+
+  _leaveVehicle(p, at) {
+    if (!p.vehicle) return;
+    const v = this._findVehicle(p, p.vehicle);
+    if (v) {
+      v.driver = null;
+      if (at) { v.pos = at.pos; v.yaw = at.yaw; }
+    }
+    p.vehicle = null;
+    this.broadcast('vehicles', this.publicVehicles());
+  }
+
+  // ------------------------------------------------------------ net worth
+
+  netWorth(p) {
+    let assets = 0;
+    for (const v of p.vehicles) assets += (VEHICLE_BY_ID[v.model] || { price: 0 }).price;
+    for (const i of p.implements) assets += (IMPLEMENT_BY_ID[i] || { price: 0 }).price;
+    assets += HOUSES[p.house].price;
+    for (let k = 0; k < FIELD_SIZES.length; k++) if (FIELD_SIZES[k] <= p.field.size) assets += FIELD_PRICES[k];
+    for (const [kind, def] of Object.entries(ANIMAL_HOUSES)) {
+      const b = p.buildings[kind];
+      if (b) assets += def.price + b.animals * def.animalPrice;
+    }
+    for (const [kind, def] of Object.entries(PROCESSORS)) if (p.buildings[kind]) assets += def.price;
+    let goods = 0;
+    for (const [item, qty] of Object.entries(p.inv)) goods += (ITEMS[item] ? ITEMS[item].price : 0) * qty;
+    return Math.round(p.money + assets * RESALE + goods);
   }
 
   standings() {
-    return [...this.players.values()]
+    return [...this.profiles.values()]
       .map((p) => ({
-        id: p.id, name: p.name, color: p.color, hat: p.hat,
-        money: Math.round(p.money), loans: p.loans,
-        wagered: Math.round(p.wagered), biggestWin: Math.round(p.biggestWin),
-        profit: profitOf(p),
+        id: p.ws ? p.id : null, name: p.name, color: p.color, hat: p.hat, online: !!p.ws,
+        money: Math.round(p.money), netWorth: this.netWorth(p), level: levelOf(p.xp),
+        wagered: Math.round(p.stats.wagered), biggestWin: Math.round(p.stats.biggestWin),
+        harvested: p.stats.harvested,
       }))
-      .sort((a, b) => b.profit - a.profit);
+      .sort((a, b) => b.netWorth - a.netWorth);
   }
 
   // ------------------------------------------------------------------ money
 
   sendWallet(p) {
+    if (!p.ws) return;
+    const now = this.clock.time;
+    settleBuildings(p, now);
+    const lp = levelProgress(p.xp);
     this.send(p.id, 'wallet', {
       money: Math.round(p.money),
-      loans: p.loans,
-      profit: profitOf(p),
-      wagered: Math.round(p.wagered),
-      canLoan: this.loanAvailableIn(p) === 0,
-      loanIn: this.loanAvailableIn(p),
+      netWorth: this.netWorth(p),
+      xp: p.xp, level: lp.level, levelFrac: lp.frac, levelNeed: lp.need, levelInto: lp.into,
+      inv: p.inv,
+      storage: { used: storageUsed(p), cap: storageCap(p) },
+      house: p.house,
+      plot: p.plot,
+      fieldSize: p.field.size,
+      implements: p.implements,
+      buildings: p.buildings,
+      charity: this._charityAvailable(p),
+      vehicle: p.vehicle,
+      stats: p.stats,
     });
   }
 
@@ -163,22 +328,22 @@ export class Room {
     if (amt > CONFIG.MAX_BET) return false;
     if (p.money < amt) return false;
     p.money -= amt;
-    p.wagered += amt;
+    p.stats.wagered += amt;
     this.sendWallet(p);
     return true;
   }
 
-  /** Give a stake back without it counting as a win (round ended mid-hand). */
+  /** Give a stake back without it counting as a win (the server is shutting down). */
   refund(playerId, amount) {
-    const p = this.players.get(playerId);
+    const p = this.byId.get(playerId);
     if (!p || amount <= 0) return;
     p.money += amount;
-    p.wagered = Math.max(0, p.wagered - amount);
+    p.stats.wagered = Math.max(0, p.stats.wagered - amount);
     this.sendWallet(p);
-    this.send(p.id, 'toast', { text: `Round over — ${money(amount)} returned from the table.`, kind: 'warn' });
+    this.send(p.id, 'toast', { text: `${money(amount)} returned from the table.`, kind: 'warn' });
   }
 
-  /** Called at the bell: nobody loses a stake to a spin that never happened. */
+  /** Called on shutdown: nobody loses a stake to a spin that never happened. */
   abortOpenBets() {
     const refund = (playerId, amount) => this.refund(playerId, amount);
     this.games.roulette.abort(refund);
@@ -188,27 +353,14 @@ export class Room {
     this.games.blackjack.abort(refund);
   }
 
-  resetGames() {
-    this.games.roulette.reset();
-    this.games.crash.reset();
-    this.games.horses.reset();
-    this.games.robots.reset();
-  }
-
-  /** LAST CALL boosts winnings only, never the returned stake. */
+  /** Winnings reach a player even if they walked out mid-spin. */
   pay(playerId, amount, meta = {}) {
-    const p = this.players.get(playerId);
+    const p = this.byId.get(playerId);
     if (!p || amount <= 0) return 0;
-    const boost = this.round.payBoost();
-    let final = Math.round(amount);
-    if (boost > 1) {
-      const stake = meta.stake || 0;
-      const winnings = Math.max(0, final - stake);
-      final = Math.round(final + winnings * (boost - 1));
-    }
+    const final = Math.round(amount);
     p.money += final;
     const net = final - (meta.stake || 0);
-    if (net > p.biggestWin) p.biggestWin = net;
+    if (net > p.stats.biggestWin) p.stats.biggestWin = net;
     this.sendWallet(p);
     if (meta.game && net >= 2500) {
       this.toastAll(`${p.name} just took $${net.toLocaleString('en-US')} off the ${labelFor(meta.game)}!`, 'big');
@@ -216,42 +368,34 @@ export class Room {
     return final;
   }
 
-  loanAvailableIn(p) {
-    if (this.round.phase !== 'live') return -1;
-    if (p.money > CONFIG.LOAN_MAX_BALANCE) return -1;
-    const wait = CONFIG.LOAN_COOLDOWN_MS - (Date.now() - p.lastLoanAt);
-    return wait > 0 ? wait : 0;
+  _spend(p, amount) {
+    if (p.money < amount) return false;
+    p.money -= amount;
+    return true;
   }
 
-  takeLoan(p) {
-    const status = this.loanAvailableIn(p);
-    if (status === -1) {
-      return { ok: false, error: p.money > CONFIG.LOAN_MAX_BALANCE
-        ? `The ATM only helps you below $${CONFIG.LOAN_MAX_BALANCE}`
-        : 'The ATM is closed between rounds' };
+  _gainXp(p, xp) {
+    const before = levelOf(p.xp);
+    p.xp += Math.round(xp);
+    const after = levelOf(p.xp);
+    if (after > before) {
+      this.send(p.id, 'toast', { text: `LEVEL ${after}! New things unlocked in town.`, kind: 'big' });
+      this.toastAll(`${p.name} reached farm level ${after}.`, 'info');
     }
-    if (status > 0) return { ok: false, error: `ATM recharging — ${Math.ceil(status / 1000)}s` };
-    p.money += CONFIG.LOAN_AMOUNT;
-    p.loans += CONFIG.LOAN_AMOUNT;
-    p.lastLoanAt = Date.now();
-    this.sendWallet(p);
-    this.send(p.id, 'toast', { text: `Borrowed $${CONFIG.LOAN_AMOUNT}. It counts against your profit.`, kind: 'warn' });
-    this.toastAll(`${p.name} hit the bankruptcy ATM. Again.`, 'info');
-    return { ok: true };
   }
 
   // ------------------------------------------------------------- networking
 
   send(playerId, type, data) {
     const p = this.players.get(playerId);
-    if (!p || p.ws.readyState !== 1) return;
+    if (!p || !p.ws || p.ws.readyState !== 1) return;
     p.ws.send(JSON.stringify({ t: type, d: data }));
   }
 
   broadcast(type, data) {
     const payload = JSON.stringify({ t: type, d: data });
     for (const p of this.players.values()) {
-      if (p.ws.readyState === 1) p.ws.send(payload);
+      if (p.ws && p.ws.readyState === 1) p.ws.send(payload);
     }
   }
 
@@ -272,7 +416,16 @@ export class Room {
     const dz = p.pos[2] - st.pos[2];
     // Generous slack: LAN latency should never cost somebody a bet.
     const reach = st.radius + 3.5;
-    return dx * dx + dz * dz <= reach * reach ? st : null;
+    if (dx * dx + dz * dz > reach * reach) return null;
+    // Farm buildings answer to their owner only.
+    if (st.plot != null && st.plot !== p.plot) return null;
+    return st;
+  }
+
+  _atShop(p, d, game) {
+    const st = this.nearStation(p, d && d.station);
+    if (!st || st.game !== game) return null;
+    return st;
   }
 
   // ---------------------------------------------------------------- message
@@ -284,8 +437,15 @@ export class Room {
       case 'exit': return this.onExit(p);
       case 'bet': return this.onBet(p, msg.d);
       case 'act': return this.onAct(p, msg.d);
-      case 'loan': return this.takeLoan(p);
       case 'puff': return this.onPuff(p);
+      case 'work': return this.onWork(p, msg.d);
+      case 'buy': return this.onBuy(p, msg.d);
+      case 'sell': return this.onSell(p, msg.d);
+      case 'farm': return this.onFarmBuilding(p, msg.d);
+      case 'deliver': return this.onDeliver(p, msg.d);
+      case 'charity': return this.onCharity(p, msg.d);
+      case 'drive': return this.onDrive(p, msg.d);
+      case 'implement': return this.onImplement(p, msg.d);
       case 'ping': return this.send(p.id, 'pong', { c: msg.d && msg.d.c, serverNow: Date.now() });
       default: return undefined;
     }
@@ -295,11 +455,18 @@ export class Room {
     if (!d || !Array.isArray(d.p) || d.p.length !== 3) return;
     const [x, y, z] = d.p;
     if (![x, y, z].every(Number.isFinite)) return;
-    p.pos[0] = clamp(x, -60, 60);
-    p.pos[1] = clamp(y, -2, 30);
-    p.pos[2] = clamp(z, -60, 60);
+    p.pos[0] = clamp(x, BOUNDS.minX, BOUNDS.maxX);
+    p.pos[1] = clamp(y, -2, 40);
+    p.pos[2] = clamp(z, BOUNDS.minZ, BOUNDS.maxZ);
     if (Number.isFinite(d.y)) p.yaw = d.y;
     p.anim = d.a | 0;
+    if (p.vehicle) {
+      const v = this._findVehicle(p, p.vehicle);
+      if (v) {
+        v.pos = [p.pos[0], p.pos[1], p.pos[2]];
+        if (Number.isFinite(d.vy)) v.yaw = d.vy;
+      }
+    }
   }
 
   onEnter(p, d) {
@@ -318,12 +485,398 @@ export class Room {
     if (st.game === 'crash') this.send(p.id, 'game', this.games.crash.publicState());
     if (st.game === 'horses') this.send(p.id, 'game', this.games.horses.publicState());
     if (st.game === 'robots') this.send(p.id, 'game', this.games.robots.publicState());
+    if (st.game === 'market' || st.game === 'bin') this.send(p.id, 'market', this.market.state());
+    if (st.game === 'orders') this.send(p.id, 'orders', this.orders.state());
+    this.sendWallet(p);
   }
 
   onExit(p) { p.station = null; }
 
+  // ================================================================ farming
+
+  onWork(p, d) {
+    if (!d || !Array.isArray(d.tiles) || p.plot < 0) return;
+    const plot = PLOTS[p.plot];
+    const now = this.clock.time;
+    const size = p.field.size;
+    const t = Date.now();
+
+    let want = 'auto';
+    let reachFrom = p.pos;
+    let reach = HAND_REACH;
+    let maxTiles = 1;
+
+    if (d.vid) {
+      const v = p.vehicle === d.vid ? this._findVehicle(p, d.vid) : null;
+      if (!v) return;
+      const model = VEHICLE_BY_ID[v.model];
+      if (model.id === 'combine') want = 'harvest';
+      else if (model.id === 'tractor' && v.implement) want = IMPLEMENT_BY_ID[v.implement].action;
+      else return;
+      reachFrom = v.pos;
+      reach = MACHINE_REACH;
+      maxTiles = model.swath * 2;
+      if (t - p.lastWorkAt < 90) return;
+    } else if (t - p.lastWorkAt < 180) {
+      return;   // hands are slower than machines
+    }
+    p.lastWorkAt = t;
+
+    const seed = typeof d.seed === 'string' ? d.seed : null;
+    const changed = [];
+    let harvested = null;
+    let error = null;
+
+    for (const pair of d.tiles.slice(0, maxTiles)) {
+      if (!Array.isArray(pair)) continue;
+      const i = pair[0] | 0;
+      const j = pair[1] | 0;
+      if (i < 0 || j < 0 || i >= size || j >= size) continue;
+      const [cx, cz] = tileCenter(plot, i, j);
+      const dx = cx - reachFrom[0];
+      const dz = cz - reachFrom[2];
+      if (dx * dx + dz * dz > reach * reach) continue;
+      const idx = tileIndex(i, j);
+      const res = workTile(p, idx, want, { now, seed, raining: this.clock.raining });
+      if (res.error) { error = res.error; break; }
+      if (res.changed) {
+        changed.push([idx, p.field.tiles[idx]]);
+        if (res.harvested) {
+          harvested = harvested || { item: res.harvested.item, qty: 0 };
+          harvested.qty += res.harvested.qty;
+        }
+      }
+    }
+
+    if (changed.length) {
+      this.broadcast('tiles', { plot: p.plot, t: changed });
+      this.sendWallet(p);
+    }
+    if (harvested) this.send(p.id, 'harvest', harvested);
+    // Machines hit the same problem many times a second; only say it once.
+    if (error && (!d.vid || t - (p.lastWorkError || 0) > 2500)) {
+      p.lastWorkError = t;
+      this.error(p, error);
+    }
+  }
+
+  // ------------------------------------------------------------------ shops
+
+  onBuy(p, d) {
+    const sku = String((d && d.sku) || '');
+    const [kind, arg] = sku.split(':');
+    const lvl = levelOf(p.xp);
+    const deny = (text) => this.error(p, text);
+
+    if (kind === 'vehicle') {
+      const model = VEHICLE_BY_ID[arg];
+      if (!model) return deny('No such model');
+      const shop = model.kind === 'car' ? 'cardealer' : 'machinery';
+      if (!this._atShop(p, d, shop)) return deny('Walk up to the counter first');
+      if (p.vehicles.length >= MAX_VEHICLES) return deny(`You can own ${MAX_VEHICLES} vehicles. Nobody needs more.`);
+      const color = PAINTS.includes(d.color) ? d.color : PAINTS[0];
+      if (!this._spend(p, model.price)) return deny(`The ${model.name} costs ${money(model.price)}`);
+      // Delivered to the kerb outside the shop, lined up so they never stack.
+      const st = STATION_BY_ID.get(shop);
+      const n = p.vehicles.length;
+      const vehicle = {
+        id: `${p.slug}#${p.nextVid++}`, model: model.id, color,
+        pos: [8.8, 0, st.pos[2] - 10 + (n % 5) * 5], yaw: Math.PI, implement: null,
+      };
+      p.vehicles.push(vehicle);
+      this.sendWallet(p);
+      this.broadcast('vehicles', this.publicVehicles());
+      this.send(p.id, 'result', { game: shop, bought: model.id });
+      this.toastAll(`${p.name} bought a ${model.name}!`, model.price >= 50000 ? 'big' : 'info');
+      return undefined;
+    }
+
+    const shop = SHOP_OF[kind];
+    if (!shop) return deny('That is not for sale');
+    if (!this._atShop(p, d, shop)) return deny('Walk up to the counter first');
+
+    if (kind === 'seed') {
+      const crop = CROP_BY_ID[arg];
+      if (!crop) return deny('No such seed');
+      if (lvl < crop.level) return deny(`${crop.name} unlocks at farm level ${crop.level}`);
+      const qty = clamp(Math.round(Number(d.qty) || 10), 1, 500);
+      if (!this._spend(p, crop.seed * qty)) return deny('Not enough money');
+      addItem(p, `seed:${crop.id}`, qty);
+      return this._bought(p, shop, `${qty} ${crop.name.toLowerCase()} seeds`);
+    }
+
+    if (kind === 'feed') {
+      const qty = clamp(Math.round(Number(d.qty) || 20), 1, 500);
+      if (!this._spend(p, ITEMS.feed.price * qty)) return deny('Not enough money');
+      addItem(p, 'feed', qty);
+      return this._bought(p, shop, `${qty} feed`);
+    }
+
+    if (kind === 'coop' || kind === 'barn') {
+      const def = ANIMAL_HOUSES[kind];
+      if (p.plot < 0) return deny('You need a farm first');
+      if (p.buildings[kind]) return deny(`You already have a ${def.name.toLowerCase()}`);
+      if (lvl < def.level) return deny(`Unlocks at farm level ${def.level}`);
+      if (!this._spend(p, def.price)) return deny(`A ${def.name.toLowerCase()} costs ${money(def.price)}`);
+      p.buildings[kind] = { animals: 0, feed: 0, stock: 0, last: this.clock.time };
+      this.broadcast('plot', this.publicPlot(p.plot));
+      this.toastAll(`${p.name} built a ${def.name.toLowerCase()}.`, 'info');
+      return this._bought(p, shop, def.name);
+    }
+
+    if (kind === 'animal') {
+      const def = ANIMAL_HOUSES[arg];
+      if (!def) return deny('No such animal');
+      const b = p.buildings[arg];
+      if (!b) return deny(`Build a ${def.name.toLowerCase()} first`);
+      if (b.animals >= def.max) return deny(`Your ${def.name.toLowerCase()} is full`);
+      if (!this._spend(p, def.animalPrice)) return deny(`A ${def.animalName.toLowerCase()} costs ${money(def.animalPrice)}`);
+      settleAnimals(arg, b, this.clock.time);
+      b.animals++;
+      this.broadcast('plot', this.publicPlot(p.plot));
+      return this._bought(p, shop, `a ${def.animalName.toLowerCase()}`);
+    }
+
+    if (kind === 'mill' || kind === 'dairy' || kind === 'bakery') {
+      const def = PROCESSORS[kind];
+      if (p.plot < 0) return deny('You need a farm first');
+      if (p.buildings[kind]) return deny(`You already have a ${def.name.toLowerCase()}`);
+      if (lvl < def.level) return deny(`Unlocks at farm level ${def.level}`);
+      if (!this._spend(p, def.price)) return deny(`A ${def.name.toLowerCase()} costs ${money(def.price)}`);
+      p.buildings[kind] = { recipe: null, queue: 0, started: 0, out: {} };
+      this.broadcast('plot', this.publicPlot(p.plot));
+      this.toastAll(`${p.name} built a ${def.name.toLowerCase()}.`, 'info');
+      return this._bought(p, shop, def.name);
+    }
+
+    if (kind === 'house') {
+      const tier = Number(arg);
+      const def = HOUSES[tier];
+      if (!def || tier !== p.house + 1) return deny('Upgrade one step at a time');
+      if (p.plot < 0) return deny('You need a farm first');
+      if (lvl < def.level) return deny(`Unlocks at farm level ${def.level}`);
+      if (!this._spend(p, def.price)) return deny(`A ${def.name.toLowerCase()} costs ${money(def.price)}`);
+      p.house = tier;
+      this.broadcast('plot', this.publicPlot(p.plot));
+      this.toastAll(`${p.name} moved into a ${def.name.toLowerCase()}!`, tier >= 2 ? 'big' : 'info');
+      return this._bought(p, shop, def.name);
+    }
+
+    if (kind === 'field') {
+      const step = Number(arg);
+      if (p.plot < 0) return deny('You need a farm first');
+      if (!FIELD_SIZES[step] || FIELD_SIZES[step - 1] !== p.field.size) return deny('Expand one step at a time');
+      if (lvl < FIELD_LEVELS[step]) return deny(`Unlocks at farm level ${FIELD_LEVELS[step]}`);
+      if (!this._spend(p, FIELD_PRICES[step])) return deny(`That costs ${money(FIELD_PRICES[step])}`);
+      p.field.size = FIELD_SIZES[step];
+      this.broadcast('plot', this.publicPlot(p.plot));
+      return this._bought(p, shop, `a ${p.field.size}×${p.field.size} field`);
+    }
+
+    if (kind === 'implement') {
+      const def = IMPLEMENT_BY_ID[arg];
+      if (!def) return deny('No such implement');
+      if (p.implements.includes(def.id)) return deny(`You already own a ${def.name.toLowerCase()}`);
+      if (!this._spend(p, def.price)) return deny(`A ${def.name.toLowerCase()} costs ${money(def.price)}`);
+      p.implements.push(def.id);
+      // Hitch it straight onto a tractor with nothing on the back.
+      const tractor = p.vehicles.find((v) => v.model === 'tractor' && !v.implement);
+      if (tractor) { tractor.implement = def.id; this.broadcast('vehicles', this.publicVehicles()); }
+      return this._bought(p, shop, `a ${def.name.toLowerCase()}`);
+    }
+
+    return deny('That is not for sale');
+  }
+
+  _bought(p, shop, what) {
+    this.sendWallet(p);
+    this.send(p.id, 'result', { game: shop, bought: what });
+    this.send(p.id, 'toast', { text: `Bought ${what}.`, kind: 'info' });
+  }
+
+  onSell(p, d) {
+    const st = this.nearStation(p, d && d.station);
+    if (!st || (st.game !== 'market' && st.game !== 'bin')) return this.error(p, 'Sell at the market or your shipping bin');
+    // The shipping bin saves you the drive, and the middleman takes a cut.
+    const rate = st.game === 'bin' ? 0.8 : 1;
+    const items = d.item === '*' ? SELLABLE.filter((k) => p.inv[k] > 0) : [String(d.item)];
+    let total = 0;
+    let count = 0;
+    let xp = 0;
+    for (const item of items) {
+      if (!SELLABLE.includes(item)) continue;
+      const have = p.inv[item] || 0;
+      const qty = d.item === '*' ? have : Math.min(have, Math.max(1, Math.round(Number(d.qty) || have)));
+      if (qty <= 0) continue;
+      takeItem(p, item, qty);
+      const paid = Math.round(this.market.sell(item, qty) * rate);
+      total += paid;
+      count += qty;
+      xp += paid / 50;
+    }
+    if (!count) return this.error(p, 'Nothing to sell');
+    p.money += total;
+    p.stats.sold += total;
+    this._gainXp(p, xp);
+    this.marketDirty = true;
+    this.sendWallet(p);
+    this.send(p.id, 'result', { game: st.game, sold: count, total });
+    this.send(p.id, 'market', this.market.state());
+    return undefined;
+  }
+
+  onCharity(p, d) {
+    if (!this._atShop(p, d, 'farmshop')) return this.error(p, 'Walk up to the counter first');
+    if (!this._charityAvailable(p)) return this.error(p, 'The farm shop only helps farmers who are truly stuck');
+    p.charityDay = this.clock.day;
+    addItem(p, 'seed:wheat', 20);
+    this.sendWallet(p);
+    this.send(p.id, 'toast', { text: 'The shopkeeper slides you 20 wheat seeds. "Pay it forward."', kind: 'info' });
+    return undefined;
+  }
+
+  _charityAvailable(p) {
+    if (p.money >= 50 || p.charityDay === this.clock.day || p.plot < 0) return false;
+    if (Object.keys(p.inv).some((k) => k.startsWith('seed:'))) return false;
+    if (p.field.tiles.some((t) => t && typeof t === 'object')) return false;
+    return true;
+  }
+
+  // --------------------------------------------------------- farm buildings
+
+  onFarmBuilding(p, d) {
+    const st = this.nearStation(p, d && d.station);
+    if (!st || st.plot == null) return this.error(p, 'Walk up to it first');
+    const kind = st.pad;
+    const now = this.clock.time;
+
+    if (ANIMAL_HOUSES[kind]) {
+      const def = ANIMAL_HOUSES[kind];
+      const b = p.buildings[kind];
+      if (!b) return this.error(p, 'Nothing built here yet');
+      settleAnimals(kind, b, now);
+      if (d.action === 'feed') {
+        let room = def.feedCap - b.feed;
+        if (room <= 0) return this.error(p, 'The trough is full');
+        const fromFeed = Math.min(room, p.inv.feed || 0);
+        takeItem(p, 'feed', fromFeed);
+        room -= fromFeed;
+        const fromWheat = Math.min(room, p.inv.wheat || 0);
+        takeItem(p, 'wheat', fromWheat);
+        if (!fromFeed && !fromWheat) return this.error(p, 'You need feed or wheat');
+        b.feed += fromFeed + fromWheat;
+      } else if (d.action === 'collect') {
+        const n = Math.min(b.stock, storageFree(p));
+        if (!b.stock) return this.error(p, 'Nothing to collect yet');
+        if (!n) return this.error(p, 'Storage is full');
+        b.stock -= n;
+        addItem(p, def.product, n);
+        this._gainXp(p, n * ITEMS[def.product].price / 6);
+        this.send(p.id, 'harvest', { item: def.product, qty: n });
+      }
+      return this.sendWallet(p);
+    }
+
+    if (PROCESSORS[kind]) {
+      const def = PROCESSORS[kind];
+      const b = p.buildings[kind];
+      if (!b) return this.error(p, 'Nothing built here yet');
+      settleProcessor(kind, b, now);
+      if (d.action === 'load') {
+        const recipe = def.recipes.find((r) => r.id === d.recipe);
+        if (!recipe) return this.error(p, 'No such recipe');
+        if (b.recipe && b.recipe !== recipe.id) return this.error(p, 'Let the current batch finish first');
+        let count = clamp(Math.round(Number(d.count) || 1), 1, PROCESS_QUEUE_MAX - b.queue);
+        if (b.queue >= PROCESS_QUEUE_MAX) return this.error(p, 'The queue is full');
+        for (const [item, need] of Object.entries(recipe.in)) {
+          count = Math.min(count, Math.floor((p.inv[item] || 0) / need));
+        }
+        if (count <= 0) {
+          const list = Object.entries(recipe.in).map(([k, n]) => `${n} ${ITEMS[k].name.toLowerCase()}`).join(' + ');
+          return this.error(p, `Each batch needs ${list}`);
+        }
+        for (const [item, need] of Object.entries(recipe.in)) takeItem(p, item, need * count);
+        if (!b.recipe) { b.recipe = recipe.id; b.started = now; }
+        b.queue += count;
+      } else if (d.action === 'collect') {
+        let got = 0;
+        for (const [item, n] of Object.entries(b.out)) {
+          const take = Math.min(n, storageFree(p));
+          if (take <= 0) continue;
+          addItem(p, item, take);
+          b.out[item] -= take;
+          if (!b.out[item]) delete b.out[item];
+          got += take;
+          this._gainXp(p, take * ITEMS[item].price / 8);
+          this.send(p.id, 'harvest', { item, qty: take });
+        }
+        if (!got) return this.error(p, Object.keys(b.out).length ? 'Storage is full' : 'Nothing ready yet');
+      }
+      return this.sendWallet(p);
+    }
+
+    return undefined;
+  }
+
+  // ----------------------------------------------------------------- orders
+
+  onDeliver(p, d) {
+    if (!this._atShop(p, d, 'orders')) return this.error(p, 'Walk up to the board first');
+    const order = this.orders.list.find((o) => o.id === Number(d.id));
+    if (!order) return this.error(p, 'Somebody beat you to it');
+    if ((p.inv[order.item] || 0) < order.qty) {
+      return this.error(p, `You need ${order.qty} ${ITEMS[order.item].name.toLowerCase()}`);
+    }
+    this.orders.take(order.id);
+    takeItem(p, order.item, order.qty);
+    p.money += order.reward;
+    p.stats.orders++;
+    this._gainXp(p, order.xp);
+    this.sendWallet(p);
+    this.toastAll(`${p.name} filled an order for ${order.qty} ${ITEMS[order.item].name.toLowerCase()} — ${money(order.reward)}!`, 'big');
+    this.orders.refill(this.clock.time, this._topLevel());
+    this.broadcast('orders', this.orders.state());
+    return undefined;
+  }
+
+  // --------------------------------------------------------------- vehicles
+
+  onDrive(p, d) {
+    const vid = d && d.vid;
+    if (!vid) {
+      const pos = d && Array.isArray(d.pos) && d.pos.every(Number.isFinite) ? d.pos : null;
+      this._leaveVehicle(p, pos ? { pos, yaw: Number(d.yaw) || 0 } : null);
+      this.sendWallet(p);
+      return undefined;
+    }
+    const v = this._findVehicle(p, vid);
+    if (!v) return this.error(p, 'That is not yours');
+    const dx = v.pos[0] - p.pos[0];
+    const dz = v.pos[2] - p.pos[2];
+    if (dx * dx + dz * dz > 7 * 7) return this.error(p, 'Walk up to it first');
+    if (p.vehicle) this._leaveVehicle(p);
+    v.driver = p.id;
+    p.vehicle = v.id;
+    this.broadcast('vehicles', this.publicVehicles());
+    this.sendWallet(p);
+    return undefined;
+  }
+
+  onImplement(p, d) {
+    const v = this._findVehicle(p, d && d.vid);
+    if (!v || v.model !== 'tractor') return undefined;
+    const want = d.id || null;
+    if (want && !p.implements.includes(want)) return this.error(p, 'You do not own that');
+    // One of each implement: take it off any other tractor first.
+    if (want) for (const o of p.vehicles) if (o !== v && o.implement === want) o.implement = null;
+    v.implement = want;
+    this.broadcast('vehicles', this.publicVehicles());
+    return undefined;
+  }
+
+  // ================================================================= casino
+
   _guardBet(p, d, cooldownMs = 0) {
-    if (this.round.phase !== 'live') { this.error(p, 'The floor is closed between rounds'); return null; }
     const st = this.nearStation(p, d && d.station);
     if (!st) { this.error(p, 'Walk up to the table first'); return null; }
     // Debounce per game, not globally: placing a roulette chip must not swallow
@@ -352,8 +905,7 @@ export class Room {
 
       if (inFree) {
         // A free spin costs nothing, so it skips the wager but still has to
-        // pass the same floor, proximity and debounce checks.
-        if (this.round.phase !== 'live') return this.error(p, 'The floor is closed between rounds');
+        // pass the same proximity and debounce checks.
         if (!this.nearStation(p, d && d.station)) return this.error(p, 'Walk up to the machine first');
         const now = Date.now();
         if (now - (p.betCooldowns.slots || 0) < 450) return undefined;
@@ -442,18 +994,13 @@ export class Room {
 
   // ------------------------------------------------------------------ cigar
 
-  /**
-   * A cigar does nothing mechanically. It costs real money, which comes
-   * straight off your profit, and everyone in the room can see it.
-   */
+  /** A cigar does nothing mechanically. It costs real money and everyone can see it. */
   buyCigar(p, d) {
-    if (this.round.phase !== 'live') return this.error(p, 'The counter is shut between rounds');
     if (!this.nearStation(p, d && d.station)) return this.error(p, 'Walk up to the counter first');
     if (p.cigar) return this.error(p, 'You already have one going');
     if (p.money < CIGAR.PRICE) return this.error(p, `A cigar costs ${money(CIGAR.PRICE)}`);
 
-    // Deducted directly rather than through wager(): it is an expense, not a bet,
-    // so it must not inflate the amount-wagered column.
+    // Deducted directly rather than through wager(): it is an expense, not a bet.
     p.money -= CIGAR.PRICE;
     p.cigar = { puffs: CIGAR.PUFFS };
     this.sendWallet(p);
@@ -511,7 +1058,7 @@ export class Room {
       const res = this.games.roulette.clearBets(p);
       if (!res.ok) return this.error(p, res.error);
       p.money += res.refund;
-      p.wagered -= res.refund;
+      p.stats.wagered -= res.refund;
       return this.sendWallet(p);
     }
 
@@ -522,41 +1069,136 @@ export class Room {
     if (settled.payout > 0) this.pay(p.id, settled.payout, { game: 'blackjack', stake: settled.bet });
   }
 
-  // ------------------------------------------------------------------- tick
+  // =================================================================== tick
 
   tick() {
     const now = Date.now();
-    this.round.tick(now);
+    const changes = this.clock.advance(now);
+    const dtWorld = this.clock.time - this.lastWorld;
+    this.lastWorld = this.clock.time;
+    this.market.decay(dtWorld);
 
-    if (this.round.phase === 'live') {
-      this.games.roulette.tick(now);
-      this.games.crash.tick(now);
-      this.games.horses.tick(now);
-      this.games.robots.tick(now);
+    if (changes.newDay) this._newDay();
+    if (changes.weather) this._weatherChanged(changes.weather);
+    if (this.clock.raining && now - this.lastRain >= RAIN_EVERY_MS) {
+      this.lastRain = now;
+      this._rain();
     }
+
+    this.round.tick(now);
+    this.games.roulette.tick(now);
+    this.games.crash.tick(now);
+    this.games.horses.tick(now);
+    this.games.robots.tick(now);
 
     if (now - this.lastSnapshot >= 1000 / CONFIG.SNAPSHOT_HZ) {
       this.lastSnapshot = now;
       const snap = [];
       for (const p of this.players.values()) {
-        snap.push([p.id, r2(p.pos[0]), r2(p.pos[1]), r2(p.pos[2]), r2(p.yaw), p.anim]);
+        const v = p.vehicle ? this._findVehicle(p, p.vehicle) : null;
+        snap.push([p.id, r2(p.pos[0]), r2(p.pos[1]), r2(p.pos[2]), r2(p.yaw), p.anim, p.vehicle || 0, v ? r2(v.yaw) : 0]);
       }
       if (snap.length) this.broadcast('snap', snap);
     }
 
-    if (now - this.lastBoard >= 1500) {
+    if (now - this.lastClockSync >= 10_000) {
+      this.lastClockSync = now;
+      this.broadcast('clock', this.clock.state());
+      if (this.marketDirty) { this.marketDirty = false; this.broadcast('market', this.market.state()); }
+    }
+
+    if (now - this.lastBoard >= 2000) {
       this.lastBoard = now;
       if (this.players.size) this.broadcast('board', this.standings());
+      // Animals and ovens keep working; keep their open panels honest. Other
+      // panels only need a wallet when something actually changed.
       for (const p of this.players.values()) {
-        if (p.money <= CONFIG.LOAN_MAX_BALANCE) this.sendWallet(p);
+        const st = p.station && STATION_BY_ID.get(p.station);
+        if (st && st.plot != null && st.pad !== 'bin' && st.pad !== 'house') this.sendWallet(p);
       }
     }
+
+    if (now - this.lastSave >= AUTOSAVE_MS) this.save();
+  }
+
+  _newDay() {
+    this.market.newDay();
+    this.orders.refill(this.clock.time, this._topLevel());
+    this.broadcast('market', this.market.state());
+    this.broadcast('orders', this.orders.state());
+    this.broadcast('clock', this.clock.state());
+    this.toastAll(`DAY ${this.clock.day} — market prices have moved and new orders are on the board.`, 'event');
+  }
+
+  _weatherChanged(w) {
+    this.broadcast('clock', this.clock.state());
+    const text = {
+      clear: 'The sun is out.',
+      cloudy: 'Clouds rolling in.',
+      rain: 'It is raining — every field gets watered for free.',
+      storm: 'THUNDERSTORM — lightning can scorch ripe crops. Harvest!',
+    }[w];
+    this.toastAll(text, w === 'storm' ? 'event' : 'info');
+    if (w === 'storm') {
+      for (const p of this.profiles.values()) {
+        if (p.plot < 0) continue;
+        const hits = lightningOn(p, this.clock.time, rnd);
+        if (hits.length) {
+          this.broadcast('tiles', { plot: p.plot, t: hits.map((i) => [i, p.field.tiles[i]]), strike: true });
+          this.toastAll(`Lightning scorched ${hits.length} of ${p.name}'s ripe crops.`, 'warn');
+        }
+      }
+    }
+    if (this.clock.raining) { this.lastRain = Date.now(); this._rain(); }
+  }
+
+  _rain() {
+    for (const p of this.profiles.values()) {
+      if (p.plot < 0) continue;
+      const touched = rainOn(p, this.clock.time);
+      if (touched.length) this.broadcast('tiles', { plot: p.plot, t: touched.map((i) => [i, p.field.tiles[i]]) });
+    }
+  }
+
+  // ------------------------------------------------------------------- save
+
+  saveProfile(p) {
+    if (!this.store) return;
+    try {
+      this.store.savePlayer(toSave(p));
+    } catch (err) {
+      console.error(`[save] could not save ${p.name}: ${err.message}`);
+    }
+  }
+
+  /** Writes the world and every farm. Unchanged files are skipped. */
+  save() {
+    this.lastSave = Date.now();
+    if (!this.store) return;
+    const now = Date.now();
+    for (const p of this.players.values()) {
+      p.stats.playSeconds += Math.round((now - p.joinedAt) / 1000);
+      p.joinedAt = now;
+      settleBuildings(p, this.clock.time);
+    }
+    try {
+      this.store.saveWorld({
+        clock: this.clock.toSave(),
+        market: this.market.toSave(),
+        orders: this.orders.toSave(),
+      });
+    } catch (err) {
+      console.error(`[save] could not save the world: ${err.message}`);
+    }
+    for (const p of this.profiles.values()) this.saveProfile(p);
+    this.store.lastSaveAt = Date.now();
   }
 }
 
 function labelFor(game) {
-  return { slots: 'slots', dice: 'dice', blackjack: 'blackjack table', roulette: 'roulette wheel', crash: 'rocket', horses: 'track' }[game] || 'floor';
+  return { slots: 'slots', dice: 'dice', blackjack: 'blackjack table', roulette: 'roulette wheel', crash: 'rocket', horses: 'track', robots: 'robot cage' }[game] || 'floor';
 }
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const r2 = (v) => Math.round(v * 100) / 100;
+

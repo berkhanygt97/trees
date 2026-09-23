@@ -4,16 +4,16 @@
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;" />
-<title>Casino Royale — Host</title>
+<title>Harvest Royale — Host</title>
 <link rel="stylesheet" href="panel.css" />
 </head>
 <body>
 
 <header>
   <div class="brand">
-    <span class="suit red">♦</span><span class="suit">♠</span>
-    <h1>CASINO ROYALE</h1>
-    <span class="suit">♣</span><span class="suit red">♥</span>
+    <span class="suit">🌾</span><span class="suit red">♦</span>
+    <h1>HARVEST ROYALE</h1>
+    <span class="suit">♠</span><span class="suit">🚜</span>
   </div>
   <div class="state"><i id="dot"></i><span id="state-text">starting…</span></div>
 </header>
@@ -29,34 +29,41 @@
 </section>
 
 <section class="card">
-  <h2>THE FLOOR</h2>
+  <h2>THE VALLEY</h2>
   <div class="roundline">
     <span id="round-label">—</span>
     <span id="round-clock" class="clock">--:--</span>
   </div>
   <div id="event" class="event" hidden></div>
   <ol id="players"></ol>
-  <p class="hint dim" id="empty">Nobody has walked in yet. The round starts when the first player joins.</p>
+  <p class="hint dim" id="empty">No farmers yet. Everyone who joins gets a farm, saved under their name.</p>
 </section>
 
 <section class="card">
-  <h2>TABLE RULES</h2>
+  <h2>SAVE FILES</h2>
+  <p class="hint">One file per player, plus one for the world. Saved every 30 seconds, whenever
+    someone leaves, and when you close this window. Copy the folder to back everything up.</p>
+  <div class="link"><code id="save-dir">—</code></div>
+  <p class="hint dim" id="save-info"></p>
+  <div class="buttons">
+    <button id="open-saves" class="primary">OPEN SAVES FOLDER</button>
+    <button id="save-now">SAVE NOW</button>
+    <button id="choose-saves">MOVE SAVES…</button>
+  </div>
+</section>
+
+<section class="card">
+  <h2>SETTINGS</h2>
   <div class="grid">
-    <label>Round length
-      <span class="field"><input id="roundMinutes" type="number" min="1" max="60" step="1" /><i>min</i></span>
-    </label>
-    <label>Starting stack
-      <span class="field"><i>$</i><input id="startCash" type="number" min="100" max="100000" step="100" /></span>
-    </label>
-    <label>Bankruptcy loan
-      <span class="field"><i>$</i><input id="loanAmount" type="number" min="0" max="10000" step="50" /></span>
+    <label>New farmers start with
+      <span class="field"><i>$</i><input id="startCash" type="number" min="100" max="1000000" step="100" /></span>
     </label>
     <label>Port
       <span class="field"><input id="port" type="number" min="1024" max="65535" step="1" /></span>
     </label>
   </div>
-  <button id="apply">APPLY &amp; RESTART THE FLOOR</button>
-  <p class="hint dim">Restarting disconnects everyone and starts a fresh round.</p>
+  <button id="apply">SAVE &amp; RESTART THE SERVER</button>
+  <p class="hint dim">Everything is saved first. Players get disconnected and can walk straight back in.</p>
 </section>
 
 <section class="card">

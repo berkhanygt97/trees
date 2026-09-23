@@ -49,9 +49,51 @@ function noise({ dur = 0.2, gain = 0.3, delay = 0, bandpass = 1200 }) {
   src.start(c.currentTime + delay);
 }
 
+// A running engine: two detuned oscillators through a low-pass, pitched by speed.
+let engine = null;
+
 export const sfx = {
+  engineStart(heavy = false) {
+    if (muted || engine) return;
+    const c = ensure();
+    if (c.state === 'suspended') c.resume();
+    const a = c.createOscillator();
+    const b = c.createOscillator();
+    a.type = 'sawtooth';
+    b.type = 'square';
+    const filt = c.createBiquadFilter();
+    filt.type = 'lowpass';
+    filt.frequency.value = heavy ? 420 : 700;
+    const env = c.createGain();
+    env.gain.value = 0.0001;
+    env.gain.exponentialRampToValueAtTime(heavy ? 0.13 : 0.1, c.currentTime + 0.3);
+    a.connect(filt);
+    b.connect(filt);
+    filt.connect(env).connect(master);
+    a.start();
+    b.start();
+    engine = { a, b, env, filt, base: heavy ? 32 : 48 };
+    this.engineSpeed(0);
+  },
+  engineSpeed(frac) {
+    if (!engine) return;
+    const f = engine.base * (1 + Math.min(1.4, Math.abs(frac)) * 2.2);
+    const t = ctx.currentTime;
+    engine.a.frequency.setTargetAtTime(f, t, 0.08);
+    engine.b.frequency.setTargetAtTime(f * 1.01 * 0.5, t, 0.08);
+  },
+  engineStop() {
+    if (!engine) return;
+    const { a, b, env } = engine;
+    const t = ctx.currentTime;
+    env.gain.setTargetAtTime(0.0001, t, 0.08);
+    a.stop(t + 0.4);
+    b.stop(t + 0.4);
+    engine = null;
+  },
+
   unlock() { ensure(); if (ctx.state === 'suspended') ctx.resume(); },
-  toggleMute() { muted = !muted; return muted; },
+  toggleMute() { muted = !muted; if (muted) this.engineStop(); return muted; },
   isMuted() { return muted; },
 
   click() { tone({ freq: 520, type: 'square', dur: 0.05, gain: 0.18 }); },

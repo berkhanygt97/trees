@@ -2,15 +2,11 @@
 // The server imports it directly; the client fetches it from /shared/config.js.
 
 export const CONFIG = {
-  ROUND_SECONDS: 600,          // 10 minute rounds
-  INTERMISSION_SECONDS: 25,    // podium + reset time between rounds
-  STARTING_BANKROLL: 2000,
-
-  // Bankruptcy loans. They keep broke players in the game but count against
-  // final profit, so nobody can loan their way onto the podium.
-  LOAN_AMOUNT: 400,
-  LOAN_COOLDOWN_MS: 30000,
-  LOAN_MAX_BALANCE: 150,       // you may only borrow when this broke
+  // What a brand-new farmer walks in with. Money is permanent after that:
+  // it is saved, and it is the same money at the market and the casino.
+  STARTING_BANKROLL: 500,
+  // World clock speed. 1 is normal; tests crank it up to watch crops grow.
+  TIME_SCALE: 1,
 
   CHIPS: [25, 50, 100, 250, 500, 1000],
   MIN_BET: 25,
@@ -35,7 +31,7 @@ export const ROOM = {
   RAIL_Z: -21,
 };
 
-// Every interactable in the casino. The server uses `pos`/`radius` to validate
+// Every interactable inside the casino. The server uses `pos`/`radius` to validate
 // that a player is actually standing at the thing they are betting on; the
 // client uses the same numbers to build the geometry, so they can never drift.
 export const STATIONS = [
@@ -70,10 +66,6 @@ export const STATIONS = [
 
   // --- Robot cage (left of the floor, clear of the pillar at -30,-10) ---
   { id: 'robots-1', game: 'robots', name: 'The Scrapyard', pos: [-25, 0, -2], yaw: 0, radius: 8.0, solid: 5.2 },
-
-  // --- ATMs (entrance, either side of the bar) ---
-  { id: 'atm-1', game: 'atm', name: 'Bankruptcy ATM', pos: [-17, 0, 37.5], yaw: Math.PI, radius: 3.0, solid: 1.0 },
-  { id: 'atm-2', game: 'atm', name: 'Bankruptcy ATM', pos: [17, 0, 37.5], yaw: Math.PI, radius: 3.0, solid: 1.0 },
 ];
 
 export const HORSES = [
@@ -113,10 +105,6 @@ export const AVATAR_COLORS = [
 ];
 
 export const HATS = ['tophat', 'cowboy', 'party', 'visor', 'crown', 'traffic', 'none'];
-
-export function profitOf(p) {
-  return Math.round(p.money - CONFIG.STARTING_BANKROLL - p.loans);
-}
 
 export function money(n) {
   const v = Math.round(n);

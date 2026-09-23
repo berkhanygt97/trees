@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
-const FIELDS = ['roundMinutes', 'startCash', 'loanAmount', 'port'];
+const FIELDS = ['startCash', 'port'];
 
 const FIREWALL = {
   win32: `<p><b>Windows</b> — the first time you host, Windows asks whether to let
@@ -9,7 +9,7 @@ const FIREWALL = {
           If you dismissed that box: Windows Security → Firewall &amp; network protection →
           Allow an app through firewall → find <b>Node.js</b> and tick Private.</p>`,
   darwin: `<p><b>macOS</b> — System Settings → Network → Firewall → Options, then allow
-           incoming connections for <b>Casino Royale</b> (or <b>node</b>). macOS usually
+           incoming connections for <b>Harvest Royale</b> (or <b>node</b>). macOS usually
            prompts the first time you host; if you clicked Deny, this is where to undo it.</p>`,
   linux: `<p><b>Linux</b> — if you use ufw: <b>sudo ufw allow PORT/tcp</b>. With firewalld:
           <b>sudo firewall-cmd --add-port=PORT/tcp</b>.</p>`,
@@ -29,6 +29,14 @@ $('play').addEventListener('click', async () => {
   await window.host.openGame();
 });
 
+$('open-saves').addEventListener('click', () => window.host.openSaves());
+$('save-now').addEventListener('click', async () => {
+  $('save-now').textContent = 'SAVED';
+  render(await window.host.saveNow());
+  setTimeout(() => { $('save-now').textContent = 'SAVE NOW'; }, 1400);
+});
+$('choose-saves').addEventListener('click', async () => render(await window.host.chooseSaves()));
+
 $('apply').addEventListener('click', async () => {
   const next = {};
   for (const id of FIELDS) next[id] = Number($(id).value);
@@ -36,7 +44,7 @@ $('apply').addEventListener('click', async () => {
   $('apply').textContent = 'RESTARTING…';
   const state = await window.host.restart(next);
   $('apply').disabled = false;
-  $('apply').textContent = 'APPLY & RESTART THE FLOOR';
+  $('apply').textContent = 'SAVE & RESTART THE SERVER';
   render(state);
 });
 
@@ -59,7 +67,7 @@ function renderLinks(state) {
   if (!state.running) {
     const row = document.createElement('div');
     row.className = 'link none';
-    row.textContent = 'The floor is closed — fix the port below and restart.';
+    row.textContent = 'The server is not running — fix the port below and restart.';
     box.appendChild(row);
     $('same-machine').textContent = '';
     return;
@@ -93,6 +101,7 @@ function renderPlayers(state) {
 
   state.players.forEach((p, i) => {
     const li = document.createElement('li');
+    if (!p.online) li.className = 'off';
 
     const rank = document.createElement('span');
     rank.className = 'rank';
@@ -104,24 +113,22 @@ function renderPlayers(state) {
 
     const nm = document.createElement('span');
     nm.className = 'nm';
-    nm.textContent = p.name;
+    nm.textContent = `${p.name}${p.online ? '' : ' (offline)'}`;
+
+    const lv = document.createElement('span');
+    lv.className = 'borrowed';
+    lv.textContent = `lvl ${p.level}`;
 
     const pf = document.createElement('span');
-    pf.className = `pf ${p.profit > 0 ? 'up' : p.profit < 0 ? 'down' : 'flat'}`;
-    const sign = p.profit > 0 ? '+' : p.profit < 0 ? '-' : '±';
-    pf.textContent = `${sign}$${Math.abs(p.profit).toLocaleString('en-US')}`;
+    pf.className = 'pf up';
+    pf.textContent = `$${p.netWorth.toLocaleString('en-US')}`;
 
-    li.append(rank, dot, nm);
-    if (p.loans) {
-      const b = document.createElement('span');
-      b.className = 'borrowed';
-      b.textContent = `borrowed $${p.loans.toLocaleString('en-US')}`;
-      li.append(b);
-    }
-    li.append(pf);
+    li.append(rank, dot, nm, lv, pf);
     list.appendChild(li);
   });
 }
+
+const WEATHER = { clear: '☀️ clear', cloudy: '⛅ cloudy', rain: '🌧️ rain', storm: '⛈️ storm' };
 
 function render(state) {
   if (!state) return;
@@ -137,23 +144,22 @@ function render(state) {
   renderLinks(state);
   $('play').disabled = !state.running;
 
-  const r = state.round;
-  if (r && r.phase !== 'lobby') {
-    const m = Math.floor(r.secondsLeft / 60);
-    const s = r.secondsLeft % 60;
-    $('round-label').textContent = r.phase === 'live'
-      ? `ROUND ${r.number} · LIVE`
-      : `ROUND ${r.number} OVER · NEXT ROUND IN`;
-    $('round-clock').textContent = `${m}:${String(s).padStart(2, '0')}`;
-    $('round-clock').classList.toggle('urgent', r.phase === 'live' && r.secondsLeft <= 60);
+  const wd = state.world;
+  if (wd) {
+    $('round-label').textContent = `DAY ${wd.day} · ${WEATHER[wd.weather] || wd.weather}`;
+    $('round-clock').textContent = `${String(wd.hour).padStart(2, '0')}:${String(wd.minute).padStart(2, '0')}`;
   } else {
-    $('round-label').textContent = state.running ? 'WAITING FOR PLAYERS' : '—';
+    $('round-label').textContent = '—';
     $('round-clock').textContent = '--:--';
-    $('round-clock').classList.remove('urgent');
   }
+  $('event').hidden = !(wd && wd.event);
+  if (wd && wd.event) $('event').textContent = `Casino: ${wd.event}`;
 
-  $('event').hidden = !(r && r.event);
-  if (r && r.event) $('event').textContent = r.event;
+  const sv = state.saves || {};
+  $('save-dir').textContent = sv.dir || '—';
+  const ago = sv.lastSaveAt ? Math.round((Date.now() - sv.lastSaveAt) / 1000) : null;
+  $('save-info').textContent = `${sv.files || 0} player save${sv.files === 1 ? '' : 's'}`
+    + (ago != null ? ` · last saved ${ago < 5 ? 'just now' : `${ago}s ago`}` : ' · not saved yet this session');
 
   renderPlayers(state);
 

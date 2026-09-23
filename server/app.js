@@ -1,4 +1,4 @@
-// The casino server as a library, so it can be started by the CLI, by the
+// The game server as a library, so it can be started by the CLI, by the
 // desktop app, or by a test — anything that wants a room running.
 import http from 'node:http';
 import fsp from 'node:fs/promises';
@@ -9,6 +9,7 @@ import { WebSocketServer } from 'ws';
 
 import { CONFIG } from '../shared/config.js';
 import { Room } from './room.js';
+import { SaveStore } from './save.js';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -55,12 +56,12 @@ const positive = (v, fallback) => {
 
 /** Mutates the shared CONFIG so client and server agree on the same numbers. */
 export function applySettings(settings = {}) {
-  CONFIG.ROUND_SECONDS = Math.round(positive(settings.roundMinutes, CONFIG.ROUND_SECONDS / 60) * 60);
-  CONFIG.INTERMISSION_SECONDS = Math.round(positive(settings.intermissionSeconds, CONFIG.INTERMISSION_SECONDS));
   CONFIG.STARTING_BANKROLL = Math.round(positive(settings.startCash, CONFIG.STARTING_BANKROLL));
-  CONFIG.LOAN_AMOUNT = Math.round(positive(settings.loanAmount, CONFIG.LOAN_AMOUNT));
+  CONFIG.TIME_SCALE = positive(settings.timeScale, 1);
   return CONFIG;
 }
+
+export const DEFAULT_SAVE_DIR = path.join(process.cwd(), 'saves');
 
 /**
  * Boot a casino. Resolves once the port is actually bound, so callers can show
@@ -90,7 +91,8 @@ export function startCasino(settings = {}) {
     }
   });
 
-  const room = new Room();
+  const store = new SaveStore(settings.saveDir || DEFAULT_SAVE_DIR);
+  const room = new Room({ store, timeScale: CONFIG.TIME_SCALE });
   const wss = new WebSocketServer({ server, maxPayload: 16 * 1024 });
 
   wss.on('connection', (ws) => {
@@ -105,7 +107,13 @@ export function startCasino(settings = {}) {
 
       if (!player) {
         if (msg.t !== 'join') return;
-        player = room.addPlayer(ws, msg.d && msg.d.name);
+        const res = room.addPlayer(ws, msg.d && msg.d.name);
+        if (res.denied) {
+          ws.send(JSON.stringify({ t: 'denied', d: { reason: res.denied } }));
+          ws.close();
+          return;
+        }
+        player = res;
         return;
       }
       try {
@@ -120,7 +128,7 @@ export function startCasino(settings = {}) {
     ws.on('error', drop);
   });
 
-  // Drop connections that stopped answering (laptop lid closed mid-round).
+  // Drop connections that stopped answering (laptop lid closed mid-session).
   const heartbeat = setInterval(() => {
     for (const ws of wss.clients) {
       if (!ws.isAlive) { ws.terminate(); continue; }
@@ -145,11 +153,17 @@ export function startCasino(settings = {}) {
       resolve({
         port,
         room,
+        saveDir: store.dir,
         localUrl: `http://localhost:${port}`,
         lanUrls: lanAddresses().map((ip) => `http://${ip}:${port}`),
         playerCount: () => room.players.size,
+        save: () => room.save(),
         close: () => new Promise((done) => {
           cleanup();
+          // Hand back any stake still on a table, then write everything out.
+          room.abortOpenBets();
+          for (const id of [...room.players.keys()]) room.removePlayer(id);
+          room.save();
           for (const ws of wss.clients) ws.terminate();
           wss.close(() => server.close(() => done()));
         }),

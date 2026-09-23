@@ -128,3 +128,10 @@ button.copied { background: var(--green); color: #0a2411; }
 
 #firewall b { color: #cbbfae; }
 #firewall p { margin: 6px 0; }
+
+/* ------------------------------------------------------------- the valley */
+#players li.off { opacity: .55; }
+#players .borrowed { color: #9fd4ff; }
+.buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.buttons button { flex: 1 1 auto; }
+#save-dir { word-break: break-all; }

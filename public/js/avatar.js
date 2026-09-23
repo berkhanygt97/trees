@@ -165,6 +165,7 @@ export function createAvatar({ name, color, hat, showLabel = true }) {
   }
 
   let t = Math.random() * 10;
+  let seated = false;
   const cigarTip = new THREE.Object3D();
   cigarTip.position.set(0.24, 0, 0.06);
   cigar.add(cigarTip);
@@ -189,8 +190,25 @@ export function createAvatar({ name, color, hat, showLabel = true }) {
       label.scale.set(label.userData.base.x * k, label.userData.base.y * k, 1);
     },
     setVisible(v) { group.visible = v; },
+    /** Behind the wheel: shrunk to fit the cabin, legs out, hands on the wheel. */
+    setSeated(on) {
+      if (on === seated) return;
+      seated = on;
+      group.scale.setScalar(on ? 0.72 : 1);
+      if (label) label.visible = !on;
+    },
+    get seated() { return seated; },
     update(dt, moving, fast) {
       t += dt;
+      if (seated) {
+        legs[0].rotation.x = legs[1].rotation.x = -1.45;
+        arms[0].rotation.x = arms[1].rotation.x = -1.1;
+        arms[0].rotation.z = 0.2;
+        arms[1].rotation.z = -0.2;
+        body.position.y = 0.95;
+        head.position.y = 1.62;
+        return;
+      }
       const speed = moving ? (fast ? 15 : 10) : 2.4;
       const swing = moving ? Math.sin(t * speed) : 0;
       legs[0].rotation.x = swing * 0.8;

@@ -186,3 +186,148 @@ export function liveCanvas(w, h) {
   tex.colorSpace = THREE.SRGBColorSpace;
   return { canvas: cv, ctx: cv.getContext('2d'), texture: tex };
 }
+
+// ------------------------------------------------------------- outdoors
+
+function speckle(g, w, h, n, colors, size = 2) {
+  for (let i = 0; i < n; i++) {
+    g.fillStyle = colors[(Math.random() * colors.length) | 0];
+    g.fillRect(Math.random() * w, Math.random() * h, size, size);
+  }
+}
+
+export function grassTexture() {
+  return make('grass', 256, 256, (g, w, h) => {
+    g.fillStyle = '#4f8a3a';
+    g.fillRect(0, 0, w, h);
+    speckle(g, w, h, 5000, ['#5c9a43', '#467d33', '#63a34a', '#3f7330', '#6fae52'], 2);
+    speckle(g, w, h, 180, ['#e8e06a', '#f5f5f5', '#c9a0e0'], 2);
+  }, { repeat: [140, 140] });
+}
+
+export function asphaltTexture() {
+  return make('asphalt', 128, 128, (g, w, h) => {
+    g.fillStyle = '#3a3a40';
+    g.fillRect(0, 0, w, h);
+    speckle(g, w, h, 2400, ['#44444b', '#2f2f35', '#505058'], 1.5);
+  }, { repeat: [1, 1] });
+}
+
+export function pavingTexture() {
+  return make('paving', 128, 128, (g, w, h) => {
+    g.fillStyle = '#8d8578';
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(40,34,28,0.45)';
+    g.lineWidth = 2;
+    for (let y = 0; y <= h; y += 32) {
+      g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke();
+      const off = (y / 32) % 2 ? 16 : 0;
+      for (let x = off; x <= w; x += 32) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 32); g.stroke(); }
+    }
+    speckle(g, w, h, 600, ['rgba(0,0,0,0.08)', 'rgba(255,255,255,0.06)'], 2);
+  }, { repeat: [1, 1] });
+}
+
+export function dirtTexture() {
+  return make('dirt', 128, 128, (g, w, h) => {
+    g.fillStyle = '#7a5a3a';
+    g.fillRect(0, 0, w, h);
+    speckle(g, w, h, 2200, ['#86643f', '#6b4e31', '#8f6d47', '#5e432a'], 2);
+  }, { repeat: [1, 1] });
+}
+
+/** Plowed soil: dark furrows running across the tile. */
+export function soilTexture() {
+  return make('soil', 64, 64, (g, w, h) => {
+    g.fillStyle = '#ffffff';
+    g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 8) {
+      g.fillStyle = 'rgba(0,0,0,0.28)';
+      g.fillRect(0, y + 5, w, 3);
+    }
+    speckle(g, w, h, 300, ['rgba(0,0,0,0.12)', 'rgba(255,255,255,0.12)'], 2);
+  }, { repeat: [1, 1] });
+}
+
+export function plankTexture(base = '#9b6b3d') {
+  return make('plank' + base, 128, 128, (g, w, h) => {
+    g.fillStyle = base;
+    g.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 16) {
+      g.fillStyle = 'rgba(0,0,0,0.25)';
+      g.fillRect(x, 0, 2, h);
+      for (let y = 0; y < h; y += 3) {
+        g.fillStyle = `rgba(0,0,0,${Math.random() * 0.08})`;
+        g.fillRect(x + 2, y, 14, 1);
+      }
+    }
+  }, { repeat: [1, 1] });
+}
+
+export function brickTexture(base = '#9c4a36') {
+  return make('brick' + base, 128, 128, (g, w, h) => {
+    g.fillStyle = '#d8cbb8';
+    g.fillRect(0, 0, w, h);
+    for (let row = 0; row < 8; row++) {
+      const off = row % 2 ? 16 : 0;
+      for (let x = -16; x < w; x += 32) {
+        g.fillStyle = base;
+        g.globalAlpha = 0.85 + Math.random() * 0.15;
+        g.fillRect(x + off + 1, row * 16 + 1, 30, 14);
+      }
+    }
+    g.globalAlpha = 1;
+  }, { repeat: [1, 1] });
+}
+
+/** A flat sign with a dark board, for shop fronts and farm gates. */
+export function boardTexture(text, color = '#f2c14e', sub = '') {
+  return make(`board:${text}:${sub}:${color}`, 1024, 256, (g, w, h) => {
+    g.fillStyle = '#1d1622';
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = color;
+    g.lineWidth = 12;
+    g.strokeRect(8, 8, w - 16, h - 16);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillStyle = color;
+    g.font = 'bold 110px "Trebuchet MS", sans-serif';
+    g.fillText(text, w / 2, sub ? h / 2 - 26 : h / 2, w - 60);
+    if (sub) {
+      g.fillStyle = '#efe6d6';
+      g.font = 'bold 44px "Trebuchet MS", sans-serif';
+      g.fillText(sub, w / 2, h / 2 + 64, w - 60);
+    }
+  }, { repeat: [1, 1] });
+}
+
+/** Red and white kerb stripes for the race track. */
+export function kerbTexture() {
+  return make('kerb', 64, 16, (g, w, h) => {
+    g.fillStyle = '#e8e8e8';
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = '#d33a2c';
+    g.fillRect(0, 0, w / 2, h);
+  }, { repeat: [1, 1] });
+}
+
+export function checkerTexture() {
+  return make('checker', 64, 64, (g, w, h) => {
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+      g.fillStyle = (x + y) % 2 ? '#111' : '#f5f5f5';
+      g.fillRect(x * 8, y * 8, 8, 8);
+    }
+  }, { repeat: [1, 1] });
+}
+
+/** Soft round glow, used for lamp light pools on the ground at night. */
+export function glowTexture() {
+  return make('glow', 128, 128, (g, w, h) => {
+    const grad = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+    grad.addColorStop(0, 'rgba(255,220,150,0.9)');
+    grad.addColorStop(0.4, 'rgba(255,200,120,0.35)');
+    grad.addColorStop(1, 'rgba(255,200,120,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
+  }, { repeat: [1, 1] });
+}

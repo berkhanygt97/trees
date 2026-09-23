@@ -1,5 +1,6 @@
-// Electron main process: runs the casino inside the app so the host never has
-// to open a terminal, and shows them the link to hand around the room.
+// Electron main process: runs the game server inside the app so the host never
+// has to open a terminal, shows them the link to hand around, and keeps the
+// save files somewhere they can find them.
 import { app, BrowserWindow, ipcMain, clipboard, dialog, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -7,15 +8,14 @@ import { fileURLToPath } from 'node:url';
 
 import { startCasino } from '../server/app.js';
 import { CONFIG } from '../shared/config.js';
+import { DAY_MS, HOUR_MS } from '../shared/catalog.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const DEFAULTS = {
   port: 3000,
-  roundMinutes: 10,
-  intermissionSeconds: 25,
-  startCash: 2000,
-  loanAmount: 400,
+  startCash: 500,
+  saveDir: '',          // empty = Documents/Harvest Royale/saves
 };
 
 let settings = { ...DEFAULTS };
@@ -46,7 +46,9 @@ function saveSettings() {
   }
 }
 
-// -------------------------------------------------------------------- casino
+const saveDir = () => settings.saveDir || path.join(app.getPath('documents'), 'Harvest Royale', 'saves');
+
+// -------------------------------------------------------------------- server
 
 /** Walk up a few ports rather than dying because something else holds 3000. */
 async function boot() {
@@ -54,7 +56,7 @@ async function boot() {
   lastError = null;
   for (let port = wanted; port < wanted + 10; port++) {
     try {
-      casino = await startCasino({ ...settings, port });
+      casino = await startCasino({ ...settings, port, saveDir: saveDir() });
       if (port !== wanted) {
         lastError = `Port ${wanted} was busy — using ${port} instead.`;
       }
@@ -100,25 +102,29 @@ function status() {
     lanUrls: running ? casino.lanUrls : [],
     port: running ? casino.port : settings.port,
   };
-  if (!running) return { ...base, round: null, players: [] };
+  if (!running) return { ...base, world: null, players: [], saves: { dir: saveDir(), files: [] } };
 
-  const round = casino.room.round;
+  const room = casino.room;
+  const t = room.clock.time;
+  const ev = room.round.event;
   return {
     ...base,
-    round: {
-      number: round.number,
-      phase: round.phase,
-      secondsLeft: Math.max(0, Math.round((round.endsAt - Date.now()) / 1000)),
-      event: round.event ? round.event.name : null,
+    world: {
+      day: Math.floor(t / DAY_MS) + 1,
+      hour: Math.floor((t % DAY_MS) / HOUR_MS),
+      minute: Math.floor(((t % HOUR_MS) / HOUR_MS) * 60),
+      weather: room.clock.weather,
+      event: ev ? ev.name : null,
     },
-    players: casino.room.standings().map((p) => ({
-      name: p.name, color: p.color, money: p.money, profit: p.profit, loans: p.loans,
+    players: room.standings().map((p) => ({
+      name: p.name, color: p.color, money: p.money, netWorth: p.netWorth, level: p.level, online: p.online,
     })),
-    rules: {
-      roundMinutes: CONFIG.ROUND_SECONDS / 60,
-      startCash: CONFIG.STARTING_BANKROLL,
-      loanAmount: CONFIG.LOAN_AMOUNT,
+    saves: {
+      dir: casino.saveDir,
+      files: room.store.list().length,
+      lastSaveAt: room.store.lastSaveAt || 0,
     },
+    rules: { startCash: CONFIG.STARTING_BANKROLL },
   };
 }
 
@@ -137,7 +143,7 @@ function createPanel() {
     minWidth: 480,
     minHeight: 620,
     backgroundColor: '#0a0710',
-    title: 'Casino Royale — Host',
+    title: 'Harvest Royale — Host',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(HERE, 'preload.cjs'),
@@ -160,7 +166,7 @@ function openGameWindow() {
     width: 1280,
     height: 800,
     backgroundColor: '#07050c',
-    title: 'Casino Royale',
+    title: 'Harvest Royale',
     autoHideMenuBar: true,
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
@@ -176,6 +182,24 @@ ipcMain.handle('host:restart', (_e, next) => restart(next || {}));
 ipcMain.handle('host:open-game', () => openGameWindow());
 ipcMain.handle('host:copy', (_e, text) => { clipboard.writeText(String(text)); return true; });
 ipcMain.handle('host:open-external', (_e, url) => shell.openExternal(String(url)));
+ipcMain.handle('host:open-saves', () => {
+  const dir = casino ? casino.saveDir : saveDir();
+  fs.mkdirSync(dir, { recursive: true });
+  return shell.openPath(dir);
+});
+ipcMain.handle('host:save-now', () => {
+  if (casino) casino.save();
+  return status();
+});
+ipcMain.handle('host:choose-saves', async () => {
+  const res = await dialog.showOpenDialog(panelWindow, {
+    title: 'Where should the save files live?',
+    defaultPath: saveDir(),
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (res.canceled || !res.filePaths[0]) return status();
+  return restart({ saveDir: res.filePaths[0] });
+});
 
 // ---------------------------------------------------------------- lifecycle
 
@@ -204,24 +228,25 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform !== 'darwin') app.quit();
   });
 
-  // Warn before pulling the floor out from under a room full of players.
+  // Always save on the way out, and warn before kicking out a valley full of people.
   let confirmedQuit = false;
   app.on('before-quit', (e) => {
-    if (confirmedQuit || !casino || casino.playerCount() === 0) return;
+    if (confirmedQuit || !casino) return;
     e.preventDefault();
     const n = casino.playerCount();
-    const choice = dialog.showMessageBoxSync({
-      type: 'warning',
-      buttons: ['Keep hosting', 'Shut down anyway'],
-      defaultId: 0,
-      cancelId: 0,
-      title: 'Players are still in the casino',
-      message: `${n} ${n === 1 ? 'person is' : 'people are'} still playing.`,
-      detail: 'Quitting now disconnects everyone and ends the round.',
-    });
-    if (choice === 1) {
-      confirmedQuit = true;
-      shutdown().then(() => app.quit());
+    if (n > 0) {
+      const choice = dialog.showMessageBoxSync({
+        type: 'warning',
+        buttons: ['Keep hosting', 'Save and shut down'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Players are still in the valley',
+        message: `${n} ${n === 1 ? 'person is' : 'people are'} still playing.`,
+        detail: 'Everything is saved, but quitting disconnects everyone.',
+      });
+      if (choice !== 1) return;
     }
+    confirmedQuit = true;
+    shutdown().then(() => app.quit());
   });
 }
