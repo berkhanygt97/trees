@@ -1,60 +1,142 @@
 import * as THREE from 'three';
-import { pbr } from './gfx/materials.js';
-import { mergeParts } from './geo.js';
+import { Builder, foliageMaterial } from './gfx/trees.js';
 
-// Palm trees for the Strip and the plaza: a curved, ringed trunk and a crown
-// of drooping fronds. Every palm is one instance of two meshes, so fifty of
-// them cost two draw calls.
+// Palm trees for the Strip, the plaza and the hoods: a ringed trunk that
+// leans as it grows, and a crown of long feathery fronds that arch up and
+// droop, each folded along its rib, swaying in the breeze. All the palms of
+// one call are a single instanced draw.
 
-const G = {
-  cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 7),
-  box: new THREE.BoxGeometry(1, 1, 1),
-  ball: new THREE.SphereGeometry(0.5, 6, 5),
-};
+// Texture regions: [u0, v0, u1, v1].
+const TRUNK = [0, 0, 0.25, 1];
+const FROND = [0.25, 0, 1, 1];
 
-function trunkGeometry() {
-  const parts = [];
-  const segs = 11;
-  const h = 0.72;
-  for (let i = 0; i < segs; i++) {
-    const k = i / segs;
-    // Leans over as it grows, like it has been in the sea breeze for years.
-    const x = 0.9 * k * k;
-    const r = 0.26 - 0.1 * k;
-    parts.push({ geo: G.cyl, color: i % 2 ? '#8a6a44' : '#7a5a38', x, y: i * h + h / 2, rz: -0.12 - k * 0.25, s: [r * 2, h * 1.02, r * 2] });
+let atlas = null;
+
+function paintAtlas() {
+  const W = 512;
+  const H = 256;
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const g = cv.getContext('2d');
+  let seed = 11;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+
+  // Trunk: grey-brown with the rings of old leaf bases, a little fibrous.
+  const tw = W * 0.25;
+  g.fillStyle = '#7d6a55';
+  g.fillRect(0, 0, tw, H);
+  for (let y = 0; y < H; y += 9) {
+    g.fillStyle = 'rgba(40,30,20,0.55)';
+    g.fillRect(0, y + 6, tw, 3);
+    g.fillStyle = 'rgba(190,170,140,0.25)';
+    g.fillRect(0, y, tw, 2);
   }
-  return mergeParts(parts);
-}
+  for (let i = 0; i < 500; i++) {
+    g.fillStyle = rnd() < 0.5 ? 'rgba(30,22,14,0.2)' : 'rgba(200,180,150,0.12)';
+    g.fillRect(rnd() * tw, rnd() * H, 1 + rnd() * 2, 2 + rnd() * 5);
+  }
 
-function crownGeometry() {
-  const parts = [];
-  const top = [0.9, 11 * 0.72];
-  const n = 9;
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2;
-    // Each frond: three flat boxes, drooping more towards the tip.
-    for (let j = 0; j < 3; j++) {
-      const reach = 0.9 + j * 1.05;
-      const droop = 0.1 + j * 0.45;
-      parts.push({
-        geo: G.box, color: j === 2 ? '#4f9a3a' : '#3f8a30',
-        x: top[0] + Math.cos(a) * reach, y: top[1] - droop, z: Math.sin(a) * reach,
-        ry: -a, rz: -(0.2 + j * 0.35), s: [1.15, 0.05, 0.42 - j * 0.1],
-      });
+  // Frond: a rib along the middle (u runs base to tip), leaflets angled
+  // towards the tip down both sides, getting shorter at the ends.
+  const x0 = tw;
+  const fw = W - tw;
+  const mid = H / 2;
+  for (let i = 0; i < 70; i++) {
+    const t = i / 70;
+    const x = x0 + 6 + t * (fw - 12);
+    const len = (mid - 8) * Math.sin(Math.min(1, t * 1.25) * Math.PI) ** 0.6 * (0.85 + rnd() * 0.15);
+    for (const side of [-1, 1]) {
+      const green = ['#3f7a2e', '#4d8a34', '#35682a', '#5b9a3c'][(rnd() * 4) | 0];
+      g.strokeStyle = green;
+      g.lineWidth = 3.2;
+      g.beginPath();
+      g.moveTo(x, mid);
+      g.quadraticCurveTo(x + len * 0.3, mid + side * len * 0.5, x + len * 0.55, mid + side * len);
+      g.stroke();
     }
   }
-  for (const [dx, dz] of [[0.18, 0], [-0.1, 0.16], [-0.1, -0.16]]) {
-    parts.push({ geo: G.ball, color: '#5a3a1a', x: top[0] + dx, y: top[1] - 0.25, z: dz, s: [0.28, 0.28, 0.28] });
-  }
-  return mergeParts(parts);
+  g.strokeStyle = '#8a8a4a';
+  g.lineWidth = 4;
+  g.beginPath(); g.moveTo(x0 + 2, mid); g.lineTo(W - 4, mid); g.stroke();
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
 }
+
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+
+/** One palm, about 8 m: the trunk, eleven fronds and a few young ones standing up. */
+function palmGeometry(seed = 1) {
+  let s = seed;
+  const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  const B = new Builder();
+  const pts = [];
+  const rad = [];
+  for (let i = 0; i <= 10; i++) {
+    const k = i / 10;
+    pts.push(V(0.9 * k * k, k * 7.9, 0));
+    rad.push(0.27 - 0.1 * k + (i === 0 ? 0.08 : 0));
+  }
+  B.tube(pts, rad, 8, TRUNK);
+  const top = V(0.9, 7.9, 0);
+  const fronds = 13;
+  for (let f = 0; f < fronds; f++) {
+    const young = f >= 11;
+    const a = young ? f * 2.1 : (f / 11) * Math.PI * 2 + rnd() * 0.3;
+    const out = V(Math.cos(a), 0, Math.sin(a));
+    const side = V(-out.z, 0, out.x);
+    const len = young ? 1.8 : 3.0 + rnd() * 0.6;
+    const pitch0 = young ? 1.1 : 0.55 + rnd() * 0.25;
+    const segs = 8;
+    const base = B.count;
+    for (let i = 0; i <= segs; i++) {
+      const t = i / segs;
+      // Arcs up and out, then droops under its own weight.
+      const pitch = pitch0 - t * (young ? 0.6 : 1.9);
+      let p = top.clone();
+      for (let k = 0; k < i; k++) {
+        const pk = pitch0 - (k / segs) * (young ? 0.6 : 1.9);
+        p = p.addScaledVector(out, Math.cos(pk) * len / segs).add(V(0, Math.sin(pk) * len / segs, 0));
+      }
+      const width = (young ? 0.5 : 0.95) * Math.sin(Math.min(1, t * 1.15 + 0.05) * Math.PI) ** 0.6;
+      const fold = width * 0.35;
+      const up = V(-Math.sin(pitch) * out.x, Math.cos(pitch), -Math.sin(pitch) * out.z);
+      const l = p.clone().addScaledVector(side, -width).addScaledVector(up, -fold);
+      const r = p.clone().addScaledVector(side, width).addScaledVector(up, -fold);
+      const u = FROND[0] + t * (FROND[2] - FROND[0]);
+      for (const [q, v] of [[l, FROND[1]], [p, (FROND[1] + FROND[3]) / 2], [r, FROND[3]]]) {
+        B.pos.push(q.x, q.y, q.z);
+        // Lit as part of the round crown, tipped towards the sky.
+        const n = q.clone().sub(top).normalize().add(V(0, 0.6, 0)).normalize();
+        B.nor.push(n.x, n.y, n.z);
+        B.uv.push(u, v);
+      }
+    }
+    for (let i = 0; i < segs; i++) {
+      const p = base + i * 3;
+      B.idx.push(p, p + 3, p + 1, p + 1, p + 3, p + 4, p + 1, p + 4, p + 2, p + 2, p + 4, p + 5);
+    }
+  }
+  // Coconuts: three dark knobs under the crown.
+  for (const [dx, dz] of [[0.2, 0], [-0.1, 0.18], [-0.1, -0.18]]) {
+    const c = top.clone().add(V(dx, -0.3, dz));
+    B.tube([c.clone().add(V(0, 0.14, 0)), c, c.clone().add(V(0, -0.14, 0))], [0.02, 0.15, 0.02], 6, [0.02, 0.02, 0.04, 0.04]);
+  }
+  return B.geometry();
+}
+
+let geo = null;
 
 /** `spots` = [[x, z], ...]. Returns { group, obstacles }. */
 export function buildPalms(spots, seed = 7) {
+  if (!atlas) atlas = paintAtlas();
+  if (!geo) geo = palmGeometry(3);
   const group = new THREE.Group();
-  const mat = pbr(0xffffff, { vertexColors: true, roughness: 0.85 });
-  const trunk = new THREE.InstancedMesh(trunkGeometry(), mat, spots.length);
-  const crown = new THREE.InstancedMesh(crownGeometry(), mat, spots.length);
+  const mat = foliageMaterial(atlas);
+  const mesh = new THREE.InstancedMesh(geo, mat, spots.length);
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const s = new THREE.Vector3();
@@ -66,9 +148,9 @@ export function buildPalms(spots, seed = 7) {
     const k = 0.85 + rnd() * 0.35;
     s.set(k, k, k);
     m.compose(new THREE.Vector3(x, 0, z), q, s);
-    trunk.setMatrixAt(i, m);
-    crown.setMatrixAt(i, m);
+    mesh.setMatrixAt(i, m);
   });
-  group.add(trunk, crown);
+  mesh.computeBoundingSphere();
+  group.add(mesh);
   return { group, obstacles: spots.map(([x, z]) => ({ x, z, r: 0.45 })) };
 }

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { pbr } from './gfx/materials.js';
 import { plantTrees, WIND } from './gfx/trees.js';
 import { GrassField } from './gfx/grass.js';
+import { surface } from './gfx/surfaces.js';
 import { noCast } from './shadows.js';
 import {
   BOUNDS, PLAZA, ROADS, SHOPS, ORDERS_BOARD, PLOTS, PLOT_SIZE, GATE, TRACK, RAMPS, CASINO, COTTAGES, STRIP,
@@ -222,13 +223,18 @@ export class Outdoor {
     const basin = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.4, 0.8, 24), stone);
     basin.position.y = 0.4;
     f.add(basin);
-    const water = new THREE.Mesh(new THREE.CylinderGeometry(3.9, 3.9, 0.1, 24), phong(0x3f8fd0, { shininess: 90, specular: 0xffffff }));
+    // Clear, dark water that mirrors the sky, rippling in the breeze.
+    const ripples = surface('water', '#1a4452').normalMap.clone();
+    ripples.repeat.set(3, 3);
+    const water = new THREE.Mesh(new THREE.CylinderGeometry(3.9, 3.9, 0.1, 32), live(pbr(0x1e4a58, {
+      roughness: 0.04, normalMap: ripples, transparent: true, opacity: 0.9, envMapIntensity: 1.3,
+    })));
     water.position.y = 0.72;
     f.add(water);
     const column = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 2.6, 12), stone);
     column.position.y = 1.7;
     f.add(column);
-    const top = new THREE.Mesh(new THREE.SphereGeometry(0.7, 14, 10), phong(0xf2c14e, { shininess: 80 }));
+    const top = new THREE.Mesh(new THREE.SphereGeometry(0.7, 24, 16), pbr(0xf2c14e, { metalness: 1, roughness: 0.3 }));
     top.position.y = 3.3;
     f.add(top);
     f.position.set(0, 0, 55);
@@ -671,12 +677,36 @@ export class Outdoor {
 
     // Pines on the valley edge and up the mountains, cypresses and broadleaf
     // trees in between (gfx/trees.js builds and instances them).
+    // Shrubs on the verges of the country roads, in clumps, and scattered
+    // under the trees.
+    const shrubs = [];
+    for (const r of ROADS) {
+      const along = r.x1 - r.x0 > r.z1 - r.z0;
+      const len = along ? r.x1 - r.x0 : r.z1 - r.z0;
+      for (let d = 0; d < len; d += 7 + rnd() * 9) {
+        if (rnd() < 0.45) continue;
+        for (const side of [-1, 1]) {
+          if (rnd() < 0.4) continue;
+          const off = 6.5 + rnd() * 3;
+          const x = along ? r.x0 + d : (side < 0 ? r.x0 - off : r.x1 + off);
+          const z = along ? (side < 0 ? r.z0 - off : r.z1 + off) : r.z0 + d;
+          if (Math.abs(x) > BOUNDS.maxX || Math.abs(z) > BOUNDS.maxZ || blocked(x, z)) continue;
+          shrubs.push({ x, y: terrainHeight(x, z), z, species: 'bush', scale: 0.8 + rnd() * 0.7, turn: rnd() * 40, tint: 0.8 + rnd() * 0.35 });
+        }
+      }
+    }
+    for (const [x, z] of spots.slice(0, 900)) {
+      if (rnd() < 0.6) continue;
+      const bx = x + (rnd() - 0.5) * 8;
+      const bz = z + (rnd() - 0.5) * 8;
+      if (!blocked(bx, bz)) shrubs.push({ x: bx, y: terrainHeight(bx, bz), z: bz, species: 'bush', scale: 0.7 + rnd() * 0.6, turn: rnd() * 40, tint: 0.75 + rnd() * 0.3 });
+    }
     const trees = spots.map(([x, z, k, v]) => {
       const species = v < 0.42 ? 'pine' : v < 0.55 ? 'cypress' : 'oak';
       if (Math.abs(x) < BOUNDS.maxX + 5 && Math.abs(z) < BOUNDS.maxZ + 5) this.obstacles.push({ x, z, r: 0.45 * k });
       return { x, y: terrainHeight(x, z), z, species, scale: k * (species === 'oak' ? 0.95 : 0.85), turn: v * 40, tint: 0.82 + (v * 7 % 1) * 0.3 };
     });
-    this.trees = plantTrees(trees);
+    this.trees = plantTrees([...trees, ...shrubs]);
     this.group.add(this.trees);
     this._grass(blocked);
   }
@@ -718,6 +748,10 @@ export class Outdoor {
     const glow = 0.35 + night * 0.65;
     for (const mat of this.lampMats) mat.color.setRGB(glow, glow * 0.94, glow * 0.75);
     this.poolMat.opacity = night * 0.55;
-    if (this.fountainWater) this.fountainWater.position.y = 0.72 + Math.sin(this.t * 2) * 0.02;
+    if (this.fountainWater) {
+      this.fountainWater.position.y = 0.72 + Math.sin(this.t * 2) * 0.02;
+      const n = this.fountainWater.material.normalMap;
+      n.offset.set(this.t * 0.02, this.t * 0.013);
+    }
   }
 }

@@ -456,6 +456,15 @@ const PATTERNS = {
     return P;
   },
 
+  water(n, rnd) {
+    // Little wind ripples on still water.
+    const P = base(n, 0.05, 1);
+    const a = fbm(n, rnd, { period: 6, octaves: 4 });
+    const b = fbm(n, rnd, { period: 16, octaves: 3 });
+    for (let i = 0; i < n * n; i++) P.height[i] = a[i] * 0.6 + b[i] * 0.4;
+    return P;
+  },
+
   soil(n, rnd) {
     // Plowed furrows across the tile.
     const P = base(n, 0.96, 1);
@@ -503,6 +512,7 @@ const SPEC = {
   grass: { size: 512, bump: 2 },
   rock: { size: 512, bump: 3.5 },
   sand: { size: 512, bump: 1.6 },
+  water: { size: 256, bump: 1.4 },
 };
 
 // Photo textures (gfx/photo.js) cover some real size; the game tiles each

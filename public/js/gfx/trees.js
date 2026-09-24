@@ -126,8 +126,13 @@ function paintAtlas() {
 
 export function treeMaterial() {
   if (!atlas) atlas = paintAtlas();
+  return foliageMaterial(atlas);
+}
+
+/** Alpha-tested, double-sided, swaying in the wind: for anything leafy. */
+export function foliageMaterial(map) {
   const m = new THREE.MeshStandardMaterial({
-    map: atlas, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.82, metalness: 0,
+    map, alphaTest: 0.42, side: THREE.DoubleSide, roughness: 0.82, metalness: 0,
   });
   m.onBeforeCompile = (shader) => {
     injectGlobals(shader);
@@ -150,13 +155,13 @@ export function treeMaterial() {
 
 // ------------------------------------------------------------ geometry
 
-class Builder {
+export class Builder {
   constructor() { this.pos = []; this.nor = []; this.uv = []; this.idx = []; }
 
   get count() { return this.pos.length / 3; }
 
-  /** A tapering tube along `pts` (Vector3s) with radii `rad`, in the bark region. */
-  tube(pts, rad, sides = 6) {
+  /** A tapering tube along `pts` (Vector3s) with radii `rad`, in the bark region (or `region`). */
+  tube(pts, rad, sides = 6, region = BARK) {
     const base = this.count;
     const len = [0];
     for (let i = 1; i < pts.length; i++) len.push(len[i - 1] + pts[i].distanceTo(pts[i - 1]));
@@ -177,7 +182,7 @@ class Builder {
         const nz = a.z * Math.cos(t) + b.z * Math.sin(t);
         this.pos.push(pts[i].x + nx * rad[i], pts[i].y + ny * rad[i], pts[i].z + nz * rad[i]);
         this.nor.push(nx, ny, nz);
-        this.uv.push(BARK[0] + (s / sides) * (BARK[2] - BARK[0]), BARK[1] + (len[i] / total) * (BARK[3] - BARK[1]));
+        this.uv.push(region[0] + (s / sides) * (region[2] - region[0]), region[1] + (len[i] / total) * (region[3] - region[1]));
       }
     }
     for (let i = 0; i < pts.length - 1; i++) {
@@ -305,7 +310,22 @@ function cypress(rnd, far) {
   return B.geometry();
 }
 
-const SPECIES = { oak, pine, cypress };
+/** A shrub about a metre and a half high: a dense mound of leaf clusters. */
+function bush(rnd, far) {
+  const B = new Builder();
+  const centre = V(0, 0.75, 0);
+  const n = far ? 7 : 16;
+  for (let i = 0; i < n; i++) {
+    const d = randDir(rnd);
+    d.y = Math.abs(d.y) * 0.8 + 0.1;
+    const p = centre.clone().add(V(d.x * 0.85, d.y * 0.55, d.z * 0.85).multiplyScalar(0.5 + rnd() * 0.5));
+    const s = (0.9 + rnd() * 0.5) * (far ? 1.3 : 1);
+    B.card(p, randDir(rnd), s, s, rnd() * 6.28, LEAF, centre);
+  }
+  return B.geometry();
+}
+
+const SPECIES = { oak, pine, cypress, bush };
 const cache = new Map();
 
 /** The shared geometry for a species (a few variants each), near or far detail. */
