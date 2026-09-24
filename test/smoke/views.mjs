@@ -4,6 +4,7 @@
 import { HOUR_MS, DAY_MS } from '../../shared/catalog.js';
 import { PLOTS, HQS, plotSpawn } from '../../shared/map.js';
 import { HOOD_STREETS } from '../../shared/hoods.js';
+import { RIVALS } from '../../shared/catalog.js';
 
 const at = (room, hour) => {
   room.clock.time = Math.floor(room.clock.time / DAY_MS) * DAY_MS + hour * HOUR_MS;
@@ -109,6 +110,21 @@ export const VIEWS = [
     client: (c) => { c.rig.mode = 'fp'; c.rig.fresh = true; }, steps: async (page) => { await page.evaluate(lineup); }, wait: 2500 },
   { name: 'people-near', pos: [street.x0 + 150, 0, midZ + 2.6], yaw: -Math.PI / 2, pitch: -0.12,
     client: (c) => { c.rig.mode = 'fp'; c.rig.fresh = true; }, steps: async (page) => { await page.evaluate(lineup, true); }, wait: 2500 },
+  { name: 'gangfight', server: (room, me) => {
+    at(room, 15);
+    me.money = 1e6;
+    me.hood.up.armory = 2;
+    for (const n of ['Tiny', 'Moose']) room.staff.hire(me, room.staff.candidates()[0].cid, 'soldier', n);
+    room.combat.tick();
+    const q = HQS[me.plot];
+    const c = RIVALS.coyotes;
+    for (let i = 0; i < 3; i++) {
+      room.combat.spawn({ kind: 'raider', hood: me.plot, name: 'Coyote', gang: 'coyotes', color: c.color, gun: i ? 'pistol' : 'smg',
+        look: { outfit: c.outfit, color: c.color, accent: c.accent, top: c.top, legs: c.legs, head: c.head, mask: c.mask, skin: ['#c68a5e', '#9c6644', '#e0ac80'][i] },
+        x: q.spawn[0] + (me.plot >= 3 ? 22 : -22), z: q.spawn[2] + 18 + i * 2, acc: 0.1 });
+    }
+  }, client: (c) => { c.rig.mode = 'tp'; c.rig.fresh = true; },
+    pos: [HQS[0].spawn[0] - 4, 0, HQS[0].spawn[2] + 10], yaw: Math.PI / 2 + 0.25, pitch: -0.05, wait: 4500 },
   { name: 'afternoon', server: (room) => at(room, 16.5), pos: [street.x0 + 45, 0, midZ], yaw: Math.PI / 2 + 0.5, pitch: -0.1,
     client: (c) => { c.rig.mode = 'tp'; c.rig.fresh = true; } },
   { name: 'dusk', client: (c) => { c.rig.mode = 'tp'; }, server: (room) => at(room, 19.2), pos: [street.x0 + 120, 0, midZ], yaw: -Math.PI / 2, pitch: 0.05 },

@@ -29,6 +29,7 @@ import { PerfMeter } from './perf.js';
 import { CameraRig } from './camera.js';
 import { markShadows } from './shadows.js';
 import { Radar, zoneName } from './radar.js';
+import { UnitsView } from './unitsview.js';
 import { PhysicsWorld } from './physics/world.js';
 
 const canvas = document.getElementById('scene');
@@ -143,6 +144,7 @@ function initScene() {
   world.sky.focus = controls.pos;
   perf = new PerfMeter(renderer);
   boars = new BoarView(scene);
+  units = new UnitsView(scene);
   workers = new WorkerView(scene);
   restaurants = new RestaurantView(scene);
   world.extraBoxes = restaurants.boxes;
@@ -170,6 +172,8 @@ function initScene() {
   window.casino = {
     THREE, controls, world, fleet, scene, camera, net, hud, gameStates, pipeline, boars, weapons, renderer, perf, rig,
     get physics() { return physics; },
+    get units() { return units; },
+    get radar() { return radar; },
     get workers() { return workers; },
     get npcs() { return npcs; },
     get restaurants() { return restaurants; },
@@ -211,6 +215,10 @@ function thirdPersonAim() {
   let t = tMin + range;
   for (const b of boars.aliveList()) {
     const hit = raySphereT(o, d, b.pos.x, 0.55, b.pos.z, 0.7);
+    if (hit != null && hit > tMin && hit < t) t = hit;
+  }
+  for (const u of units.aliveList()) {
+    const hit = raySphereT(o, d, u.pos.x, 1.2, u.pos.z, 0.45);
     if (hit != null && hit > tMin && hit < t) t = hit;
   }
   for (const b of world.boxesNear()) {
@@ -325,6 +333,8 @@ net.on('welcome', (d) => {
   pipeline.overlayCamera.add(viewModel.group);
   weapons.attach(viewModel);
   boars.apply(d.boars || []);
+  units.setList(d.unitlist || [], me.color);
+  units.applySnap(d.units || []);
   workers.setList(d.workers || []);
   restaurantList = d.restaurants || [];
   restaurants.setList(restaurantList);
@@ -396,6 +406,7 @@ net.on('snap', (rows) => {
 
 net.on('wallet', (w) => {
   hud.setWallet(w);
+  hud.setArmor(w.armor || 0);
   if (weapons) weapons.setOwned(w.guns, w.gun);
   if (activePanel && activePanel.ui.onWallet) activePanel.ui.onWallet(w);
 });
@@ -483,20 +494,28 @@ net.on('shotres', (d) => { if (weapons) weapons.onShotRes(d); });
 net.on('ammo', (d) => { if (weapons) weapons.onAmmo(d); });
 net.on('shot', (d) => {
   if (!weapons) return;
+  // A gang member's shot: the tracer leaves their gun.
+  if (d.uid && units) {
+    const m = units.onShot(d, tmpVec);
+    if (m) d = { ...d, o: [m.x, m.y + 0.2, m.z] };
+  }
   weapons.onRemoteShot(d, camera.position);
   const a = avatars.get(d.pid);
   if (a) a.avatar.fire();
 });
+net.on('unitlist', (list) => { if (units) units.setList(list, me.color); });
+net.on('units', (rows) => { if (units) units.applySnap(rows); });
 
 net.on('hurt', (d) => {
   hp = d.hp;
   hud.setHealth(hp);
+  if (d.armor != null) hud.setArmor(d.armor);
   pipeline.ouch(Math.min(1, 0.35 + d.dmg / 40));
   sfx.hurt();
   if (!controls.car && d.dir) controls.knock(d.dir[0], d.dir[1], 7 + d.dmg * 0.1);
 });
 
-net.on('hp', (d) => { hp = d.hp; hud.setHealth(hp); });
+net.on('hp', (d) => { hp = d.hp; hud.setHealth(hp); if (d.armor != null) hud.setArmor(d.armor); });
 
 net.on('ko', (d) => {
   koUntil = performance.now() + d.ms;
@@ -504,7 +523,7 @@ net.on('ko', (d) => {
   controls.frozen = true;
   weapons.holster();
   if (activePanel) closePanel();
-  hud.showKo(true);
+  hud.showKo(true, d.where || undefined);
 });
 
 // Somebody took a draw — puff smoke from their cigar.
@@ -914,6 +933,7 @@ function carLabel(c) {
 // ------------------------------------------------------------------- input
 
 let holding = false;
+let triggerHeld = false;            // left button down with an automatic gun out
 
 addEventListener('keydown', (e) => {
   if (!me) return;
@@ -1008,13 +1028,18 @@ addEventListener('mousedown', (e) => {
   if (!me || activePanel || !controls.locked || controls.frozen) return;
   if (e.button === 2) { weapons.setAiming(true); return; }
   if (e.button !== 0) return;
-  if (weapons.out && !controls.car) { if (weapons.fire()) selfAvatar.fire(); return; }
+  if (weapons.out && !controls.car) {
+    // Automatic guns keep firing while the trigger is held (see the loop).
+    triggerHeld = true;
+    if (weapons.fire()) selfAvatar.fire();
+    return;
+  }
   holding = true;
   lastWorkSent = 0;
   workAim();
 });
 addEventListener('mouseup', (e) => {
-  if (e.button === 0) holding = false;
+  if (e.button === 0) { holding = false; triggerHeld = false; }
   if (e.button === 2 && weapons) weapons.setAiming(false);
 });
 addEventListener('contextmenu', (e) => e.preventDefault());
@@ -1029,6 +1054,7 @@ let last = performance.now();
 let lastMoveSent = 0;
 let lastShadowMark = 0;
 let radar = null;
+let units = null;
 let headlight = null;
 let lastRadarBlips = 0;
 let lastZone = 0;
@@ -1186,6 +1212,7 @@ function loop(now) {
   }
 
   updateRadar(dt, now, car);
+  if (triggerHeld && weapons.out && weapons.gun.auto && !car && controls.locked && weapons.fire()) selfAvatar.fire();
 
   // Your headlights light the road ahead after dark (a light from the pool).
   if (!headlight) headlight = world.lights.add([{ x: 0, y: -50, z: 0, color: 0xfff0d0, intensity: 0, range: 26, night: true, priority: 60 }])[0];
@@ -1213,6 +1240,7 @@ function loop(now) {
   if (viewModel && !car && rig.firstPerson) viewModel.update(dt, { moving, sprinting, aiming: weapons.aiming });
   weapons.update(dt);
   boars.update(dt);
+  units.update(dt, camera);
   workers.update(dt, net.now(), camera.position);
   crowd.update(dt, net.now(), (worldTime() % DAY_MS) / HOUR_MS);
   npcs.update(dt, net.now(), camera.position);
@@ -1283,6 +1311,11 @@ function updateRadar(dt, now, car) {
     }).filter(Boolean));
     radar.setBlips('beacon', beacon.visible ? [{ x: beacon.position.x, z: beacon.position.z, color: '#e0302a', shape: 'marker', size: 6, edge: true }] : []);
     radar.setBlips('boars', boars.aliveList().map((b) => ({ x: b.pos.x, z: b.pos.z, color: '#c0392b', size: 3, edge: false })));
+    // Raiders in red (always, with lookouts on the corner); gangs in their colours.
+    const cctv = ((hud.wallet.hood || {}).up || {}).cctv || 0;
+    radar.setBlips('units', units.aliveList().map((u) => (u.kind === 'raider'
+      ? { x: u.pos.x, z: u.pos.z, color: '#ff2a2a', size: 4, edge: cctv > 0 }
+      : { x: u.pos.x, z: u.pos.z, color: u.color, size: 3, edge: false })));
     if (me.plot >= 0 && HQS[me.plot]) {
       const d = HQS[me.plot].door;
       radar.setBlips('home', [{ x: d[0], z: d[2], color: me.color, shape: 'icon', label: 'H', size: 6, edge: true }]);

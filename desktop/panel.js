@@ -1,7 +1,8 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
-const FIELDS = ['startCash', 'port'];
+const FIELDS = ['startCash', 'port', 'raidMode'];
+const TEXT_FIELDS = new Set(['raidMode']);
 
 const FIREWALL = {
   win32: `<p><b>Windows</b> — the first time you host, Windows asks whether to let
@@ -39,7 +40,7 @@ $('choose-saves').addEventListener('click', async () => render(await window.host
 
 $('apply').addEventListener('click', async () => {
   const next = {};
-  for (const id of FIELDS) next[id] = Number($(id).value);
+  for (const id of FIELDS) next[id] = TEXT_FIELDS.has(id) ? $(id).value : Number($(id).value);
   $('apply').disabled = true;
   $('apply').textContent = 'RESTARTING…';
   const state = await window.host.restart(next);

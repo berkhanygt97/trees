@@ -9,6 +9,7 @@ const casino = await startCasino({
   startCash: process.env.START_CASH,
   saveDir: process.env.SAVE_DIR,
   timeScale: process.env.TIME_SCALE,
+  raidMode: process.env.RAID_MODE,
 }).catch((err) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`\n  Port ${Number(process.env.PORT) || 3000} is already in use.`);

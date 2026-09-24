@@ -18,6 +18,8 @@ import { SAVE_VERSION, versionOf, upgradeProfile, upgradeWorld } from './migrate
 import { Wildlife } from './boars.js';
 import { Combat } from './combat.js';
 import { Hoods } from './hoods.js';
+import { Raids } from './raids.js';
+import { TAG_POINTS } from '../shared/hoods.js';
 import { Staff } from './workers.js';
 import { Restaurants } from './restaurants.js';
 import {
@@ -83,6 +85,10 @@ export class Room {
     this.wildlife = new Wildlife(this);
     this.combat = new Combat(this);
     this.hoods = new Hoods(this);
+    this.raids = new Raids(this);
+    // Graffiti on each hood's walls: tag id -> { gang, name, color }. Anyone's
+    // but the hood's own gang puts customers off until it is scrubbed.
+    this.tags = new Map(Object.entries((world && world.tags) || {}).filter(([id]) => TAG_POINTS.some((t) => t.id === id)));
     this.restaurants = new Restaurants(this);
     this.staff = new Staff(this, world && world.staff);
 
@@ -191,6 +197,8 @@ export class Room {
       boars: this.wildlife.snapshot(),
       unitlist: this.combat.unitList(),
       units: this.combat.snapshot(),
+      raids: this.raids.publicState(),
+      tags: this.publicTags(),
       workers: this.staff.publicWorkers(),
       restaurants: this.restaurants.publicRestaurants(),
       npcs: this.restaurants.snapshotNpcs(),
@@ -575,6 +583,7 @@ export class Room {
       case 'staff': return this.onStaff(p, msg.d);
       case 'resto': return this.onResto(p, msg.d);
       case 'hood': return this.onHood(p, msg.d);
+      case 'scrub': return this.onScrub(p, msg.d);
       case 'drop': return this.onDrop(p);
       case 'spill': return this.restaurants.spill(p);
       case 'deliver': return this.onDeliver(p, msg.d);
@@ -1195,6 +1204,49 @@ export class Room {
     return undefined;
   }
 
+  // --------------------------------------------------------------- graffiti
+
+  publicTags() { return Object.fromEntries(this.tags); }
+
+  setTag(id, tag) {
+    this.tags.set(id, { gang: tag.gang, name: tag.name, color: tag.color });
+    this.broadcast('tags', this.publicTags());
+    const t = TAG_POINTS.find((q) => q.id === id);
+    const boss = t && this._ownerOf(t.hood);
+    if (boss) this.walletSoon(boss);
+  }
+
+  /** Someone else's name on your walls: 5% fewer customers for each. */
+  tagPenalty(p) {
+    let n = 0;
+    for (const [id, tag] of this.tags) {
+      const t = TAG_POINTS.find((q) => q.id === id);
+      if (t && t.hood === p.plot && tag.gang !== p.slug) n++;
+    }
+    return 0.95 ** n;
+  }
+
+  /**
+   * Holding E at a tagged wall in your own hood scrubs it off. The client
+   * sends this every quarter second while E is held; three seconds does it.
+   */
+  onScrub(p, d) {
+    const t = TAG_POINTS.find((q) => q.id === (d && d.tag));
+    const tag = t && this.tags.get(t.id);
+    if (!t || !tag || t.hood !== p.plot || tag.gang === p.slug) return;
+    if (Math.hypot(p.pos[0] - t.pos[0], p.pos[2] - t.pos[2]) > 3.5) return;
+    const now = Date.now();
+    if (!p.scrub || p.scrub.id !== t.id || now - p.scrub.last > 700) p.scrub = { id: t.id, start: now, last: now };
+    p.scrub.last = now;
+    this.send(p.id, 'scrub', { tag: t.id, k: Math.min(1, (now - p.scrub.start) / 3000) });
+    if (now - p.scrub.start < 3000) return;
+    p.scrub = null;
+    this.tags.delete(t.id);
+    this.broadcast('tags', this.publicTags());
+    this.send(p.id, 'toast', { text: `Scrubbed ${tag.name}'s tag off your wall.`, kind: 'good' });
+    this.walletSoon(p);
+  }
+
   // Restaurants ask these (restaurants.js).
   footfall(p, res) { return this.hoods.footfall(p, res); }
   closedFor(p, res) { return this.hoods.closedFor(p, res); }
@@ -1490,6 +1542,7 @@ export class Room {
 
     this.wildlife.tick();
     this.combat.tick(now);
+    this.raids.tick(now);
     this.staff.tick(now);
     this.restaurants.tick(now);
     if (now - (this.lastWalletFlush || 0) >= 250) {
@@ -1603,6 +1656,7 @@ export class Room {
         market: this.market.toSave(),
         orders: this.orders.toSave(),
         staff: this.staff.toSave(),
+        tags: Object.fromEntries(this.tags),
       });
     } catch (err) {
       console.error(`[save] could not save the world: ${err.message}`);

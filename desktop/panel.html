@@ -63,6 +63,13 @@
     <label>Port
       <span class="field"><input id="port" type="number" min="1024" max="65535" step="1" /></span>
     </label>
+    <label>Rival gang raids
+      <span class="field"><select id="raidMode">
+        <option value="relaxed">Relaxed — rarer, weaker</option>
+        <option value="normal">Normal — richer hoods get hit harder</option>
+        <option value="hardcore">Hardcore — often, and nasty</option>
+      </select></span>
+    </label>
   </div>
   <button id="apply">SAVE &amp; RESTART THE SERVER</button>
   <p class="hint dim">Everything is saved first. Players get disconnected and can walk straight back in.</p>

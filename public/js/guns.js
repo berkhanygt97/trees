@@ -132,6 +132,37 @@ const BUILDERS = {
     parts.bolt = bolt;
     return { muzzle: [0, 0.047, -0.94], left: [0, -0.02, -0.36], sight: 0.1, scope: true };
   },
+  pistol(g, parts) {
+    const poly = BLACK();
+    // Grip under the hand, frame, and a slide that kicks back when it fires.
+    box(g, 0.028, 0.1, 0.045, 0, -0.045, 0.012, poly, 0.22);
+    box(g, 0.026, 0.028, 0.17, 0, 0.018, -0.07, poly);
+    box(g, 0.012, 0.022, 0.035, 0, -0.012, -0.02, STEEL());                 // trigger guard
+    const slide = new THREE.Group();
+    box(slide, 0.03, 0.03, 0.19, 0, 0.046, -0.075, STEEL());
+    box(slide, 0.006, 0.01, 0.01, 0, 0.066, -0.16, BLUED());                 // front sight
+    box(slide, 0.02, 0.01, 0.01, 0, 0.066, 0.005, BLUED());                  // rear sight
+    g.add(slide);
+    tube(g, 0.008, 0.02, 0, 0.046, -0.175, BLUED());
+    parts.bolt = slide;
+    return { muzzle: [0, 0.046, -0.19], left: [0.015, -0.055, 0.03], sight: 0.07 };
+  },
+  smg(g, parts) {
+    const poly = BLACK();
+    // A boxy machine pistol: the clip goes up the grip, a stubby barrel, a front strap.
+    box(g, 0.036, 0.06, 0.26, 0, 0.022, -0.08, STEEL());                     // receiver
+    box(g, 0.028, 0.09, 0.04, 0, -0.045, 0.0, poly, 0.12);                   // grip
+    const mag = box(g, 0.022, 0.16, 0.03, 0, -0.1, 0.0, BLUED(), 0.12);       // clip out of the grip
+    parts.mag = mag;
+    tube(g, 0.012, 0.12, 0, 0.03, -0.26, BLUED());
+    box(g, 0.02, 0.06, 0.025, 0, -0.03, -0.15, poly);                        // front grip strap
+    box(g, 0.012, 0.022, 0.035, 0, -0.012, -0.03, STEEL());
+    const bolt = new THREE.Group();
+    box(bolt, 0.012, 0.018, 0.03, 0.02, 0.05, -0.05, STEEL());               // cocking handle
+    g.add(bolt);
+    parts.bolt = bolt;
+    return { muzzle: [0, 0.03, -0.32], left: [0, -0.05, -0.15], sight: 0.07 };
+  },
 };
 
 /**

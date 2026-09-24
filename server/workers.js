@@ -220,9 +220,11 @@ export class Staff {
     const out = [];
     for (const p of this.room.profiles.values()) {
       for (const w of p.workers) {
-        // Soldiers are drawn from the combat units (combat.js), not walked about here.
+        // Soldiers are drawn from the combat units (combat.js), not walked about
+        // here; so is anyone fighting off a raid.
         if (w.role === 'soldier') continue;
         const r = this.rt.get(w.id);
+        if (r && r.fighting) continue;
         out.push({ id: w.id, owner: p.slug, name: w.name, role: w.role, look: w.look, ev: r ? r.ev : null, color: p.color });
       }
     }
@@ -254,6 +256,7 @@ export class Staff {
         if (w.role === 'soldier') continue;
         let r = this.rt.get(w.id);
         if (!r) r = this._spawn(p, w);
+        if (r.away) continue;
         if (now < r.until) continue;
         if (r.pending) {
           const fn = r.pending;
@@ -345,6 +348,29 @@ export class Staff {
     r.until = 0;
     r.ev = { from: [r2(x), r2(z)], to: [r2(x), r2(z)], t0: now, walk: 0, dur: 0, act: 'idle' };
     return [x, z];
+  }
+
+  /**
+   * Takes a worker off their jobs (a raid: fighting it, or sheltering from
+   * it), with `status` saying why; `walkTo` [x, z] sends them somewhere
+   * first. null puts them back to work.
+   */
+  setAway(wid, status, walkTo = null) {
+    const r = this.rt.get(wid);
+    if (!r) return;
+    r.away = status || null;
+    r.fighting = !!status && !walkTo;
+    r.until = 0;
+    if (status && walkTo) {
+      const now = Date.now();
+      const dist = Math.hypot(walkTo[0] - r.x, walkTo[1] - r.z);
+      const walk = Math.round((dist / (WALK * 2)) * 1000 / this.pace);
+      r.ev = { from: [r2(r.x), r2(r.z)], to: [r2(walkTo[0]), r2(walkTo[1])], t0: now, walk, dur: 0, act: 'home' };
+      r.x = walkTo[0];
+      r.z = walkTo[1];
+      this._emit(r);
+    }
+    r.status = status || 'Back to work';
   }
 
   /** Where a worker is right now, mid-walk or not. */

@@ -35,6 +35,8 @@ export class WorkerView {
       if (!e) {
         const look = { ...(w.look || {}), outfit: OUTFIT[w.role] || 'work' };
         if (w.role === 'driver') look.hat = 'cap';
+        // Everyone on the payroll is in the gang: a bandana in the boss's colour.
+        if (w.color && OUTFIT[w.role] !== 'chef') { look.hat = 'bandana'; look.hatColor = w.color; }
         const person = createPerson(look, { name: this._tag(w), tagColor: '#ffe9a8', tagScale: 0.32 });
         this.scene.add(person.group);
         e = { id: w.id, name: w.name, role: w.role, person, ev: null, yaw: 0 };

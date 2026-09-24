@@ -781,3 +781,8 @@ tr.me td { background: rgba(242,193,78,.1); }
   #sa-weapon, #sa-weapon canvas { width: 56px; height: 56px; }
   #feed { bottom: 180px; }
 }
+
+/* The clubhouse panel's gang-name box. */
+.hq-name { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.hq-name label { font: 700 11px var(--font); letter-spacing: 2px; color: var(--gold-dim); }
+.hq-name input { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: rgba(0,0,0,.35); color: #f4eee4; font: 700 16px var(--font); }

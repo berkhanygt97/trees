@@ -4,6 +4,7 @@ import {
 } from './textures.js';
 import { buildGun } from './guns.js';
 import { createCharacter } from './character.js';
+import { GUN_BY_ID } from '/shared/catalog.js';
 
 // Old farmers: flannel shirt in the player's colour, denim overalls, boots,
 // a grey beard and a hat that has seen things. Low-poly, texture-painted —
@@ -229,7 +230,7 @@ export function createViewModel(color) {
     if (cycleT > 0) {
       const u = 1 - cycleT / cycleLen;
       const swing = Math.sin(Math.min(1, u) * Math.PI);
-      if (gun.parts.bolt && gunId !== 'semiauto') {
+      if (gun.parts.bolt && GUN_BY_ID[gunId] && GUN_BY_ID[gunId].action === 'bolt') {
         rp.set(0.075, 0.035 + swing * 0.02, 0.04 + swing * 0.07);
         gun.parts.bolt.position.z = swing * 0.07;
         gun.parts.bolt.rotation.z = -swing * 0.9;

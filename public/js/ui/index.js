@@ -13,6 +13,7 @@ import { createHouse, createCoop, createBarn, createPen, createMill, createDairy
 import { createPlanner } from './planner.js';
 import { createJobCentre, createStaff } from './jobs.js';
 import { createRestaurant } from './restaurant.js';
+import { createHq } from './hq.js';
 
 export const GAME_UIS = {
   // The casino.
@@ -42,6 +43,7 @@ export const GAME_UIS = {
   planner: { title: 'FARM PLANNER', chips: false, create: createPlanner },
   staff: { title: 'YOUR STAFF', chips: false, create: createStaff },
   restaurant: { title: 'YOUR RESTAURANT', chips: false, create: createRestaurant },
+  hq: { title: 'THE CLUBHOUSE', chips: false, create: createHq },
   bin: { title: 'SHIPPING BIN', chips: false, create: createBin },
   coop: { title: 'CHICKEN COOP', chips: false, create: createCoop },
   barn: { title: 'COW BARN', chips: false, create: createBarn },

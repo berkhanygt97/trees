@@ -1,5 +1,5 @@
 import {
-  CROPS, ITEMS, HOUSES, ANIMAL_HOUSES, PROCESSORS, FIELD_SIZES, FIELD_PRICES, FIELD_LEVELS,
+  ARMOR, CROPS, ITEMS, HOUSES, ANIMAL_HOUSES, PROCESSORS, FIELD_SIZES, FIELD_PRICES, FIELD_LEVELS,
   VEHICLES, IMPLEMENTS, GUNS, RESTAURANTS, RESTO_SLOT_LEVELS, boarStats, money,
 } from '/shared/catalog.js';
 import { LOTS, LOT_LEVEL, ROADS as STREETS } from '/shared/map.js';
@@ -288,7 +288,7 @@ export function createGunShop(ctx) {
       const dps = (g.damage * g.pellets) / g.rate;
       const shotsToKill = Math.ceil(boar.hp / (g.damage * g.pellets));
       return row({
-        icon: { boltrifle: '🪵', lever: '🤠', shotgun: '💥', semiauto: '⚙️', biggame: '🦏' }[g.id],
+        icon: { boltrifle: '🪵', lever: '🤠', shotgun: '💥', semiauto: '⚙️', biggame: '🦏', pistol: '🔫', smg: '🌀' }[g.id],
         name: g.name, owned, locked: locked && !owned,
         desc: `${g.blurb}
           <div class="stat">DAMAGE ${bar(g.damage * g.pellets, 180)} ${g.pellets > 1 ? `${g.pellets}×${g.damage}` : g.damage}</div>
@@ -301,11 +301,20 @@ export function createGunShop(ctx) {
           : locked ? '' : btn('BUY', 'gun', g.id, { disabled: w.money < g.price }),
       });
     });
+    const vestLocked = w.level < ARMOR.level;
+    const full = (w.armor || 0) >= ARMOR.max;
+    rows.push(row({
+      icon: '🦺', name: 'Bulletproof Vest', owned: full, locked: vestLocked,
+      desc: `Soaks up ${Math.round(ARMOR.absorb * 100)}% of every hit until it is shot to pieces. You are wearing ${Math.round(w.armor || 0)}%.${vestLocked ? `<br>🔒 Farm level ${ARMOR.level}` : ''}`,
+      price: full ? '' : money(ARMOR.price),
+      buttons: full ? '<span class="pr">WEARING</span>' : vestLocked ? '' : btn('BUY', 'armor', 'vest', { disabled: w.money < ARMOR.price }),
+    }));
     return `<p class="shop-note">"Boars at your level have <b>${boar.hp} health</b> and come ${boar.count} at a time. Grandpa's rifle
-      will do it, if you are patient." Ammo is on the house. <kbd>Q</kbd> gets your gun out anywhere.</p>
+      will do it, if you are patient. For the two-legged kind, try a pistol and a vest." Ammo is on the house. <kbd>Q</kbd> gets your gun out anywhere.</p>
       <div class="shop-list">${rows.join('')}</div>`;
   }, (act, arg) => {
     if (act === 'gun') ctx.send('buy', { station, sku: `gun:${arg}` });
+    if (act === 'armor') ctx.send('buy', { station, sku: 'armor' });
     if (act === 'equip') ctx.send('equip', { gun: arg });
   });
 }

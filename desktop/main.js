@@ -15,6 +15,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULTS = {
   port: 3000,
   startCash: 500,
+  raidMode: 'normal',   // relaxed | normal | hardcore
   saveDir: '',          // empty = Documents/Harvest Royale/saves
 };
 

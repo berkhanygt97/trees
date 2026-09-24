@@ -89,7 +89,7 @@ function torsoParts(look) {
     parts.push({ geo: G.cyl, color: '#111', y: 1.83, s: [0.38, 0.02, 0.38] });
     parts.push({ geo: G.cyl, color: '#111', y: 1.97, s: [0.24, 0.28, 0.24] });
   } else if (hat === 'bandana') {
-    parts.push({ geo: G.ball, color: '#c0392b', y: 1.79, s: [0.28, 0.14, 0.28] });
+    parts.push({ geo: G.ball, color: look.hatColor || '#c0392b', y: 1.79, s: [0.28, 0.14, 0.28] });
   } else if (hat === 'chef') {
     parts.push({ geo: G.cyl, color: '#ffffff', y: 1.92, s: [0.26, 0.26, 0.26] });
     parts.push({ geo: G.ball, color: '#ffffff', y: 2.06, s: [0.32, 0.16, 0.32] });

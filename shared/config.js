@@ -15,6 +15,10 @@ export const CONFIG = {
   TICK_HZ: 20,
   SNAPSHOT_HZ: 15,
 
+  // How rough the rival gangs are, set by the host: 'relaxed' (fewer, weaker,
+  // rarer raids), 'normal' (scaled to how rich a hood is) or 'hardcore'.
+  RAID_MODE: 'normal',
+
   // Movement (client-side, mirrored here so the server can sanity-check).
   WALK_SPEED: 7.2,
   SPRINT_SPEED: 12.5,

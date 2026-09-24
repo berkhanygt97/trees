@@ -124,6 +124,7 @@ function staffPanel(ctx, { hiring }) {
     const staff = w.staff || [];
     const n = (place) => staff.filter((s) => WORKER_ROLES[s.role].place === place).length;
     capsEl.innerHTML = `<div class="caps"><span>🏠 Farm staff <b>${n('farm')} / ${caps.farm}</b></span>
+      <span>🔫 Soldiers <b>${n('hood')} / ${caps.hood || 0}</b></span>
       ${(w.restaurants || []).map((r) => `<span>${RESTAURANTS[r.type].icon} ${esc(RESTAURANTS[r.type].name)} <b>${restoCount(w, r.lot)} / ${r.staffCap}</b></span>`).join('')}
       <span>💵 Wages <b>${money(staff.reduce((a, s) => a + s.wage, 0))}</b> a day</span></div>`;
     const seen = new Set();

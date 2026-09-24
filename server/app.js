@@ -74,6 +74,7 @@ const positive = (v, fallback) => {
 export function applySettings(settings = {}) {
   CONFIG.STARTING_BANKROLL = Math.round(positive(settings.startCash, CONFIG.STARTING_BANKROLL));
   CONFIG.TIME_SCALE = positive(settings.timeScale, 1);
+  if (['relaxed', 'normal', 'hardcore'].includes(settings.raidMode)) CONFIG.RAID_MODE = settings.raidMode;
   return CONFIG;
 }
 
@@ -188,6 +189,8 @@ export function startCasino(settings = {}) {
           cleanup();
           // Hand back any stake still on a table, then write everything out.
           room.abortOpenBets();
+          // Money in raiders' bags (or lying in the street) goes back in the tills.
+          room.raids.returnAll();
           for (const id of [...room.players.keys()]) room.removePlayer(id);
           room.save();
           for (const ws of wss.clients) ws.terminate();

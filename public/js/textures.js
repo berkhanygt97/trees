@@ -903,3 +903,61 @@ export function shopfrontTexture(color = '#d9c7a4') {
     for (let x = 12 + (w - 24) / 3; x < w - 12; x += (w - 24) / 3) g.fillRect(x - 2, 44, 4, h - 52);
   });
 }
+
+/**
+ * A gang's tag, spray-painted: fat outlined letters in their colour, a
+ * highlight, drips and overspray. Transparent round it, for a wall decal.
+ */
+export function graffitiTexture(text, color = '#e84393', seed = 1) {
+  const key = `graffiti:${text}:${color}:${seed}`;
+  if (cache.has(key)) return cache.get(key);
+  seedFrom(key);
+  const W = 512;
+  const H = 208;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  const words = String(text).toUpperCase().slice(0, 22);
+  let size = 96;
+  g.font = `italic 900 ${size}px Impact, "Arial Black", sans-serif`;
+  while (g.measureText(words).width > W * 0.9 && size > 30) { size -= 4; g.font = `italic 900 ${size}px Impact, "Arial Black", sans-serif`; }
+  g.translate(W / 2, H / 2 + size * 0.3);
+  g.rotate((rand() - 0.5) * 0.12);
+  g.textAlign = 'center';
+  // Overspray haze behind the letters.
+  g.shadowColor = color;
+  g.shadowBlur = 24;
+  g.lineJoin = 'round';
+  g.lineWidth = size * 0.22;
+  g.strokeStyle = '#111';
+  g.strokeText(words, 0, 0);
+  g.shadowBlur = 0;
+  g.fillStyle = color;
+  g.fillText(words, 0, 0);
+  // A white highlight across the top of the letters.
+  g.save();
+  g.beginPath();
+  g.rect(-W, -size * 0.95, W * 2, size * 0.28);
+  g.clip();
+  g.fillStyle = 'rgba(255,255,255,0.55)';
+  g.fillText(words, 0, 0);
+  g.restore();
+  // Drips.
+  g.fillStyle = color;
+  const w = g.measureText(words).width;
+  for (let i = 0; i < 9; i++) {
+    const x = -w / 2 + rand() * w;
+    const len = 8 + rand() * 38;
+    g.fillRect(x, -size * 0.05, 3, len);
+    g.beginPath(); g.arc(x + 1.5, -size * 0.05 + len, 2.6, 0, 7); g.fill();
+  }
+  // Stars and a crown, the way crews sign off.
+  g.fillStyle = '#fff';
+  g.font = `900 ${Math.round(size * 0.4)}px Impact, sans-serif`;
+  g.fillText('★', w / 2 + size * 0.25, -size * 0.7);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  cache.set(key, tex);
+  return tex;
+}
