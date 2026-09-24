@@ -4,6 +4,7 @@ import {
   HOODS, LOTS, shopCounter,
 } from '/shared/map.js';
 import { RING } from '/shared/roads.js';
+import { BUILDINGS, LOTS_OPEN } from '/shared/downtown.js';
 import { VEHICLES } from '/shared/catalog.js';
 import {
   grassTexture, asphaltTexture, pavingTexture, dirtTexture, plankTexture, brickTexture,
@@ -668,6 +669,9 @@ export class Outdoor {
       ...ROADS.map((r) => ({ x0: r.x0 - 5, x1: r.x1 + 5, z0: r.z0 - 5, z1: r.z1 + 5 })),
       ...LOTS.map((l) => ({ x0: l.x0 - 3, x1: l.x1 + 3, z0: l.z0 - 3, z1: l.z1 + 3 })),
       ...COTTAGES.map((c) => ({ x0: c.x - 9, x1: c.x + 9, z0: c.z - 12, z1: c.z + 8 })),
+      // Downtown's newer buildings and car parks.
+      ...BUILDINGS.map((b) => ({ x0: b.x0 - 4, x1: b.x1 + 4, z0: b.z0 - 4, z1: b.z1 + 8 })),
+      ...LOTS_OPEN.map((o) => ({ x0: o.x0 - 2, x1: o.x1 + 2, z0: o.z0 - 2, z1: o.z1 + 2 })),
       // The built-up half of every neighbourhood (the woods behind the farms stay wild).
       ...HOODS.map((h) => ({ x0: h.x0 - 2, x1: h.x1 + 2, z0: h.z0 + 44, z1: h.z1 + 2 })),
     ];

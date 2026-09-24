@@ -5,6 +5,8 @@ import { FarmView } from './farmview.js';
 import { Sky } from './sky.js';
 import { makeHalo, updateHalos } from './neon.js';
 import { HoodView } from './city/hoods.js';
+import { Downtown } from './city/downtown.js';
+import { Props } from './city/props.js';
 
 /**
  * Everything you can see: the casino building, the valley around it, the farms
@@ -17,6 +19,8 @@ export class World {
     this.outdoor = new Outdoor(scene);
     this.farms = new FarmView(scene);
     this.hoods = new HoodView(scene);
+    this.downtown = new Downtown(scene);
+    this.props = new Props(scene);
     this.sky = new Sky(scene, this.casino);
     // The big CASINO ROYALE sign glows gold after dark.
     const sign = this.casino.outsideSign;
@@ -28,7 +32,7 @@ export class World {
     }
 
     // Circles: casino furniture, trees, lamp posts. Boxes: walls and fences.
-    this.staticObstacles = [...this.casino.obstacles, ...this.outdoor.obstacles, ...this.hoods.obstacles];
+    this.staticObstacles = [...this.casino.obstacles, ...this.outdoor.obstacles, ...this.hoods.obstacles, ...this.downtown.obstacles, ...this.props.obstacles];
     this.dynamicObstacles = [];   // parked vehicles, refreshed by the vehicle layer
     this.boxes = STATIC_BOXES;
     this._grid = buildGrid(this.staticObstacles);
@@ -55,6 +59,8 @@ export class World {
     this.outdoor.update(dt, this.sky.night, this.sky.wetness || 0);
     this.farms.update(dt, ctx.worldTime, this.sky.night);
     this.hoods.update(dt, this.sky.night);
+    this.downtown.update(dt, this.sky.night);
+    this.props.update();
     updateHalos(dt, this.sky.inside > 0.5 ? 0 : this.sky.night);
     // The casino's animated games only need updating when you might see them.
     const cx = ctx.camera.position.x;

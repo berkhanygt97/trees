@@ -800,3 +800,106 @@ export function menuBoardTexture(title, lines, color = '#ffd24a') {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+
+// -------------------------------------------------------------- facades
+//
+// Building fronts: one texture tile covers 4 x 4 window bays (each bay 4 m
+// wide, 3.5 m tall). Every style also has a night texture: the same tile with
+// some windows lit warm yellow, used as the emissive map after dark.
+
+const FACADES = {
+  tower:    { wall: '#5d7686', frame: '#3b4a55', glass: ['#2f5670', '#3d6d8a', '#274a60'], win: [0.08, 0.1, 0.84, 0.82], band: null },
+  office:   { wall: '#c9c2b4', frame: '#8e877b', glass: ['#34495a', '#3e5668', '#2c3e4d'], win: [0.1, 0.28, 0.8, 0.5], band: '#a39c90' },
+  hotel:    { wall: '#e8c3a8', frame: '#b48a70', glass: ['#3a4f6a', '#476080', '#2f425a'], win: [0.28, 0.2, 0.44, 0.6], band: '#d4a88c' },
+  hospital: { wall: '#eef0ee', frame: '#b9c3c8', glass: ['#6f9fbd', '#5f8fad', '#7aaac6'], win: [0.14, 0.24, 0.72, 0.5], band: '#d8e0e2' },
+  motel:    { wall: '#f4d9a8', frame: '#c98a5a', glass: ['#35506a', '#40607e', '#2f4660'], win: [0.52, 0.3, 0.34, 0.36], door: '#2f7a8a' },
+  store:    { wall: '#d9c7a4', frame: '#8a6a45', glass: ['#3a5570', '#446280', '#324a60'], win: [0.08, 0.3, 0.84, 0.5], band: '#b89a6a' },
+  brick:    { wall: '#9c5a44', frame: '#6d3a2a', glass: ['#34485c', '#3d556c', '#2c3c4e'], win: [0.22, 0.22, 0.56, 0.56], band: null },
+};
+
+export function facadeTexture(style) {
+  const f = FACADES[style] || FACADES.office;
+  return make(`facade:${style}`, 256, 256, (g, w, h) => {
+    const bw = w / 4;
+    const bh = h / 4;
+    g.fillStyle = f.wall;
+    g.fillRect(0, 0, w, h);
+    speckle(g, w, h, 2500, ['rgba(0,0,0,0.06)', 'rgba(255,255,255,0.06)'], 2);
+    for (let j = 0; j < 4; j++) {
+      if (f.band) { g.fillStyle = f.band; g.fillRect(0, j * bh + bh * 0.9, w, bh * 0.1); }
+      for (let i = 0; i < 4; i++) {
+        const [wx, wy, ww, wh] = f.win;
+        const x = i * bw + wx * bw;
+        const y = j * bh + wy * bh;
+        g.fillStyle = f.frame;
+        g.fillRect(x - 2, y - 2, ww * bw + 4, wh * bh + 4);
+        const gr = g.createLinearGradient(x, y, x + ww * bw, y + wh * bh);
+        const c = f.glass[(rand() * f.glass.length) | 0];
+        gr.addColorStop(0, c);
+        gr.addColorStop(0.55, '#9fc4d8');
+        gr.addColorStop(0.6, c);
+        gr.addColorStop(1, c);
+        g.fillStyle = gr;
+        g.fillRect(x, y, ww * bw, wh * bh);
+        // Mullion.
+        g.fillStyle = f.frame;
+        g.fillRect(x + (ww * bw) / 2 - 1, y, 2, wh * bh);
+        if (f.door) {
+          g.fillStyle = f.door;
+          g.fillRect(i * bw + bw * 0.12, j * bh + bh * 0.25, bw * 0.28, bh * 0.75);
+          g.fillStyle = '#e8d8b0';
+          g.fillRect(i * bw + bw * 0.22, j * bh + bh * 0.12, bw * 0.08, bh * 0.08);
+        }
+      }
+    }
+  });
+}
+
+/** The same tile at night: some windows lit, the rest dark. */
+export function facadeNightTexture(style) {
+  const f = FACADES[style] || FACADES.office;
+  return make(`facade-night:${style}`, 256, 256, (g, w, h) => {
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, w, h);
+    const bw = w / 4;
+    const bh = h / 4;
+    const lit = style === 'hospital' ? 0.7 : style === 'motel' ? 0.45 : 0.38;
+    for (let j = 0; j < 4; j++) {
+      for (let i = 0; i < 4; i++) {
+        if (rand() > lit) continue;
+        const [wx, wy, ww, wh] = f.win;
+        const warm = ['#ffd98a', '#fff1c4', '#ffc870', '#cfe8ff'][(rand() * 4) | 0];
+        g.fillStyle = warm;
+        g.fillRect(i * bw + wx * bw, j * bh + wy * bh, ww * bw, wh * bh);
+      }
+    }
+  }, { srgb: true });
+}
+
+/** Tar-and-gravel flat roof. */
+export function roofGravelTexture() {
+  return make('roofgravel', 128, 128, (g, w, h) => {
+    g.fillStyle = '#6c6862';
+    g.fillRect(0, 0, w, h);
+    speckle(g, w, h, 3000, ['#7a766f', '#5e5a55', '#86827a', '#55514c'], 2);
+  });
+}
+
+/** A shop front: big glass, a door, and a sign band left blank for the sign. */
+export function shopfrontTexture(color = '#d9c7a4') {
+  return make(`shopfront:${color}`, 256, 128, (g, w, h) => {
+    g.fillStyle = color;
+    g.fillRect(0, 0, w, h);
+    speckle(g, w, h, 800, ['rgba(0,0,0,0.07)', 'rgba(255,255,255,0.07)'], 2);
+    g.fillStyle = '#2a2a2e';
+    g.fillRect(8, 40, w - 16, h - 44);
+    const gr = g.createLinearGradient(0, 40, 0, h);
+    gr.addColorStop(0, '#5a7a90');
+    gr.addColorStop(0.5, '#a8c4d4');
+    gr.addColorStop(1, '#3c5566');
+    g.fillStyle = gr;
+    g.fillRect(12, 44, w - 24, h - 52);
+    g.fillStyle = '#2a2a2e';
+    for (let x = 12 + (w - 24) / 3; x < w - 12; x += (w - 24) / 3) g.fillRect(x - 2, 44, 4, h - 52);
+  });
+}

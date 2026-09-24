@@ -10,9 +10,10 @@ import {
   HOODS, HOOD_LOTS, HOOD_HOUSES, HQS, HOOD_STREETS, HOOD_CONNECTORS, hoodPlotOrigin, hoodSpawn, hoodAt,
 } from './hoods.js';
 import { ALL_ROADS } from './roads.js';
+import { downtownBoxes, HOSPITAL_DOOR } from './downtown.js';
 import { configureTerrain, terrainHeight } from './terrain.js';
 
-export { HOODS, HOOD_LOTS, HOOD_HOUSES, HQS, hoodSpawn, hoodAt };
+export { HOODS, HOOD_LOTS, HOOD_HOUSES, HQS, hoodSpawn, hoodAt, HOSPITAL_DOOR };
 
 // 3.0: the valley grew. Downtown is where it always was, in the middle; the
 // six neighbourhoods sit out to the west and east on a ring of avenues.
@@ -489,6 +490,8 @@ export const STATIC_BOXES = [
   ...PLOTS.flatMap(fenceBoxes).map((b) => ({ ...b, h: 1.3 })),
   // The orders board's legs.
   { x0: ORDERS_BOARD.pos[0] - 0.4, x1: ORDERS_BOARD.pos[0] + 0.4, z0: ORDERS_BOARD.pos[2] - 2.2, z1: ORDERS_BOARD.pos[2] + 2.2, h: 3.4 },
+  // Downtown's newer buildings, where the farms used to be.
+  ...downtownBoxes(),
   // The neighbourhoods: every gang's clubhouse and the houses along each street.
   ...HQS.map((q) => ({ ...q.building, h: 8 })),
   ...HOOD_HOUSES.map((h) => ({ ...h.box, h: 3.2 })),

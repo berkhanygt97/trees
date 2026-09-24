@@ -23,6 +23,16 @@ check('hoods do not overlap downtown', HOODS.every((h) => !overlap(h, DOWNTOWN))
 check('hoods are inside the world', HOODS.every((h) => h.x0 >= BOUNDS.minX && h.x1 <= BOUNDS.maxX && h.z0 >= BOUNDS.minZ && h.z1 <= BOUNDS.maxZ));
 check('every farm sits in its own hood', PLOTS.every((p) => inside(HOODS[p.index], p.x0, p.z0) && inside(HOODS[p.index], p.x0 + PLOT_SIZE, p.z0 + PLOT_SIZE)));
 
+// --- downtown's buildings
+{
+  const { BUILDINGS, LOTS_OPEN } = await import('../shared/downtown.js');
+  const shops = (await import('../shared/map.js')).SHOPS;
+  check('downtown buildings stay downtown', BUILDINGS.every((b) => inside(DOWNTOWN, b.x0, b.z0) && inside(DOWNTOWN, b.x1, b.z1)));
+  check('downtown buildings stay off every road, lot and shop', BUILDINGS.every((b) => !ROADS.some((r) => overlap(b, r)) && !LOTS.some((l) => overlap(b, l)) && !shops.some((s) => overlap(b, s))));
+  check('downtown buildings do not overlap each other', BUILDINGS.every((a) => BUILDINGS.every((b) => a === b || !overlap(a, b))));
+  check('car parks stay off the roads', LOTS_OPEN.every((o) => !ROADS.some((r) => overlap(o, r))));
+}
+
 // --- lots
 for (const h of HOODS) {
   const mine = LOTS.filter((l) => l.hood === h.index);
