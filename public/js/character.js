@@ -530,7 +530,8 @@ export function createCharacter(lookIn = {}, { name = null, tagColor = '#ffffff'
   const pose = Array.from({ length: N }, () => new THREE.Quaternion());
   const armFK = [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()];
   const hipsPos = new THREE.Vector3(0, BIND[B.hips][1], 0);
-  const w = { move: 0, run: 0, hold: 0, aim: 0, seat: 0, dead: 0 };
+  const w = { move: 0, run: 0, hold: 0, aim: 0, seat: 0, dead: 0, act: 0 };
+  let action = null;             // 'crack' | 'spray' | 'smash' | null
   let phase = Math.random() * Math.PI * 2;
   let t = Math.random() * 10;
   let seated = false;
@@ -542,6 +543,7 @@ export function createCharacter(lookIn = {}, { name = null, tagColor = '#ffffff'
   const flinch = new THREE.Vector2();
   let gun = null;
   let gunKind = null;
+  let bag = null;
   let lodSkip = 0;
   let lodEvery = 1;
   const chestPos = new THREE.Vector3();
@@ -664,6 +666,35 @@ export function createCharacter(lookIn = {}, { name = null, tagColor = '#ffffff'
     for (let i = 0; i < saved.length; i++) pose[B.shoulderL + i].copy(saved[i].slerp(pose[B.shoulderL + i], k));
   }
 
+  /** Busy hands: working a till open, spraying a wall, smashing things up. */
+  function actionPose() {
+    const k = w.act;
+    if (k < 0.01 || !action) return;
+    const saved = pose.slice(0, N).map((q) => q.clone());
+    const tgt = (i, x, y = 0, z = 0) => { te.set(x, y, z); tq.setFromEuler(te); pose[i].copy(tq); };
+    if (action === 'crack') {
+      // Down on one knee at the register, both hands on it.
+      tgt(B.hipL, -1.4, 0, 0.05); tgt(B.kneeL, 1.5); tgt(B.ankleL, -0.1);
+      tgt(B.hipR, -0.2, 0, -0.1); tgt(B.kneeR, 2.1); tgt(B.ankleR, 0.4);
+      tgt(B.spine, 0.25); tgt(B.chest, 0.15); tgt(B.neck, 0.1);
+      hipsPos.y += (0.58 - hipsPos.y) * k;
+      const jig = Math.sin(t * 9) * 0.03;
+      armIK(pose, 'L', new THREE.Vector3(0.1, -0.05 + jig, 0.42), new THREE.Vector3(0.8, -1, -0.2));
+      armIK(pose, 'R', new THREE.Vector3(-0.08, -0.02 - jig, 0.44), new THREE.Vector3(-0.8, -1, -0.2));
+    } else if (action === 'spray') {
+      // Arm up, can at the wall, going round and round.
+      armIK(pose, 'R', new THREE.Vector3(-0.1 + Math.cos(t * 5) * 0.14, 0.25 + Math.sin(t * 5) * 0.14, 0.55), new THREE.Vector3(-0.8, -1, -0.3));
+      tgt(B.chest, -0.05, 0.2); tgt(B.head, -0.1, 0.1);
+    } else if (action === 'smash') {
+      // Swinging at it, over and over.
+      const s = Math.sin(t * 7);
+      tgt(B.chest, 0.15 + s * 0.2, -0.3 + s * 0.2);
+      armIK(pose, 'R', new THREE.Vector3(-0.1, 0.2 + s * 0.35, 0.3 + (1 - s) * 0.15), new THREE.Vector3(-0.8, -1, -0.3));
+      armIK(pose, 'L', new THREE.Vector3(0.05, 0.15 + s * 0.35, 0.32 + (1 - s) * 0.15), new THREE.Vector3(0.8, -1, -0.3));
+    }
+    if (k < 0.999) for (let i = 0; i < N; i++) pose[i].copy(saved[i].slerp(pose[i], k));
+  }
+
   function deadPose() {
     // Knocked flat on the back: falls fast, like it should.
     const k = w.dead;
@@ -717,6 +748,23 @@ export function createCharacter(lookIn = {}, { name = null, tagColor = '#ffffff'
     setAiming(v) { aiming = !!v; },
     setAimPitch(p) { aimPitch = clamp(p || 0, -1.2, 1.2); },
     setSteer(s) { steer = s || 0; },
+    /** Busy with something: 'crack', 'spray', 'smash' (null to stop). */
+    setAction(a) { action = a || null; },
+    /** A sack of stolen money in the left hand. */
+    setBag(on) {
+      if (!!on === !!bag) return;
+      if (on) {
+        bag = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), new THREE.MeshLambertMaterial({ color: 0x5d7a2e }));
+        bag.scale.set(1, 1.15, 0.9);
+        bag.position.set(0, -0.28, 0);
+        bones[B.wristL].add(bag);
+      } else {
+        bones[B.wristL].remove(bag);
+        bag.geometry.dispose();
+        bag.material.dispose();
+        bag = null;
+      }
+    },
     /** A shot fired: the gun kicks back. */
     fire() { kick = 1; },
     /** Hit from direction (dx, dz) in world space: a flinch. */
@@ -754,8 +802,9 @@ export function createCharacter(lookIn = {}, { name = null, tagColor = '#ffffff'
       const ease = (key, target, rate) => { w[key] += (target - w[key]) * Math.min(1, dt * rate); };
       ease('move', !seated && v > 0.4 ? Math.min(1, v / 2.5) : 0, 8);
       ease('run', clamp((v - 2.5) / 8, 0, 1), 4);
-      ease('hold', gun && !seated ? 1 : 0, 8);
-      ease('aim', gun && aiming && !seated ? 1 : 0, 12);
+      ease('hold', gun && !seated && !action ? 1 : 0, 8);
+      ease('aim', gun && aiming && !seated && !action ? 1 : 0, 12);
+      ease('act', action ? 1 : 0, 8);
       if (deadT >= 0) { deadT += dt; w.dead = Math.min(1, (deadT / 0.55) ** 2); }
       kick = Math.max(0, kick - dt * 9);
       flinch.multiplyScalar(Math.max(0, 1 - dt * 6));
@@ -781,6 +830,7 @@ export function createCharacter(lookIn = {}, { name = null, tagColor = '#ffffff'
         gun.visible = false;
       }
       if (w.seat > 0) wheelHands();
+      actionPose();
       // A flinch rocks the upper body away from the hit.
       if (flinch.lengthSq() > 1e-5) {
         te.set(-flinch.y, 0, flinch.x);

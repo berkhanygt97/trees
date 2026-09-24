@@ -31,7 +31,7 @@ const LAG_MAX_MS = 300;
 const WALK = 1.7;
 const RUN = 4.4;
 
-export const UNIT_STATE = { idle: 0, patrol: 1, move: 1, engage: 2, down: 3, flee: 4, work: 5, ride: 6, crack: 7, tag: 8, vandal: 9 };
+export const UNIT_STATE = { idle: 0, patrol: 1, move: 1, advance: 1, engage: 2, down: 3, flee: 4, work: 5, ride: 6, incar: 6, crack: 7, tag: 8, vandal: 9 };
 
 /** A gang member's look: street clothes with a bandana in the gang's colour. */
 export function gangLook(color, seed = 0) {

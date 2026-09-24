@@ -5,7 +5,7 @@ import {
   DISH_BY_ID, DAY_MS, HOUR_MS, RESTAURANTS,
 } from '/shared/catalog.js';
 import { ALL_STATIONS, PLOTS, TILE, tileAt, tileCenter, groundHeight, padStation, STATIC_BOXES, RAMPS, LOT_BY_ID } from '/shared/map.js';
-import { HQS } from '/shared/hoods.js';
+import { HQS, TAG_POINTS } from '/shared/hoods.js';
 import { terrainGrid } from '/shared/terrain.js';
 import { net } from './net.js';
 import { sfx } from './sfx.js';
@@ -30,6 +30,7 @@ import { CameraRig } from './camera.js';
 import { markShadows } from './shadows.js';
 import { Radar, zoneName } from './radar.js';
 import { UnitsView } from './unitsview.js';
+import { RaidView } from './raidview.js';
 import { PhysicsWorld } from './physics/world.js';
 
 const canvas = document.getElementById('scene');
@@ -145,6 +146,7 @@ function initScene() {
   perf = new PerfMeter(renderer);
   boars = new BoarView(scene);
   units = new UnitsView(scene);
+  raidView = new RaidView(scene);
   workers = new WorkerView(scene);
   restaurants = new RestaurantView(scene);
   world.extraBoxes = restaurants.boxes;
@@ -335,6 +337,8 @@ net.on('welcome', (d) => {
   boars.apply(d.boars || []);
   units.setList(d.unitlist || [], me.color);
   units.applySnap(d.units || []);
+  raidView.setState(d.raids);
+  tagsNow = d.tags || {};
   workers.setList(d.workers || []);
   restaurantList = d.restaurants || [];
   restaurants.setList(restaurantList);
@@ -355,7 +359,9 @@ net.on('welcome', (d) => {
   hud.showSeeds(me.plot >= 0);
   world.farms.setPlots(d.plots);
   world.hoods.setOwners(d.plots);
+  world.hoods.setTags(tagsNow);
   radar = new Radar(document.getElementById('radar'));
+  updateThreat();
   radar.setHoods(d.plots);
   hud.setHealth(hp);
   hud.setWeapon(null);
@@ -504,6 +510,17 @@ net.on('shot', (d) => {
   if (a) a.avatar.fire();
 });
 net.on('unitlist', (list) => { if (units) units.setList(list, me.color); });
+net.on('raid', (r) => {
+  if (!raidView) return;
+  raidView.onRaid(r);
+  if (r.hood === me.plot && r.phase === 'on') sfx.alarm && sfx.alarm();
+  updateThreat();
+});
+net.on('raidcars', (rows) => { if (raidView) raidView.onCars(rows); });
+net.on('loot', (list) => { if (raidView) raidView.setLoot(list); });
+net.on('tags', (tags) => { tagsNow = tags || {}; if (world) world.hoods.setTags(tagsNow); });
+net.on('bigtext', (d) => hud.bigText(d.title, d.sub || '', d.color || '#f2c14e'));
+net.on('scrub', (d) => { if (d.k < 1) hud.setPrompt(`Scrubbing it off… ${Math.round(d.k * 100)}%`, 'E'); });
 net.on('units', (rows) => { if (units) units.applySnap(rows); });
 
 net.on('hurt', (d) => {
@@ -1055,6 +1072,10 @@ let lastMoveSent = 0;
 let lastShadowMark = 0;
 let radar = null;
 let units = null;
+let raidView = null;
+let tagsNow = {};                   // tag wall id -> { gang, name, color }
+let scrubTag = null;                // the tagged wall you are standing at, if any
+let lastScrubSent = 0;
 let headlight = null;
 let lastRadarBlips = 0;
 let lastZone = 0;
@@ -1070,7 +1091,10 @@ function loop(now) {
   let fade = 0;
   if (koUntil) {
     const left = koUntil - performance.now();
-    fade = left > 700 ? Math.min(1, (performance.now() - (koUntil - koSpawn.ms)) / 500) : Math.max(0, left / 700);
+    // Wasted: the world drains of colour and dims a little while you lie
+    // there; it only goes black for the moment you are moved.
+    const since = performance.now() - (koUntil - koSpawn.ms);
+    fade = left > 1400 ? Math.min(0.25, since / 1500) : left > 700 ? 0.25 + 0.75 * (1 - (left - 700) / 700) : Math.max(0, left / 700);
     if (left <= 700 && koSpawn.spawn) {
       controls.pos.set(koSpawn.spawn[0], 0, koSpawn.spawn[2]);
       controls.yaw = koSpawn.yaw || 0;
@@ -1098,7 +1122,7 @@ function loop(now) {
       lookYaw: controls.lookYaw, lookPitch: controls.lookPitch, spec: car.spec,
     });
   } else {
-    rig.foot(dt, { pos: controls.pos, yaw: controls.yaw, pitch: controls.pitch, aiming: weapons.aiming, bob: move.bob || 0 });
+    rig.foot(dt, { pos: controls.pos, yaw: controls.yaw, pitch: controls.pitch, aiming: weapons.aiming, bob: move.bob || 0, wasted: !!koUntil });
   }
   weapons.baseFov = car && !rig.firstPerson ? rig.carFov : 78;
 
@@ -1154,9 +1178,12 @@ function loop(now) {
 
   // Yourself: seen from behind in third person, sat in your car from the chase camera.
   if (!car) {
-    const show = !rig.firstPerson && !koUntil;
+    // Wasted: you see yourself lying there, whichever camera you use.
+    const show = !rig.firstPerson || !!koUntil;
     selfAvatar.group.visible = show;
-    viewModel.group.visible = rig.firstPerson;
+    viewModel.group.visible = rig.firstPerson && !koUntil;
+    if (koUntil) selfAvatar.die();
+    else if (selfAvatar.dead) selfAvatar.revive();
     if (show) {
       selfAvatar.setSeated(false);
       selfAvatar.group.position.copy(controls.pos);
@@ -1241,6 +1268,7 @@ function loop(now) {
   weapons.update(dt);
   boars.update(dt);
   units.update(dt, camera);
+  raidView.update(dt);
   workers.update(dt, net.now(), camera.position);
   crowd.update(dt, net.now(), (worldTime() % DAY_MS) / HOUR_MS);
   npcs.update(dt, net.now(), camera.position);
@@ -1250,13 +1278,18 @@ function loop(now) {
   world.props.updateLoose(dt, physics);
 
   // What can you do right now?
-  nearest = activePanel ? null : findNearest();
+  scrubTag = activePanel ? null : findScrub();
+  nearest = activePanel || scrubTag ? null : findNearest();
   aim = activePanel || nearest ? null : findAim();
   nearCar = activePanel || car ? null : fleet.nearestOwned(controls.pos, me.slug);
 
   if (activePanel || car) {
     hud.setPrompt(null);
     world.farms.hideMarker();
+  } else if (scrubTag) {
+    if (!holding) hud.setPrompt(`Hold to scrub ${scrubTag.name}'s tag off your wall`);
+    world.farms.hideMarker();
+    if (holding && now - lastScrubSent > 250) { lastScrubSent = now; net.send('scrub', { tag: scrubTag.id }); }
   } else if (nearest) {
     hud.setPrompt(stationName(nearest));
     world.farms.hideMarker();
@@ -1290,6 +1323,24 @@ function loop(now) {
 const round2 = (v) => Math.round(v * 100) / 100;
 const HALF_Y = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 
+/** Skulls in the corner while your hood is being raided. */
+function updateThreat() {
+  const raid = raidView && raidView.list().find((r) => r.hood === me.plot);
+  hud.setThreat(raid ? raid.tier : 0, 'raid');
+}
+
+/** A wall in your own hood with somebody else's name on it, near enough to scrub. */
+function findScrub() {
+  if (controls.car || me.plot < 0) return null;
+  for (const t of TAG_POINTS) {
+    if (t.hood !== me.plot) continue;
+    const tag = tagsNow[t.id];
+    if (!tag || tag.gang === me.slug) continue;
+    if (Math.hypot(controls.pos.x - t.pos[0], controls.pos.z - t.pos[2]) < 3) return { id: t.id, name: tag.name };
+  }
+  return null;
+}
+
 /** The radar, the zone caption and the weapon icon. */
 const camDir = new THREE.Vector3();
 function updateRadar(dt, now, car) {
@@ -1310,6 +1361,8 @@ function updateRadar(dt, now, car) {
       return lot ? { x: (lot.x0 + lot.x1) / 2, z: (lot.z0 + lot.z1) / 2, color: '#f2c14e', shape: 'icon', label: 'R', size: 5, edge: false } : null;
     }).filter(Boolean));
     radar.setBlips('beacon', beacon.visible ? [{ x: beacon.position.x, z: beacon.position.z, color: '#e0302a', shape: 'marker', size: 6, edge: true }] : []);
+    radar.setBlips('raids', raidView.list().map((r) => ({ x: r.pos.x, z: r.pos.z, color: r.color, shape: 'square', size: 5, edge: r.hood === me.plot })));
+    radar.setBlips('loot', [...raidView.bags.values()].map((b) => ({ x: b.x, z: b.z, color: '#6dff7a', shape: 'icon', label: '$', size: 5, edge: b.owner === me.slug })));
     radar.setBlips('boars', boars.aliveList().map((b) => ({ x: b.pos.x, z: b.pos.z, color: '#c0392b', size: 3, edge: false })));
     // Raiders in red (always, with lookouts on the corner); gangs in their colours.
     const cctv = ((hud.wallet.hood || {}).up || {}).cctv || 0;

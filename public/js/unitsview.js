@@ -101,10 +101,13 @@ export class UnitsView {
       if (e.state === STATE.down) e.char.die();
       else if (e.char.dead) e.char.revive();
       e.char.setAiming(!!(e.flags & 1));
+      e.char.setAction(e.state === STATE.crack ? 'crack' : e.state === STATE.tag ? 'spray' : e.state === STATE.vandal ? 'smash' : null);
+      e.char.setBag(!!(e.flags & 4));
       const dist = camera.position.distanceTo(e.pos);
       e.char.setDistance(dist);
       e.char.scaleLabel(dist);
-      g.visible = dist < 260;
+      // In the car: out of sight until they pile out.
+      g.visible = dist < 260 && e.state !== STATE.ride;
       e.char.update(dt, e.speed > 0.3, !!(e.flags & 2), e.speed);
     }
   }

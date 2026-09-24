@@ -4,7 +4,7 @@ import {
 } from '/shared/hoods.js';
 import {
   pavingTexture, plasterTexture, roofTileTexture, boardTexture, neonSignTexture, brickTexture,
-  decoWallTexture, glowTexture, plankTexture,
+  decoWallTexture, glowTexture, plankTexture, graffitiTexture,
 } from '../textures.js';
 import { makeHalo } from '../neon.js';
 import { buildPalms } from '../palms.js';
@@ -48,6 +48,9 @@ export class HoodView {
     this.obstacles = [];
     this.lampMats = [];
     this.signs = new Map();       // hood -> { arch, hq, key }
+    this.tagPlanes = new Map();   // tag id -> { mesh, key }
+    this.owners = new Map();      // hood -> { gang, color } of whoever runs it
+    this.tags = {};
     this.neon = [];
     for (const h of HOODS) this._hood(h);
     this._lights();
@@ -129,6 +132,15 @@ export class HoodView {
     for (const t of TAG_POINTS.filter((q2) => q2.hood === h.index)) {
       const along = t.along === 'x';
       box(g, along ? 6 : 0.4, 2.6, along ? 0.4 : 6, t.x, 1.3, t.z, phong(0xffffff, { map: tiled(plasterTexture('#cfc6b4'), 6, 2.6, 3) }));
+      // The paint on it: whoever tagged it last (the hood's own gang by default).
+      const paint = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 2.3),
+        new THREE.MeshLambertMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+      const n = { south: [0, 1], north: [0, -1], east: [1, 0], west: [-1, 0] }[t.face];
+      paint.position.set(t.x + n[0] * 0.22, 1.35, t.z + n[1] * 0.22);
+      paint.rotation.y = Math.atan2(n[0], n[1]);
+      paint.visible = false;
+      g.add(dynamic(paint));
+      this.tagPlanes.set(t.id, { mesh: paint, key: null, hood: h.index, k: t.k });
       this.obstacles.push({ x: t.x + (along ? -2 : 0), z: t.z + (along ? 0 : -2), r: 0.6 }, { x: t.x, z: t.z, r: 0.6 }, { x: t.x + (along ? 2 : 0), z: t.z + (along ? 0 : 2), r: 0.6 });
     }
   }
@@ -186,10 +198,35 @@ export class HoodView {
     this.group.add(poles, heads, pools);
   }
 
+  /** Graffiti on every tag wall, from the server's map of tags. */
+  setTags(tags) {
+    this.tags = tags || {};
+    this._paintTags();
+  }
+
+  _paintTags() {
+    for (const [id, e] of this.tagPlanes) {
+      const t = this.tags[id];
+      const own = this.owners.get(e.hood);
+      // Nobody's tag there: the hood's own gang's name, if it has one.
+      const show = t ? { name: t.name, color: t.color } : own && own.gang ? { name: own.gang, color: own.color } : null;
+      const key = show ? `${show.name}|${show.color}` : '';
+      if (key === e.key) continue;
+      e.key = key;
+      e.mesh.visible = !!show;
+      if (!show) continue;
+      e.mesh.material.map = graffitiTexture(show.name, show.color, e.k + e.hood * 7);
+      e.mesh.material.needsUpdate = true;
+    }
+  }
+
   /** Owners from the server's plot list: signs and colours follow them. */
   setOwners(plots) {
+    let tagsChanged = false;
     for (const p of plots || []) {
       if (!p) continue;
+      const next = p.owner ? { gang: p.gang || `${p.owner}'s crew`, color: p.color } : null;
+      if (JSON.stringify(next) !== JSON.stringify(this.owners.get(p.index) || null)) { this.owners.set(p.index, next); tagsChanged = true; }
       const s = this.signs.get(p.index);
       if (!s) continue;
       const key = p.owner ? `${p.owner}|${p.color}|${p.gang || ''}` : 'none';
@@ -203,6 +240,7 @@ export class HoodView {
       s.face.material.map = arch;
       s.face.material.needsUpdate = true;
     }
+    if (tagsChanged) this._paintTags();
   }
 
   update(dt, night) {

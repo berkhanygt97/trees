@@ -55,6 +55,18 @@ export class CameraRig {
   /** s = { pos, yaw, pitch, aiming, bob, moving } */
   foot(dt, s) {
     const cam = this.camera;
+    if (s.wasted) {
+      // Up and back over the body, looking down, slowly pulling away.
+      this.wastedT = (this.wastedT || 0) + dt;
+      s = { ...s, pitch: -0.75, aiming: false };
+      const armWas = this.arm;
+      this.arm = 4.5 + this.wastedT * 0.8;
+      const out = this._orbit(dt, s);
+      this.arm = armWas;
+      this.fresh = true;
+      return out;
+    }
+    this.wastedT = 0;
     if (this.mode === 'fp') {
       cam.position.set(s.pos.x, s.pos.y + EYE + s.bob, s.pos.z);
       cam.rotation.set(0, 0, 0);
@@ -67,6 +79,12 @@ export class CameraRig {
     // Over the right shoulder; closer and tighter when aiming.
     const wantArm = s.aiming ? 1.7 : 3.4;
     this.arm += (wantArm - this.arm) * Math.min(1, dt * 10);
+    this._orbit(dt, s);
+  }
+
+  /** Places the camera `this.arm` behind the pivot over your shoulder. */
+  _orbit(dt, s) {
+    const cam = this.camera;
     const shoulder = s.aiming ? 0.62 : 0.5;
     const cy = Math.cos(s.pitch);
     const dir = tmp.set(-Math.sin(s.yaw) * cy, Math.sin(s.pitch), -Math.cos(s.yaw) * cy);

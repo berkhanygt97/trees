@@ -3,7 +3,7 @@
 // yaw 0 looks north (-z), yaw +PI/2 looks west; pitch is up/down in radians.
 import { HOUR_MS, DAY_MS } from '../../shared/catalog.js';
 import { PLOTS, HQS, plotSpawn } from '../../shared/map.js';
-import { HOOD_STREETS } from '../../shared/hoods.js';
+import { HOOD_STREETS, TAG_POINTS } from '../../shared/hoods.js';
 import { RIVALS } from '../../shared/catalog.js';
 
 const at = (room, hour) => {
@@ -125,6 +125,27 @@ export const VIEWS = [
     }
   }, client: (c) => { c.rig.mode = 'tp'; c.rig.fresh = true; },
     pos: [HQS[0].spawn[0] - 4, 0, HQS[0].spawn[2] + 10], yaw: Math.PI / 2 + 0.25, pitch: -0.05, wait: 4500 },
+  { name: 'raid', server: (room, me) => {
+    at(room, 17);
+    me.xp = 9000;
+    const raid = room.raids.start(me, Date.now(), { gang: 'serpents', tier: 3 });
+    // Skip the drive: the car is nearly there.
+    const r = raid.car.route;
+    raid.car.x = (r[r.length - 2][0] + r[r.length - 1][0]) / 2;
+    raid.car.z = (r[r.length - 2][1] + r[r.length - 1][1]) / 2;
+    raid.car.leg = r.length - 1;
+    raid.car.speed = 6;
+    me.safeUntil = Date.now() + 120_000;     // just watching
+  }, client: (c) => { c.rig.mode = 'tp'; c.rig.fresh = true; },
+    pos: [HOOD_STREETS[0].x1 - 26, 0, (HOOD_STREETS[0].z0 + HOOD_STREETS[0].z1) / 2 + 3], yaw: -Math.PI / 2 - 0.15, pitch: -0.02, wait: 6000 },
+  { name: 'wasted', server: (room, me) => { me.safeUntil = 0; room.hurtPlayer(me, 999, [1, 0], 'shot', { name: 'Neon Serpents' }); }, wait: 2500 },
+  { name: 'graffiti', server: (room, me) => {
+    for (const r of room.raids.active.values()) room.raids.abort(r);
+    const tag = TAG_POINTS.find((t) => t.hood === me.plot && t.k === 2);
+    room.setTag(tag.id, { gang: 'coyotes', name: RIVALS.coyotes.name, color: RIVALS.coyotes.color });
+    room.raids.loot.set('l-smoke', { id: 'l-smoke', x: tag.pos[0] + 1.5, z: tag.pos[2] + 2, amount: 1200, owner: 'nobody', lot: 0, hood: me.plot, at: Date.now() + 1e9 });
+    room.raids._broadcastLoot();
+  }, pos: [TAG_POINTS[1].pos[0] + 2, 0, TAG_POINTS[1].pos[2] + 7], yaw: 0.25, pitch: -0.12, wait: 2500 },
   { name: 'afternoon', server: (room) => at(room, 16.5), pos: [street.x0 + 45, 0, midZ], yaw: Math.PI / 2 + 0.5, pitch: -0.1,
     client: (c) => { c.rig.mode = 'tp'; c.rig.fresh = true; } },
   { name: 'dusk', client: (c) => { c.rig.mode = 'tp'; }, server: (room) => at(room, 19.2), pos: [street.x0 + 120, 0, midZ], yaw: -Math.PI / 2, pitch: 0.05 },
