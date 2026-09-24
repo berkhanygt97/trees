@@ -681,6 +681,10 @@ tr.me td { background: rgba(242,193,78,.1); }
 .resto-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font: 700 15px var(--font); color: #f4eee4; }
 .resto-title .lvl { color: var(--gold); letter-spacing: 1px; }
 .resto-title .bet { margin-left: auto; }
+.resto-till { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; padding: 8px 10px; border-radius: 8px;
+  background: rgba(107, 214, 107, 0.08); border: 1px solid rgba(107, 214, 107, 0.25); font: 600 13px var(--font); color: #b0a698; }
+.resto-till b { color: #6bd66b; font-size: 16px; }
+.resto-till .muted { flex-basis: 100%; font-size: 11px; }
 .resto-stats { display: flex; flex-wrap: wrap; gap: 14px; margin: 8px 0; font: 600 12px var(--font); color: #b0a698; }
 .resto-stats b { color: #f4eee4; }
 .resto-price { display: flex; align-items: center; gap: 10px; margin: 4px 0 8px; font: 600 13px var(--font); color: #d8cbb8; }

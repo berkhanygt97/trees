@@ -1,5 +1,5 @@
 import {
-  WORKER_ROLES, WORKER_TRAITS, CROPS, PROCESSORS, ITEMS, workerWage, money,
+  WORKER_ROLES, WORKER_TRAITS, CROPS, PROCESSORS, ITEMS, RESTAURANTS, workerWage, money,
 } from '/shared/catalog.js';
 import { div, esc } from './util.js';
 import { sfx } from '../sfx.js';
@@ -16,7 +16,16 @@ function hours(trait) {
   return `${f(a)}–${f(b)}`;
 }
 
-function placeLabel(place) { return place === 'farm' ? 'FARM' : 'RESTAURANT'; }
+function placeLabel(place) { return place === 'farm' ? 'FARM' : place === 'hood' ? 'GANG' : 'RESTAURANT'; }
+
+function lotOptions(w, selected) {
+  return (w.restaurants || []).map((r) => `<option value="${r.lot}" ${r.lot === selected ? 'selected' : ''}>${RESTAURANTS[r.type].icon} ${esc(RESTAURANTS[r.type].name)} (lot ${r.lot})</option>`).join('');
+}
+const firstLot = (w) => ((w.restaurants || [])[0] || {}).lot;
+function restoCount(w, lot) {
+  return (w.staff || []).filter((s) => WORKER_ROLES[s.role].place === 'restaurant' && ((s.cfg && s.cfg.lot) || firstLot(w)) === lot).length;
+}
+function restoCap(w, lot) { return ((w.restaurants || []).find((r) => r.lot === lot) || { staffCap: 0 }).staffCap; }
 
 export function createJobCentre(ctx) { return staffPanel(ctx, { hiring: true }); }
 export function createStaff(ctx) { return staffPanel(ctx, { hiring: false }); }
@@ -41,7 +50,7 @@ function staffPanel(ctx, { hiring }) {
 
   function roleOptions(w) {
     return Object.entries(WORKER_ROLES).map(([id, r]) => {
-      const blocked = r.place === 'restaurant' && !w.restaurant;
+      const blocked = r.place === 'restaurant' && !(w.restaurants || []).length;
       return `<option value="${id}" ${blocked ? 'disabled' : ''}>${r.icon} ${r.name}${blocked ? ' (needs a restaurant)' : ''}</option>`;
     }).join('');
   }
@@ -58,7 +67,7 @@ function staffPanel(ctx, { hiring }) {
         <div>
           <div class="nm"><input class="name-in" maxlength="16" value="${esc(c.name)}" title="Their name — change it if you like"></div>
           <div class="ds">${speedBar(c.speed)} · <b>${esc(WORKER_TRAITS[c.trait].name)}</b> — ${esc(WORKER_TRAITS[c.trait].blurb)}</div>
-          <div class="ds">Job: <select class="role-in">${roleOptions(ctx.wallet)}</select> <span class="wage"></span></div>
+          <div class="ds">Job: <select class="role-in">${roleOptions(ctx.wallet)}</select> <span class="lot-wrap" hidden>at <select class="lot-in">${lotOptions(ctx.wallet)}</select></span> <span class="wage"></span></div>
         </div>
         <div class="btns"><button class="bet primary" data-act="hire">HIRE</button></div>
       </div>`).join('') : '<div class="muted">Everybody looking for work today has been hired. Come back tomorrow.</div>';
@@ -75,7 +84,13 @@ function staffPanel(ctx, { hiring }) {
       row.querySelector('.wage').textContent = `· ${money(wage)} a day (first day up front)`;
       const b = row.querySelector('[data-act="hire"]');
       const place = WORKER_ROLES[role].place;
-      const full = (ctx.wallet.staff || []).filter((w) => WORKER_ROLES[w.role].place === place).length >= ((ctx.wallet.staffCap || {})[place] || 0);
+      const lotWrap = row.querySelector('.lot-wrap');
+      lotWrap.hidden = place !== 'restaurant' || (ctx.wallet.restaurants || []).length < 2;
+      const lotIn = row.querySelector('.lot-in');
+      if (lotIn.options.length !== (ctx.wallet.restaurants || []).length) lotIn.innerHTML = lotOptions(ctx.wallet);
+      const full = place === 'restaurant'
+        ? restoCount(ctx.wallet, Number(lotIn.value)) >= restoCap(ctx.wallet, Number(lotIn.value))
+        : (ctx.wallet.staff || []).filter((w) => WORKER_ROLES[w.role].place === place).length >= ((ctx.wallet.staffCap || {})[place] || 0);
       b.disabled = ctx.wallet.money < wage || full;
       b.title = full ? `No room for more ${place} staff` : '';
     }
@@ -93,6 +108,9 @@ function staffPanel(ctx, { hiring }) {
       const bakery = PROCESSORS.bakery.recipes.map((r) => `<option value="${r.id}" ${(w.cfg.recipe || {}).bakery === r.id ? 'selected' : ''}>${ITEMS[r.id].icon} ${ITEMS[r.id].name}</option>`).join('');
       return `Bakery makes <select data-cfg="bakery">${bakery}</select>`;
     }
+    if (WORKER_ROLES[w.role].place === 'restaurant' && (ctx.wallet.restaurants || []).length > 1) {
+      return `Works at <select data-cfg="lot">${lotOptions(ctx.wallet, w.cfg.lot)}</select>`;
+    }
     if (w.role === 'seller') {
       const o = [['crops', 'crops'], ['animal', 'eggs and milk'], ['goods', 'flour, cheese, bread, cake'], ['all', 'everything']];
       return `Sells <select data-cfg="sell">${o.map(([v, l]) => `<option value="${v}" ${w.cfg.sell === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`;
@@ -106,7 +124,7 @@ function staffPanel(ctx, { hiring }) {
     const staff = w.staff || [];
     const n = (place) => staff.filter((s) => WORKER_ROLES[s.role].place === place).length;
     capsEl.innerHTML = `<div class="caps"><span>🏠 Farm staff <b>${n('farm')} / ${caps.farm}</b></span>
-      <span>🍔 Restaurant staff <b>${n('restaurant')} / ${caps.restaurant}</b></span>
+      ${(w.restaurants || []).map((r) => `<span>${RESTAURANTS[r.type].icon} ${esc(RESTAURANTS[r.type].name)} <b>${restoCount(w, r.lot)} / ${r.staffCap}</b></span>`).join('')}
       <span>💵 Wages <b>${money(staff.reduce((a, s) => a + s.wage, 0))}</b> a day</span></div>`;
     const seen = new Set();
     for (const s of staff) {
@@ -153,7 +171,7 @@ function staffPanel(ctx, { hiring }) {
     if (t.classList.contains('name-in')) { rename(row, t); return; }
     const key = t.dataset.cfg;
     if (!key) return;
-    const cfg = key === 'autobuy' ? { autobuy: t.checked } : key === 'bakery' ? { recipe: { bakery: t.value } } : { [key]: t.value };
+    const cfg = key === 'autobuy' ? { autobuy: t.checked } : key === 'bakery' ? { recipe: { bakery: t.value } } : key === 'lot' ? { lot: Number(t.value) } : { [key]: t.value };
     ctx.send('staff', { action: 'config', id: row.dataset.id, cfg });
     sfx.click();
   });
@@ -177,7 +195,7 @@ function staffPanel(ctx, { hiring }) {
     if (b.disabled) { sfx.deny(); return; }
     if (b.dataset.act === 'hire') {
       const row = b.closest('.cand');
-      ctx.send('hire', { station, cid: Number(row.dataset.cid), role: row.querySelector('.role-in').value, name: row.querySelector('.name-in').value });
+      ctx.send('hire', { station, cid: Number(row.dataset.cid), role: row.querySelector('.role-in').value, name: row.querySelector('.name-in').value, lot: Number(row.querySelector('.lot-in').value) || null });
       sfx.chip();
     } else if (b.dataset.act === 'fire') {
       // Two clicks, so nobody is let go by accident.

@@ -62,8 +62,13 @@ for (const version of fs.readdirSync(path.join(here, 'fixtures'))) {
     check(`${tag}: guns (Grandpa's rifle for everyone)`, p.guns.includes('boltrifle') && (r.guns || []).every((g) => p.guns.includes(g)));
     check(`${tag}: stats kept`, Object.entries(r.stats || {}).every(([k, v]) => p.stats[k] === v || k === 'playSeconds'));
     check(`${tag}: farm layout kept (the original one before 2.2)`, same(p.layout, r.layout || defaultLayout()));
-    check(`${tag}: hired hands kept`, same(p.workers, r.workers || []));
-    check(`${tag}: restaurant kept`, same(p.restaurant, r.restaurant || null));
+    // Restaurant staff now know which restaurant they work at; nothing else changes.
+    const noLot = (ws) => ws.map(({ cfg, ...w }) => ({ ...w, cfg: (({ lot, ...c }) => c)(cfg || {}) }));
+    check(`${tag}: hired hands kept`, same(noLot(p.workers), noLot(r.workers || [])));
+    const had = r.restaurants || (r.restaurant ? [r.restaurant] : []);
+    const keep = ({ status, till, bankSlot, ...x }) => x;
+    check(`${tag}: restaurants kept`, p.restaurants.length === had.length
+      && had.every((h, i) => same(keep(p.restaurants[i]), keep(h)) && p.restaurants[i].till === (h.till || 0)));
     const file = JSON.parse(fs.readFileSync(path.join(dir, 'players', `${slug}.json`), 'utf8'));
     check(`${tag}: written as save version ${SAVE_VERSION}`, file.version === SAVE_VERSION);
   }

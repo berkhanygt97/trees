@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { CONFIG, money } from '/shared/config.js';
 import {
   CROP_BY_ID, ITEMS, VEHICLE_BY_ID, IMPLEMENT_BY_ID, nextAction, cropProgress, isWatered,
-  DISH_BY_ID, DAY_MS, HOUR_MS,
+  DISH_BY_ID, DAY_MS, HOUR_MS, RESTAURANTS,
 } from '/shared/catalog.js';
 import { ALL_STATIONS, PLOTS, TILE, tileAt, tileCenter, groundHeight, padStation } from '/shared/map.js';
 import { net } from './net.js';
@@ -35,7 +35,7 @@ let renderer, scene, camera, world, fleet, controls, viewModel, smoke, selfAvata
 let jobs = [];                    // today's Job Centre candidates
 let restaurants, npcs, crowd;
 let restaurantList = [];          // who owns which lot on the Strip
-let resto = null;                 // your restaurant's live state, for the counter panel
+const restos = new Map();         // lot -> your restaurant's live state, for its counter panel
 let beacon = null;                // the delivery destination marker
 let lastDrop = 0;
 let cockpit = null;              // { id, obj } for the vehicle you are sitting in
@@ -153,7 +153,7 @@ function initScene() {
     get workers() { return workers; },
     get npcs() { return npcs; },
     get restaurants() { return restaurants; },
-    get resto() { return resto; },
+    get restos() { return restos; },
     get cockpit() { return cockpit; },
     get hp() { return hp; },
     get panel() { return activePanel; },
@@ -318,8 +318,9 @@ net.on('restaurants', (list) => {
   if (activePanel && activePanel.ui.repaint) activePanel.ui.repaint();
 });
 net.on('resto', (s) => {
-  resto = s;
-  if (activePanel && activePanel.ui.onResto) activePanel.ui.onResto(s);
+  if (!s) return;
+  restos.set(s.lot, s);
+  if (activePanel && activePanel.station.lot === s.lot && activePanel.ui.onResto) activePanel.ui.onResto(s);
 });
 net.on('delivered', (d) => {
   if (d.failed) { hud.toast('Too late — the customer gave up and ordered pizza from someone else.', 'error'); return; }
@@ -440,7 +441,7 @@ function addAvatar(p) {
 // ----------------------------------------------------------- interaction
 
 function stationUsable(st) {
-  if (st.lot != null) return !!(hud.wallet.restaurant && hud.wallet.restaurant.lot === st.lot);
+  if (st.lot != null) return (hud.wallet.restaurants || []).some((r) => r.lot === st.lot);
   if (st.plot == null) return true;
   if (st.plot !== hud.wallet.plot) return false;
   if (st.pad === 'house' || st.pad === 'bin') return true;
@@ -476,7 +477,10 @@ function findNearest() {
 }
 
 function stationName(st) {
-  if (st.lot != null) return 'Your restaurant counter';
+  if (st.lot != null) {
+    const r = (hud.wallet.restaurants || []).find((q) => q.lot === st.lot);
+    return r ? `Your ${RESTAURANTS[r.type].name} counter` : 'Your restaurant counter';
+  }
   if (st.plot != null) return PAD_NAMES[st.pad] || st.name;
   return st.name;
 }
@@ -497,7 +501,7 @@ function panelCtx(station) {
     get myPlot() { return world ? world.farms.plots.get(hud.wallet.plot) : null; },
     get jobs() { return jobs; },
     get restaurants() { return restaurantList; },
-    get resto() { return resto; },
+    get resto() { return station.lot != null ? restos.get(station.lot) || null : null; },
     /** Swap this panel for another one at the same spot (the house opens the planner). */
     open: (game) => openPanel({ ...station, game }),
     worldTime,

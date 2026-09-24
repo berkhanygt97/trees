@@ -1,8 +1,8 @@
 import {
   CROPS, ITEMS, HOUSES, ANIMAL_HOUSES, PROCESSORS, FIELD_SIZES, FIELD_PRICES, FIELD_LEVELS,
-  VEHICLES, IMPLEMENTS, GUNS, RESTAURANTS, boarStats, money,
+  VEHICLES, IMPLEMENTS, GUNS, RESTAURANTS, RESTO_SLOT_LEVELS, boarStats, money,
 } from '/shared/catalog.js';
-import { LOTS, STRIP, LOT_LEVEL } from '/shared/map.js';
+import { LOTS, LOT_LEVEL, ROADS as STREETS } from '/shared/map.js';
 import { div, esc } from './util.js';
 import { sfx } from '../sfx.js';
 
@@ -190,38 +190,56 @@ export function createLandOffice(ctx) {
   });
 }
 
-/** Restaurant lots on the Sunset Strip: a little map, then one row per lot. */
+/** The lots this farmer may build on: their own neighbourhood's (or the Strip's). */
+export function lotsFor(w) {
+  if (w && Array.isArray(w.lotIds)) return LOTS.filter((l) => w.lotIds.includes(l.id));
+  return LOTS;
+}
+
+/** Restaurant lots: a little map, then one row per lot. */
 function lotsSection(ctx, w) {
   const owners = new Map((ctx.restaurants || []).map((r) => [r.lot, r]));
-  const mine = w.restaurant;
-  // An SVG sketch of the Strip, lots coloured by who owns them.
-  const sx = (x) => ((x - STRIP.x0 + 4) / (STRIP.x1 - STRIP.x0 + 8)) * 600;
-  const sz = (z) => ((z - 18) / 72) * 150;
-  const map = `<svg class="strip-map" viewBox="0 0 600 150">
-    <rect x="0" y="${sz(STRIP.z0)}" width="600" height="${sz(STRIP.z1) - sz(STRIP.z0)}" fill="#2d2f36"/>
-    <line x1="0" x2="600" y1="${(sz(STRIP.z0) + sz(STRIP.z1)) / 2}" y2="${(sz(STRIP.z0) + sz(STRIP.z1)) / 2}" stroke="#f2c14e" stroke-dasharray="10 8"/>
-    ${LOTS.map((l) => {
+  const mine = new Set((w.restaurants || []).map((r) => r.lot));
+  const slots = w.restoSlots || 0;
+  const full = mine.size >= slots;
+  const lots = lotsFor(w);
+  if (!lots.length) return '';
+  // An SVG sketch of the lots and the street between them, coloured by owner.
+  const x0 = Math.min(...lots.map((l) => l.x0)) - 6;
+  const x1 = Math.max(...lots.map((l) => l.x1)) + 6;
+  const z0 = Math.min(...lots.map((l) => l.z0)) - 4;
+  const z1 = Math.max(...lots.map((l) => l.z1)) + 4;
+  const W = 600;
+  const H = Math.round(Math.min(220, Math.max(110, (W * (z1 - z0)) / (x1 - x0))));
+  const sx = (x) => ((x - x0) / (x1 - x0)) * W;
+  const sz = (z) => ((z - z0) / (z1 - z0)) * H;
+  const street = STREETS.find((st) => lots.every((l) => l.x0 >= st.x0 - 1 && l.x1 <= st.x1 + 1)) || null;
+  const map = `<svg class="strip-map" viewBox="0 0 ${W} ${H}">
+    ${street ? `<rect x="0" y="${sz(street.z0)}" width="${W}" height="${sz(street.z1) - sz(street.z0)}" fill="#2d2f36"/>
+    <line x1="0" x2="${W}" y1="${(sz(street.z0) + sz(street.z1)) / 2}" y2="${(sz(street.z0) + sz(street.z1)) / 2}" stroke="#f2c14e" stroke-dasharray="10 8"/>` : ''}
+    ${lots.map((l) => {
     const o = owners.get(l.id);
-    const fill = mine && mine.lot === l.id ? '#6bd66b' : o ? o.color : 'rgba(255,255,255,0.12)';
+    const fill = mine.has(l.id) ? '#6bd66b' : o ? o.color : 'rgba(255,255,255,0.12)';
     return `<rect x="${sx(l.x0)}" y="${sz(l.z0)}" width="${sx(l.x1) - sx(l.x0)}" height="${sz(l.z1) - sz(l.z0)}" rx="4" fill="${fill}" stroke="#fff" stroke-opacity="0.5"/>
-      <text x="${(sx(l.x0) + sx(l.x1)) / 2}" y="${(sz(l.z0) + sz(l.z1)) / 2 + 5}" text-anchor="middle" fill="#fff" font-size="15" font-weight="800">${o ? RESTAURANTS[o.type].icon : l.id}</text>`;
-  }).join('')}
-    <text x="6" y="146" fill="#b0a698" font-size="11">← plaza</text></svg>`;
+      <text x="${(sx(l.x0) + sx(l.x1)) / 2}" y="${(sz(l.z0) + sz(l.z1)) / 2 + 5}" text-anchor="middle" fill="#fff" font-size="15" font-weight="800">${o ? RESTAURANTS[o.type].icon : l.label || l.id}</text>`;
+  }).join('')}</svg>`;
   const locked = w.level < LOT_LEVEL;
-  const rows = LOTS.map((l) => {
+  const rows = lots.map((l) => {
     const o = owners.get(l.id);
+    const title = `Lot ${l.label || l.id} · ${l.name}`;
     if (o) {
-      return row({ icon: RESTAURANTS[o.type].icon, name: `Lot ${l.id} · ${l.name}`, owned: mine && mine.lot === l.id,
-        desc: `${esc(o.ownerName)}'s ${RESTAURANTS[o.type].name.toLowerCase()}, level ${o.level}.` });
+      return row({ icon: RESTAURANTS[o.type].icon, name: title, owned: mine.has(l.id),
+        desc: `${mine.has(l.id) ? 'Your' : `${esc(o.ownerName)}'s`} ${RESTAURANTS[o.type].name.toLowerCase()}, level ${o.level}.` });
     }
+    const why = locked ? `<br>🔒 Farm level ${LOT_LEVEL}` : full ? `<br>${slots ? `You run ${mine.size} of ${slots}; the next one unlocks at farm level ${RESTO_SLOT_LEVELS[mine.size] || '—'}.` : ''}` : ' Pick what it will be:';
     return row({
-      icon: '🏗️', name: `Lot ${l.id} · ${l.name}`, locked,
-      desc: `${l.tables} tables, ${l.side} side of the boulevard.${locked ? `<br>🔒 Farm level ${LOT_LEVEL}` : mine ? '<br>You already run a restaurant.' : ' Pick what it will be:'}`,
+      icon: '🏗️', name: title, locked,
+      desc: `${l.tables} tables.${why}`,
       price: money(l.price),
-      buttons: locked || mine ? '' : Object.entries(RESTAURANTS).map(([k, r]) => btn(`${r.icon} ${r.name.split(' ')[0].toUpperCase()}`, 'lot', `${l.id}:${k}`, { disabled: w.money < l.price })).join(''),
+      buttons: locked || full ? '' : Object.entries(RESTAURANTS).map(([k, r]) => btn(`${r.icon} ${r.name.split(' ')[0].toUpperCase()}`, 'lot', `${l.id}:${k}`, { disabled: w.money < l.price })).join(''),
     });
   });
-  return `<div class="shop-head">SUNSET STRIP — RESTAURANT LOTS <span>one each; comes with a delivery scooter</span></div>
+  return `<div class="shop-head">RESTAURANT LOTS <span>you run ${mine.size} of ${slots} · more unlock as your farm grows</span></div>
     ${map}<div class="shop-list">${rows.join('')}</div>`;
 }
 

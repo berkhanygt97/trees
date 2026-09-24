@@ -88,7 +88,7 @@ try {
     }, { pos: view.pos, yaw: view.yaw, pitch: view.pitch, client: view.client ? view.client.toString() : null });
     await page.waitForTimeout(view.wait || 2500);
     const file = path.join(outDir, `${view.name}.png`);
-    await page.screenshot({ path: file });
+    await page.screenshot({ path: file, timeout: 120_000 });
     const stats = await page.evaluate(() => window.casino.perf.stats());
     summary.push({ view: view.name, ...stats });
     console.log(`shot  ${view.name.padEnd(14)} ${String(stats.calls).padStart(5)} calls  ${String(Math.round(stats.tris / 1000)).padStart(5)}k tris  ${stats.fps} fps`);

@@ -1,7 +1,7 @@
 // Pure rules for one player's farm: fields, animals and processing. Nothing
 // here touches the network; the room calls these and broadcasts the result.
 import {
-  CROP_BY_ID, ITEMS, HOUSES, ANIMAL_HOUSES, PROCESSORS, FIELD_MAX, PROCESS_QUEUE_MAX,
+  CROP_BY_ID, ITEMS, HOUSES, ANIMAL_HOUSES, PROCESSORS, FIELD_MAX, PROCESS_QUEUE_MAX, RESTAURANTS, WORKER_ROLES,
   cropProgress, isWatered, wateredFor, countsAgainstStorage, levelOf,
 } from '../shared/catalog.js';
 import { defaultLayout, cleanLayout } from '../shared/map.js';
@@ -259,7 +259,8 @@ export function newProfile({ name, slug, color, hat, plot, cash, pos, yaw }) {
     layout: defaultLayout(),
     workers: [],
     nextWid: 1,
-    restaurant: null,
+    // 3.0: one restaurant per lot, as many lots as your level allows.
+    restaurants: [],
     stats: {
       harvested: 0, sold: 0, wagered: 0, biggestWin: 0, orders: 0, boars: 0, playSeconds: 0,
       served: 0, deliveries: 0, wagesPaid: 0,
@@ -288,7 +289,37 @@ export function migrateProfile(p) {
   out.layout = cleanLayout(p.layout);
   out.workers = Array.isArray(p.workers) ? p.workers.filter((w) => w && typeof w === 'object' && w.id && w.role) : [];
   out.nextWid = Number.isFinite(p.nextWid) ? p.nextWid : out.workers.length + 1;
-  out.restaurant = p.restaurant && typeof p.restaurant === 'object' && p.restaurant.lot ? p.restaurant : null;
+  // 3.0: a list of restaurants. Saves from 2.2 had at most one.
+  const list = Array.isArray(p.restaurants) ? p.restaurants : p.restaurant ? [p.restaurant] : [];
+  const seen = new Set();
+  out.restaurants = list.map(cleanRestaurant).filter((r) => r && !seen.has(r.lot) && seen.add(r.lot));
+  delete out.restaurant;
+  // Restaurant staff from before know only "the restaurant": the first one.
+  for (const w of out.workers) {
+    if (!WORKER_ROLES[w.role] || WORKER_ROLES[w.role].place !== 'restaurant') continue;
+    w.cfg = w.cfg && typeof w.cfg === 'object' ? w.cfg : {};
+    if (!out.restaurants.some((r) => r.lot === w.cfg.lot)) w.cfg.lot = out.restaurants.length ? out.restaurants[0].lot : null;
+  }
+  return out;
+}
+
+// ----------------------------------------------------------- restaurants
+
+export function newRestaurant(lot, type) {
+  const menu = {};
+  for (const d of RESTAURANTS[type].dishes) menu[d.id] = true;
+  return {
+    lot, type, served: 0, rep: 60, price: 1, menu, pantry: {}, autostock: true, open: true,
+    earned: 0, till: 0, day: { n: 0, served: 0, revenue: 0, walkouts: 0, deliveries: 0 },
+  };
+}
+
+/** A restaurant from a save, cleaned up, or null if it is not one. */
+export function cleanRestaurant(res) {
+  if (!res || typeof res !== 'object' || !res.lot || !RESTAURANTS[res.type]) return null;
+  const out = { ...newRestaurant(res.lot, res.type), ...res };
+  out.till = Number.isFinite(res.till) && res.till > 0 ? Math.round(res.till) : 0;
+  delete out.status;
   return out;
 }
 

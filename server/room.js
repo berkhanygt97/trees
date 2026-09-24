@@ -2,7 +2,7 @@ import { CONFIG, AVATAR_COLORS, HATS, CIGAR, money } from '../shared/config.js';
 import {
   CROP_BY_ID, ITEMS, SELLABLE, HOUSES, ANIMAL_HOUSES, PROCESSORS, PROCESS_QUEUE_MAX,
   FIELD_SIZES, FIELD_PRICES, FIELD_LEVELS, VEHICLE_BY_ID, MAX_VEHICLES,
-  IMPLEMENT_BY_ID, PAINTS, RESALE, GUN_BY_ID, PLAYER_HP, WORKER_ROLES, levelOf, levelProgress,
+  IMPLEMENT_BY_ID, PAINTS, RESALE, GUN_BY_ID, PLAYER_HP, WORKER_ROLES, RESTAURANTS, levelOf, levelProgress,
 } from '../shared/catalog.js';
 import {
   BOUNDS, PLOTS, STATION_BY_ID, TOWN_SPAWN, PAD_KEYS, plotSpawn, tileCenter, tileIndex,
@@ -191,7 +191,6 @@ export class Room {
       },
     });
     this.sendWallet(p);
-    if (p.restaurant) this.send(id, 'resto', this.restaurants.stateFor(p));
     this.broadcast('players', this.publicPlayers());
     this.broadcast('plot', this.publicPlot(p.plot));
     if (isNew) {
@@ -322,7 +321,11 @@ export class Room {
     for (const v of p.vehicles) assets += (VEHICLE_BY_ID[v.model] || { price: 0 }).price;
     for (const i of p.implements) assets += (IMPLEMENT_BY_ID[i] || { price: 0 }).price;
     for (const g of p.guns) assets += (GUN_BY_ID[g] || { price: 0 }).price;
-    if (p.restaurant) assets += (LOT_BY_ID.get(p.restaurant.lot) || { price: 0 }).price;
+    let tills = 0;
+    for (const res of p.restaurants) {
+      assets += (LOT_BY_ID.get(res.lot) || { price: 0 }).price;
+      tills += res.till || 0;
+    }
     assets += HOUSES[p.house].price;
     for (let k = 0; k < FIELD_SIZES.length; k++) if (FIELD_SIZES[k] <= p.field.size) assets += FIELD_PRICES[k];
     for (const [kind, def] of Object.entries(ANIMAL_HOUSES)) {
@@ -332,7 +335,7 @@ export class Room {
     for (const [kind, def] of Object.entries(PROCESSORS)) if (p.buildings[kind]) assets += def.price;
     let goods = 0;
     for (const [item, qty] of Object.entries(p.inv)) goods += (ITEMS[item] ? ITEMS[item].price : 0) * qty;
-    return Math.round(p.money + assets * RESALE + goods);
+    return Math.round(p.money + tills + assets * RESALE + goods);
   }
 
   standings() {
@@ -370,7 +373,9 @@ export class Room {
       vehicle: p.vehicle,
       stats: p.stats,
       staff: this.staff.staffFor(p),
-      restaurant: p.restaurant ? { lot: p.restaurant.lot, type: p.restaurant.type, level: this.restaurants.level(p) } : null,
+      restaurants: this.restaurants.summary(p),
+      restoSlots: this.restaurants.slots(p),
+      tills: Math.round(this.restaurants.tills(p)),
       carrying: p.carrying || null,
       staffCap: { farm: this.staff.capAt(p, 'farm'), restaurant: this.staff.capAt(p, 'restaurant') },
     });
@@ -496,7 +501,7 @@ export class Room {
     if (dx * dx + dz * dz > reach * reach) return null;
     // Farm buildings and restaurant counters answer to their owner only.
     if (st.plot != null && st.plot !== p.plot) return null;
-    if (st.lot != null && !(p.restaurant && p.restaurant.lot === st.lot)) return null;
+    if (st.lot != null && !p.restaurants.some((r) => r.lot === st.lot)) return null;
     return st;
   }
 
@@ -586,7 +591,7 @@ export class Room {
     if (st.game === 'market' || st.game === 'bin') this.send(p.id, 'market', this.market.state());
     if (st.game === 'orders') this.send(p.id, 'orders', this.orders.state());
     if (st.game === 'jobcentre') this.send(p.id, 'jobs', this.staff.candidates());
-    if (st.game === 'restaurant') this.send(p.id, 'resto', this.restaurants.stateFor(p));
+    if (st.game === 'restaurant') this.send(p.id, 'resto', this.restaurants.stateFor(p, st.lot));
     this.sendWallet(p);
   }
 
@@ -778,9 +783,10 @@ export class Room {
       if (res.error) return deny(res.error);
       this.broadcast('restaurants', this.restaurants.publicRestaurants());
       this.broadcast('vehicles', this.publicVehicles());
-      this.send(p.id, 'resto', this.restaurants.stateFor(p));
-      this.toastAll(`${p.name} opened a restaurant on the Sunset Strip!`, 'big');
-      return this._bought(p, shop, `lot ${res.lot.id} on the Sunset Strip`);
+      this.staff.broadcastList();
+      const kind = RESTAURANTS[res.res.type].name.toLowerCase();
+      this.toastAll(`${p.name} opened a ${kind}!`, 'big');
+      return this._bought(p, shop, `lot ${res.lot.id} (a ${kind})`);
     }
 
     if (kind === 'gun') {
@@ -933,7 +939,7 @@ export class Room {
 
   onHire(p, d) {
     if (!this._atShop(p, d, 'jobcentre')) return this.error(p, 'Hiring happens at the Job Centre');
-    const res = this.staff.hire(p, d.cid, d.role, d.name);
+    const res = this.staff.hire(p, d.cid, d.role, d.name, d.lot);
     if (res.error) return this.error(p, res.error);
     const w = res.worker;
     this.sendWallet(p);
@@ -962,18 +968,27 @@ export class Room {
   // ------------------------------------------------------------ restaurants
 
   onResto(p, d) {
-    if (!d || !p.restaurant) return this.error(p, 'You do not have a restaurant');
-    if (!this.nearStation(p, `lot${p.restaurant.lot}-counter`)) return this.error(p, 'Run the restaurant from its counter');
+    if (!d || !p.restaurants.length) return this.error(p, 'You do not have a restaurant');
+    // Which restaurant: the counter you are standing at.
+    const st = this.nearStation(p, d.station || `lot${d.lot}-counter`);
+    if (!st || st.lot == null) return this.error(p, 'Run the restaurant from its counter');
     const R = this.restaurants;
-    const res = p.restaurant;
+    const res = R.of(p, st.lot);
+    if (!res) return this.error(p, 'That is not your restaurant');
     let out = {};
     switch (d.action) {
-      case 'cook': out = R.cookByHand(p, d.oid); break;
-      case 'serve': out = R.serveByHand(p, d.oid); break;
-      case 'stock': out = R.stock(p, d.item, d.qty); break;
-      case 'wholesale': out = R.wholesale(p, d.item, d.qty); break;
-      case 'take': out = R.takeDelivery(p, d.id); break;
-      case 'remodel': out = R.remodel(p, d.type); if (!out.error) this.broadcast('restaurants', R.publicRestaurants()); break;
+      case 'cook': out = R.cookByHand(p, res, d.oid); break;
+      case 'serve': out = R.serveByHand(p, res, d.oid); break;
+      case 'stock': out = R.stock(p, res, d.item, d.qty); break;
+      case 'wholesale': out = R.wholesale(p, res, d.item, d.qty); break;
+      case 'take': out = R.takeDelivery(p, res, d.id); break;
+      case 'bank': {
+        const amt = R.bank(p, res);
+        if (!amt) out = { error: 'The till is empty' };
+        else this.send(p.id, 'toast', { text: `Banked ${money(amt)} from the till.`, kind: 'info' });
+        break;
+      }
+      case 'remodel': out = R.remodel(p, res, d.type); if (!out.error) this.broadcast('restaurants', R.publicRestaurants()); break;
       case 'menu': if (res.menu[d.dish] != null) res.menu[d.dish] = !!d.on; break;
       case 'price': res.price = clamp(Math.round(Number(d.value) * 20) / 20 || 1, 0.8, 1.5); break;
       case 'autostock': res.autostock = !!d.on; break;
@@ -985,7 +1000,7 @@ export class Room {
     }
     if (out.error) return this.error(p, out.error);
     R._touch(res.lot);
-    R._push(p);
+    R._push(p, res);
     this.sendWallet(p);
     return undefined;
   }

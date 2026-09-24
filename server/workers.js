@@ -80,27 +80,42 @@ export class Staff {
 
   // ------------------------------------------------------------ hire & fire
 
-  countAt(p, place) {
-    return p.workers.filter((w) => WORKER_ROLES[w.role].place === place).length;
+  /** How many work at a place ('farm', 'restaurant', or one restaurant by lot). */
+  countAt(p, place, lot = null) {
+    const first = p.restaurants[0] && p.restaurants[0].lot;
+    return p.workers.filter((w) => WORKER_ROLES[w.role].place === place
+      && (lot == null || ((w.cfg && w.cfg.lot) || first) === lot)).length;
   }
 
-  capAt(p, place) {
+  capAt(p, place, lot = null) {
     if (place === 'farm') return p.plot >= 0 ? FARM_WORKER_CAP[p.house] : 0;
-    return this.room.restaurants ? this.room.restaurants.staffCap(p) : 0;
+    const R = this.room.restaurants;
+    if (!R) return 0;
+    if (lot != null) return R.staffCap(R.of(p, lot));
+    return p.restaurants.reduce((a, res) => a + R.staffCap(res), 0);
   }
 
-  hire(p, cid, role, rawName) {
+  /** The restaurant a new member of staff goes to: the one asked for, or the first with room. */
+  _pickLot(p, want) {
+    const R = this.room.restaurants;
+    const mine = p.restaurants.map((r) => r.lot);
+    if (want != null && mine.includes(Number(want))) return Number(want);
+    return mine.find((lot) => this.countAt(p, 'restaurant', lot) < R.staffCap(R.of(p, lot))) ?? mine[0] ?? null;
+  }
+
+  hire(p, cid, role, rawName, wantLot = null) {
     const cand = this.candidates().find((c) => c.cid === Number(cid));
     if (!cand) return { error: 'Somebody already hired them' };
     const def = WORKER_ROLES[role];
     if (!def) return { error: 'Pick a job for them' };
-    if (def.place === 'restaurant' && !p.restaurant) return { error: 'You need a restaurant first' };
+    if (def.place === 'restaurant' && !p.restaurants.length) return { error: 'You need a restaurant first' };
     if (def.place === 'farm' && p.plot < 0) return { error: 'You need a farm first' };
-    const cap = this.capAt(p, def.place);
-    if (this.countAt(p, def.place) >= cap) {
+    const lot = def.place === 'restaurant' ? this._pickLot(p, wantLot) : null;
+    const cap = this.capAt(p, def.place, lot);
+    if (this.countAt(p, def.place, lot) >= cap) {
       return { error: def.place === 'farm'
         ? `Your house has room for ${cap} farm hand${cap === 1 ? '' : 's'}. A bigger house fits more.`
-        : `Your restaurant has room for ${cap} staff. Level it up for more.` };
+        : `That restaurant has room for ${cap} staff. Level it up for more.` };
     }
     const wage = workerWage(role, cand.speed, cand.trait);
     // The first day is paid up front.
@@ -111,7 +126,7 @@ export class Staff {
     const w = {
       id: `${p.slug}~${p.nextWid++}`, name, role, speed: cand.speed, trait: cand.trait, look: cand.look,
       wage, hired: this.room.clock.day, paidDay: this.room.clock.day, off: 0,
-      cfg: defaultConfig(role, p),
+      cfg: defaultConfig(role, p, lot),
     };
     p.workers.push(w);
     this.board.list = this.board.list.filter((c) => c.cid !== cand.cid);
@@ -123,6 +138,7 @@ export class Staff {
     const i = p.workers.findIndex((w) => w.id === wid);
     if (i < 0) return { error: 'No such worker' };
     const [w] = p.workers.splice(i, 1);
+    this.interrupt(p, w);
     this._release(p, w.id);
     this.rt.delete(w.id);
     return { worker: w };
@@ -155,6 +171,14 @@ export class Staff {
       }
     }
     if (w.role === 'seller' && ['crops', 'animal', 'goods', 'all'].includes(cfg.sell)) w.cfg.sell = cfg.sell;
+    if (WORKER_ROLES[w.role].place === 'restaurant' && cfg.lot != null && Number(cfg.lot) !== w.cfg.lot) {
+      const lot = Number(cfg.lot);
+      const R = this.room.restaurants;
+      if (!R.of(p, lot)) return { error: 'That is not your restaurant' };
+      if (this.countAt(p, 'restaurant', lot) >= R.staffCap(R.of(p, lot))) return { error: 'That restaurant has no room for more staff' };
+      this.interrupt(p, w);
+      w.cfg.lot = lot;
+    }
     return { worker: w };
   }
 
@@ -225,6 +249,7 @@ export class Staff {
         if (r.pending) {
           const fn = r.pending;
           r.pending = null;
+          r.cancel = null;
           this._release(p, w.id);
           try { fn(); } catch (err) { console.error(`[workers] ${w.name}: ${err.message}`); }
           r.done++;
@@ -292,7 +317,33 @@ export class Staff {
     }
   }
 
-  /** job = { act, at: [x, z], base, apply, claim?, status } */
+  /**
+   * Stops whatever a worker is doing right now, without doing it: the job's
+   * `cancel` puts things back (an order back in the queue, a tile unclaimed).
+   * They stand where they are this moment and pick something new next tick.
+   */
+  interrupt(p, w, now = Date.now()) {
+    const r = this.rt.get(w.id);
+    if (!r) return null;
+    const [x, z] = evPos(r.ev, now, [r.x, r.z]);
+    if (r.pending && r.cancel) { try { r.cancel(); } catch (err) { console.error(`[workers] ${w.name}: ${err.message}`); } }
+    r.pending = null;
+    r.cancel = null;
+    this._release(p, w.id);
+    r.x = x;
+    r.z = z;
+    r.until = 0;
+    r.ev = { from: [r2(x), r2(z)], to: [r2(x), r2(z)], t0: now, walk: 0, dur: 0, act: 'idle' };
+    return [x, z];
+  }
+
+  /** Where a worker is right now, mid-walk or not. */
+  posOf(w, now = Date.now()) {
+    const r = this.rt.get(w.id);
+    return r ? evPos(r.ev, now, [r.x, r.z]) : null;
+  }
+
+  /** job = { act, at: [x, z], base, apply, cancel?, claim?, status } */
   _start(p, w, r, now, job) {
     const dist = Math.hypot(job.at[0] - r.x, job.at[1] - r.z);
     const walk = (dist / (WALK * w.speed)) * 1000 / this.pace;
@@ -302,6 +353,8 @@ export class Staff {
     r.z = job.at[1];
     r.until = now + walk + dur;
     r.pending = job.apply;
+    r.cancel = job.cancel || null;
+    r.keep = !!job.keep;
     r.status = job.status;
     if (job.claim != null) this._claim(p, w.id, job.claim);
     this._emit(r);
@@ -515,7 +568,8 @@ export class Staff {
   }
 }
 
-function defaultConfig(role, p) {
+function defaultConfig(role, p, lot = null) {
+  if (WORKER_ROLES[role] && WORKER_ROLES[role].place === 'restaurant') return { lot };
   if (role === 'field') {
     // The most valuable seed they have, or wheat.
     const owned = Object.keys(p.inv).filter((k) => k.startsWith('seed:')).map((k) => k.slice(5)).filter((c) => CROP_BY_ID[c]);
@@ -527,3 +581,10 @@ function defaultConfig(role, p) {
 }
 
 const r2 = (v) => Math.round(v * 100) / 100;
+
+/** Where a walk event puts someone at time `now`. */
+export function evPos(ev, now, fallback = [0, 0]) {
+  if (!ev) return fallback;
+  const k = ev.walk > 0 ? Math.max(0, Math.min(1, (now - ev.t0) / ev.walk)) : 1;
+  return [ev.from[0] + (ev.to[0] - ev.from[0]) * k, ev.from[1] + (ev.to[1] - ev.from[1]) * k];
+}

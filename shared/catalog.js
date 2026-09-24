@@ -226,6 +226,12 @@ export const RESTO_DELIVERY_LEVEL = 3;
 export const RESTO_VIP_LEVEL = 5;
 export const openTables = (level, lotTables) => Math.min(lotTables, 2 + 2 * level);
 export const restoStaffCap = (level) => level + 1;
+// More restaurants as your farm grows: the farm level each extra one needs.
+export const RESTO_SLOT_LEVELS = [4, 6, 8, 10, 12];
+export const restoSlots = (farmLevel) => RESTO_SLOT_LEVELS.filter((l) => farmLevel >= l).length;
+// Takings wait in each restaurant's till and are banked every few in-game
+// hours (or by hand at the counter). Money in a till can be robbed.
+export const TILL_BANK_HOURS = 4;
 export const REMODEL_SHARE = 0.25;                      // changing type costs a quarter of the lot price
 export const WHOLESALE = 1.5;                           // buying a missing ingredient in: 1.5x market price
 

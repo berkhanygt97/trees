@@ -13,6 +13,7 @@ import { sfx } from '../sfx.js';
 
 const meter = (frac, cls = '') => `<div class="meter ${cls}"><i style="width:${Math.round(Math.max(0, Math.min(1, frac)) * 100)}%"></i></div>`;
 const ingIcon = (k) => (INGREDIENT_GROUPS[k] ? '🍖/🥩' : (ITEMS[k] || {}).icon || '?');
+const mmss = (sec) => `${Math.floor(sec / 60)}:${String(Math.max(0, sec % 60)).padStart(2, '0')}`;
 const STATE = { queued: 'waiting for the kitchen', cooking: 'on the stove', ready: 'READY', serving: 'on its way' };
 
 export function createRestaurant(ctx) {
@@ -81,6 +82,11 @@ export function createRestaurant(ctx) {
     paint('.resto-head', `
       <div class="resto-title">${def.icon} <b>${esc(def.name)}</b> · Lot ${s.lot} (${esc(lot.name)}) · <span class="lvl">LEVEL ${s.level}</span>
         <button class="bet ${s.open ? '' : 'primary'}" data-act="open">${s.open ? 'CLOSE UP' : 'OPEN UP'}</button></div>
+      <div class="resto-till">
+        <span>🏦 Till <b>${money(s.till || 0)}</b></span>
+        <button class="bet ${s.till ? 'primary' : ''}" data-act="bank" ${s.till ? '' : 'disabled'}>BANK IT</button>
+        <span class="muted">Takings wait here until they are banked — automatically in ${mmss(s.bankIn || 0)}. Money in the till can be stolen.</span>
+      </div>
       <div class="resto-stats">
         <span>⭐ Reputation <b>${s.rep}</b></span>
         <span>🍽️ Served <b>${s.served}</b>${next ? ` / ${next} for level ${s.level + 1}` : ''}</span>
@@ -88,7 +94,8 @@ export function createRestaurant(ctx) {
         <span>📅 Today <b>${s.day.served || 0}</b> served · <b>${money(s.day.revenue || 0)}</b> · ${s.day.walkouts || 0} walked out</span>
       </div>
       ${next ? meter((s.served - prev) / (next - prev), 'gold') : ''}
-      ${s.open ? '' : '<p class="shop-note warn">Closed: nobody comes in until you open up.</p>'}`);
+      ${s.open ? '' : '<p class="shop-note warn">Closed: nobody comes in until you open up.</p>'}
+      ${s.status ? `<p class="shop-note warn">${esc(s.status)}</p>` : ''}`);
 
     // Orders: cook and serve them yourself, or let your staff. Rows are
     // kept and only their text changes, so a COOK button never moves under
@@ -176,6 +183,7 @@ export function createRestaurant(ctx) {
     const send = (d) => ctx.send('resto', { station, ...d });
     sfx.chip();
     if (act === 'open') send({ action: 'open', on: !s.open });
+    else if (act === 'bank') send({ action: 'bank' });
     else if (act === 'cook') send({ action: 'cook', oid: Number(arg) });
     else if (act === 'serve') send({ action: 'serve', oid: Number(arg) });
     else if (act === 'take') send({ action: 'take', id: Number(arg) });
@@ -210,6 +218,7 @@ export function createRestaurant(ctx) {
         if (s) {
           for (const o of s.orders) { o.waited++; o.patience--; }
           for (const d of s.deliveries) d.left--;
+          if (s.bankIn > 0) s.bankIn--;
           render();
         }
       }
