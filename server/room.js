@@ -6,13 +6,14 @@ import {
 } from '../shared/catalog.js';
 import {
   BOUNDS, PLOTS, STATION_BY_ID, TOWN_SPAWN, PAD_KEYS, plotSpawn, tileCenter, tileIndex,
-  padStation, validateLayout, cleanLayout, defaultLayout, LOT_BY_ID,
+  padStation, validateLayout, cleanLayout, defaultLayout, LOT_BY_ID, LOTS,
 } from '../shared/map.js';
 import { rnd, pick } from './rng.js';
 import { CasinoEvents } from './casino-events.js';
 import { Clock } from './clock.js';
 import { Market, Orders } from './economy.js';
 import { slugOf } from './save.js';
+import { SAVE_VERSION, versionOf, upgradeProfile, upgradeWorld } from './migrate.js';
 import { Wildlife } from './boars.js';
 import { Staff } from './workers.js';
 import { Restaurants } from './restaurants.js';
@@ -60,17 +61,18 @@ export class Room {
     this.profiles = new Map();   // slug -> profile, online and offline
     this.nextId = 1;
 
-    const world = store ? store.loadWorld() : null;
+    let world = store ? store.loadWorld() : null;
+    const raws = store ? store.loadPlayers() : [];
+    // Saves from before 3.0 are copied aside once, then brought up to date.
+    if (store && [world, ...raws].some((f) => f && versionOf(f) < SAVE_VERSION)) store.backupOnce('backup-pre-v3');
+    world = upgradeWorld(world);
+    for (const raw of dedupePlots(raws)) {
+      const p = migrateProfile(upgradeProfile(raw));
+      this.profiles.set(p.slug, p);
+    }
     this.clock = new Clock(world && world.clock, timeScale);
     this.market = new Market(world && world.market);
     this.orders = new Orders(world && world.orders);
-
-    if (store) {
-      for (const raw of store.loadPlayers()) {
-        const p = migrateProfile(raw);
-        this.profiles.set(p.slug, p);
-      }
-    }
     this.orders.refill(this.clock.time, this._topLevel());
 
     this.round = new CasinoEvents(this);
@@ -314,6 +316,31 @@ export class Room {
     this.broadcast('vehicles', this.publicVehicles());
   }
 
+  // ---------------------------------------------------------- neighbourhoods
+
+  /** You build on your own hood's street; farmers without a hood use the Strip downtown. */
+  lotAllowed(p, lot) {
+    return lot.hood == null ? p.plot < 0 : lot.hood === p.plot;
+  }
+
+  /** Lots this farmer may build on, for the Land Office. */
+  lotIdsFor(p) {
+    return LOTS.filter((l) => this.lotAllowed(p, l)).map((l) => l.id);
+  }
+
+  /**
+   * Where a phone order goes: half the time somewhere in the restaurant's own
+   * neighbourhood, otherwise downtown or (now and then) across the valley.
+   */
+  deliveryDest(p, lot, spots) {
+    const r = rnd();
+    const home = spots.filter((s) => lot.hood != null && s.hood === lot.hood);
+    const town = spots.filter((s) => s.hood == null);
+    const away = spots.filter((s) => s.hood != null && s.hood !== lot.hood);
+    const pool = home.length && r < 0.5 ? home : town.length && r < 0.8 ? town : away.length ? away : spots;
+    return pick(pool);
+  }
+
   // ------------------------------------------------------------ net worth
 
   netWorth(p) {
@@ -375,6 +402,7 @@ export class Room {
       staff: this.staff.staffFor(p),
       restaurants: this.restaurants.summary(p),
       restoSlots: this.restaurants.slots(p),
+      lotIds: this.lotIdsFor(p),
       tills: Math.round(this.restaurants.tills(p)),
       carrying: p.carrying || null,
       staffCap: { farm: this.staff.capAt(p, 'farm'), restaurant: this.staff.capAt(p, 'restaurant') },
@@ -549,7 +577,7 @@ export class Room {
     const [x, y, z] = d.p;
     if (![x, y, z].every(Number.isFinite)) return;
     p.pos[0] = clamp(x, BOUNDS.minX, BOUNDS.maxX);
-    p.pos[1] = clamp(y, -2, 40);
+    p.pos[1] = clamp(y, -10, 120);
     p.pos[2] = clamp(z, BOUNDS.minZ, BOUNDS.maxZ);
     if (Number.isFinite(d.y)) p.yaw = d.y;
     p.anim = d.a | 0;
@@ -1498,6 +1526,26 @@ export class Room {
     for (const p of this.profiles.values()) this.saveProfile(p);
     this.store.lastSaveAt = Date.now();
   }
+}
+
+/**
+ * Two farmers can never share a farm. A save folder that says otherwise (a
+ * copied file, a hand edit) keeps the older farmer on it; the newer one gets
+ * the first free farm, or none.
+ */
+function dedupePlots(raws) {
+  const list = [...raws].sort((a, b) => (a.created || 0) - (b.created || 0));
+  const used = new Set();
+  for (const r of list) {
+    const ok = Number.isInteger(r.plot) && r.plot >= 0 && r.plot < PLOTS.length;
+    if (ok && !used.has(r.plot)) { used.add(r.plot); continue; }
+    if (!ok && r.plot !== -1 && r.plot != null) console.warn(`[save] ${r.name} had farm ${r.plot}, which does not exist`);
+    if (ok) console.warn(`[save] ${r.name} shared farm ${r.plot} with someone else; moving them`);
+    const free = PLOTS.find((q) => !used.has(q.index));
+    r.plot = ok || r.plot >= 0 ? (free ? free.index : -1) : -1;
+    if (r.plot >= 0) used.add(r.plot);
+  }
+  return list;
 }
 
 function labelFor(game) {

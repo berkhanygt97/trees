@@ -6,8 +6,18 @@
 // doors at z = +40, facing the town.
 
 import { STATIONS as CASINO_STATIONS, ROOM } from './config.js';
+import {
+  HOODS, HOOD_LOTS, HOOD_HOUSES, HQS, HOOD_STREETS, HOOD_CONNECTORS, hoodPlotOrigin, hoodSpawn, hoodAt,
+} from './hoods.js';
+import { ALL_ROADS } from './roads.js';
+import { configureTerrain, terrainHeight } from './terrain.js';
 
-export const BOUNDS = { minX: -265, maxX: 265, minZ: -250, maxZ: 250 };
+export { HOODS, HOOD_LOTS, HOOD_HOUSES, HQS, hoodSpawn, hoodAt };
+
+// 3.0: the valley grew. Downtown is where it always was, in the middle; the
+// six neighbourhoods sit out to the west and east on a ring of avenues.
+export const BOUNDS = { minX: -700, maxX: 700, minZ: -470, maxZ: 470 };
+export const DOWNTOWN = { x0: -290, x1: 290, z0: -250, z1: 250 };
 
 // --------------------------------------------------------------- casino
 
@@ -45,13 +55,7 @@ export const insideCasino = (x, z) =>
 
 // Flat rectangles drawn on the ground: { x0, x1, z0, z1, kind }.
 export const PLAZA = { x0: -62, x1: 62, z0: 41, z1: 68 };
-export const ROADS = [
-  { x0: -6, x1: 6, z0: 41, z1: 222, kind: 'street' },           // main street
-  { x0: -265, x1: 265, z0: 212, z1: 222, kind: 'road' },        // farm road
-  { x0: -60, x1: -50, z0: -104, z1: 68, kind: 'road' },         // west loop to the track
-  { x0: 50, x1: 60, z0: -104, z1: 68, kind: 'road' },           // east loop to the track
-  { x0: 62, x1: 200, z0: 49, z1: 59, kind: 'road' },            // Sunset Strip
-];
+export const ROADS = ALL_ROADS;
 
 // ------------------------------------------------------------------ town
 
@@ -92,10 +96,12 @@ export const ORDERS_BOARD = { pos: [-24, 0, 56], yaw: Math.PI / 2 };
 
 // ----------------------------------------------------------------- plots
 
-// Six farms, three either side of the main street, all with their gate on the
-// farm road. Only 3–4 people play, so there is room for new names to turn up.
+// Six farms, one in each neighbourhood, each with its gate on the hood's
+// street. Only 4-5 people play, so there is room for new names to turn up.
+// (Before 3.0 the six farms stood side by side on the farm road downtown;
+// server/legacy/map-v2.js remembers where, for moving old saves.)
 export const PLOT_SIZE = 70;
-export const PLOTS = [-110, -185, -260, 40, 115, 190].map((x0, index) => ({ index, x0, z0: 140 }));
+export const PLOTS = HOODS.map((h) => ({ index: h.index, hood: h.index, ...hoodPlotOrigin(h) }));
 
 export const TILE = 2;
 // The field grows north-east from the corner nearest the gate.
@@ -301,9 +307,9 @@ export const RAMPS = [
   { x: TRACK.cx, z: TRACK.cz, dir: Math.PI / 2, len: 10, width: 8, h: 3.2 },
 ];
 
-/** Height of the ground under (x, z). Flat everywhere except the ramps. */
+/** Height of the ground under (x, z): the land (flat wherever anything is built) plus the ramps. */
 export function groundHeight(x, z) {
-  let h = 0;
+  let h = terrainHeight(x, z);
   for (const r of RAMPS) {
     const dx = x - r.x;
     const dz = z - r.z;
@@ -351,7 +357,9 @@ export const LOT_SIZES = {
 };
 export const LOT_LEVEL = 4;                                          // farm level needed to buy one
 
-export const LOTS = [
+// The Strip's eight lots stay downtown, for farmers without a neighbourhood.
+// Everyone else builds on the five lots of their own hood's street.
+export const STRIP_LOTS = [
   // North side: front edge on the boulevard's north kerb, running back towards the casino.
   { id: 1, side: 'north', size: 'small',  x0: 70,  x1: 88,  z0: 22, z1: 45 },
   { id: 2, side: 'north', size: 'medium', x0: 92,  x1: 116, z0: 22, z1: 45 },
@@ -362,7 +370,9 @@ export const LOTS = [
   { id: 6, side: 'south', size: 'small',  x0: 98,  x1: 116, z0: 63, z1: 86 },
   { id: 7, side: 'south', size: 'large',  x0: 120, x1: 152, z0: 63, z1: 86 },
   { id: 8, side: 'south', size: 'small',  x0: 156, x1: 174, z0: 63, z1: 86 },
-].map((l) => ({ ...l, ...LOT_SIZES[l.size], w: l.x1 - l.x0, d: l.z1 - l.z0 }));
+].map((l) => ({ ...l, hood: null, label: `Strip ${l.id}` }));
+export const LOTS = [...STRIP_LOTS, ...HOOD_LOTS]
+  .map((l) => ({ ...l, ...LOT_SIZES[l.size], w: l.x1 - l.x0, d: l.z1 - l.z0 }));
 export const LOT_BY_ID = new Map(LOTS.map((l) => [l.id, l]));
 
 /**
@@ -450,16 +460,19 @@ export const COTTAGES = [
   [-230, 238], [-165, 238], [-100, 238], [-30, 238], [30, 238], [95, 238], [160, 238], [228, 238],
 ].map(([x, z], i) => ({ id: i + 1, x, z }));
 
+/** Every door a delivery can go to. `hood` says which neighbourhood it is in (null downtown). */
 export function deliverySpots() {
   const out = [];
-  COTTAGES.forEach((c, i) => out.push({ id: `c${c.id}`, label: `Cottage ${i + 1} on Farm Road`, pos: [c.x, 0, c.z - 5] }));
+  COTTAGES.forEach((c, i) => out.push({ id: `c${c.id}`, hood: null, label: `Cottage ${i + 1} on Farm Road`, pos: [c.x, 0, c.z - 5] }));
   PLOTS.forEach((plot) => {
     const s = plotSpawn(plot);
-    out.push({ id: `g${plot.index}`, label: `Farm ${plot.index + 1}'s gate`, pos: [s.pos[0], 0, s.pos[2] + 2] });
+    out.push({ id: `g${plot.index}`, hood: plot.index, label: `the ${HOODS[plot.index].short} farm gate`, pos: [s.pos[0], 0, s.pos[2] - 2] });
   });
-  out.push({ id: 'casino', label: 'the Casino door', pos: [0, 0, 46] });
-  out.push({ id: 'track', label: 'the race track grandstand', pos: [TRACK.cx + TRACK.half + 20, 0, TRACK.cz] });
-  for (const shop of SHOPS) out.push({ id: `s-${shop.id}`, label: shop.name, pos: shopCounter(shop) });
+  out.push({ id: 'casino', hood: null, label: 'the Casino door', pos: [0, 0, 46] });
+  out.push({ id: 'track', hood: null, label: 'the race track grandstand', pos: [TRACK.cx + TRACK.half + 20, 0, TRACK.cz] });
+  for (const shop of SHOPS) out.push({ id: `s-${shop.id}`, hood: null, label: shop.name, pos: shopCounter(shop) });
+  for (const h of HOOD_HOUSES) out.push({ id: h.id, hood: h.hood, label: h.label, pos: h.door });
+  for (const q of HQS) out.push({ id: `hq${q.hood}`, hood: q.hood, label: `the ${HOODS[q.hood].short} clubhouse`, pos: q.door });
   return out;
 }
 
@@ -468,13 +481,28 @@ export const STATION_BY_ID = new Map(ALL_STATIONS.map((s) => [s.id, s]));
 
 // ------------------------------------------------------------- colliders
 
+// Every box has a height `h`: players and cars only care about the footprint,
+// but bullets fly over a fence and not through a wall.
 export const STATIC_BOXES = [
-  ...casinoBoxes(),
-  ...SHOPS.flatMap(shopBoxes),
-  ...PLOTS.flatMap(fenceBoxes),
+  ...casinoBoxes().map((b) => ({ ...b, h: CASINO.WALL_H })),
+  ...SHOPS.flatMap((sh) => shopBoxes(sh).map((b) => ({ ...b, h: sh.id === 'cardealer' ? 7 : 6 }))),
+  ...PLOTS.flatMap(fenceBoxes).map((b) => ({ ...b, h: 1.3 })),
   // The orders board's legs.
-  { x0: ORDERS_BOARD.pos[0] - 0.4, x1: ORDERS_BOARD.pos[0] + 0.4, z0: ORDERS_BOARD.pos[2] - 2.2, z1: ORDERS_BOARD.pos[2] + 2.2 },
+  { x0: ORDERS_BOARD.pos[0] - 0.4, x1: ORDERS_BOARD.pos[0] + 0.4, z0: ORDERS_BOARD.pos[2] - 2.2, z1: ORDERS_BOARD.pos[2] + 2.2, h: 3.4 },
+  // The neighbourhoods: every gang's clubhouse and the houses along each street.
+  ...HQS.map((q) => ({ ...q.building, h: 8 })),
+  ...HOOD_HOUSES.map((h) => ({ ...h.box, h: 3.2 })),
 ];
+
+// Where the ground is flat: everything built, every road, the track. The
+// hills roll in between.
+export const FLAT_ZONES = [
+  DOWNTOWN,
+  ...HOODS.map((h) => ({ x0: h.x0, x1: h.x1, z0: h.z0, z1: h.z1 })),
+  ...ROADS,
+  ...HOOD_CONNECTORS,
+];
+configureTerrain(FLAT_ZONES, BOUNDS);
 
 /** Footprints of farm buildings, which only exist once they are bought. */
 export function padBox(plot, pad, shrink = 0, layout) {

@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import {
   BOUNDS, PLAZA, ROADS, SHOPS, ORDERS_BOARD, PLOTS, PLOT_SIZE, GATE, TRACK, RAMPS, CASINO, COTTAGES, STRIP,
-  shopCounter,
+  HOODS, LOTS, shopCounter,
 } from '/shared/map.js';
+import { RING } from '/shared/roads.js';
 import { VEHICLES } from '/shared/catalog.js';
 import {
   grassTexture, asphaltTexture, pavingTexture, dirtTexture, plankTexture, brickTexture,
@@ -247,12 +248,13 @@ export class Outdoor {
     // Dusty, scrubby hills: some green, some baked ochre.
     const hillMats = [0x3d6b35, 0x5f6e3a, 0x8a7a4a, 0x6b5a3a].map((c) => phong(c, { flatShading: true }));
     const rnd = seeded(7);
-    for (let i = 0; i < 26; i++) {
-      const a = (i / 26) * Math.PI * 2;
-      const r = 420 + rnd() * 60;
-      const h = 40 + rnd() * 70;
-      const hill = new THREE.Mesh(new THREE.ConeGeometry(90 + rnd() * 60, h, 7), hillMats[Math.floor(rnd() * hillMats.length)]);
-      hill.position.set(Math.cos(a) * r, h / 2 - 4, Math.sin(a) * r);
+    for (let i = 0; i < 40; i++) {
+      const a = (i / 40) * Math.PI * 2;
+      const rx = BOUNDS.maxX + 170 + rnd() * 80;
+      const rz = BOUNDS.maxZ + 170 + rnd() * 80;
+      const h = 60 + rnd() * 110;
+      const hill = new THREE.Mesh(new THREE.ConeGeometry(120 + rnd() * 90, h, 7), hillMats[Math.floor(rnd() * hillMats.length)]);
+      hill.position.set(Math.cos(a) * rx, h / 2 - 4, Math.sin(a) * rz);
       this.group.add(hill);
     }
   }
@@ -432,7 +434,7 @@ export class Outdoor {
       this.obstacles.push({ x: deepX + inward * -1, z: cz, r: 1.4 });
     } else if (s.id === 'landoffice') {
       box(g, 2.4, 0.9, 1.2, deepX, 0.45, cz, phong(0x5b3a1e));
-      const map = new THREE.Mesh(new THREE.PlaneGeometry(6, 3.5), basic(0xffffff, { map: boardTexture('THE VALLEY', '#c471e8', 'six farms · one casino') }));
+      const map = new THREE.Mesh(new THREE.PlaneGeometry(6, 3.5), basic(0xffffff, { map: boardTexture('THE VALLEY', '#c471e8', 'six neighbourhoods · one casino') }));
       map.position.set(s.open === 'east' ? s.x0 + 0.62 : s.x1 - 0.62, 3.2, cz);
       map.rotation.y = s.open === 'east' ? Math.PI / 2 : -Math.PI / 2;
       g.add(map);
@@ -488,6 +490,12 @@ export class Outdoor {
     for (const [x, z] of [[-40, 44], [40, 44], [-40, 66], [40, 66], [-20, 66], [20, 66]]) spots.push([x, z]);
     for (let x = -250; x <= 250; x += 40) if (Math.abs(x) > 10) spots.push([x, 223.5]);
     for (let z = -90; z <= 60; z += 30) spots.push([-61.5, z], [61.5, z]);
+    // The ring of avenues round downtown.
+    for (const r of RING) {
+      const alongZ = r.z1 - r.z0 > r.x1 - r.x0;
+      if (alongZ) for (let z = r.z0 + 20; z < r.z1; z += 50) spots.push([r.x0 - 1.5, z], [r.x1 + 1.5, z + 25]);
+      else for (let x = r.x0 + 20; x < r.x1; x += 50) spots.push([x, r.z0 - 1.5], [x + 25, r.z1 + 1.5]);
+    }
 
     const poleMat = phong(0x2b2b30, { shininess: 40 });
     const pole = new THREE.CylinderGeometry(0.1, 0.14, 5.2, 8);
@@ -693,31 +701,31 @@ export class Outdoor {
       { x0: -66, x1: 66, z0: 38, z1: 228 },
       { x0: -66, x1: -44, z0: -110, z1: 70 },
       { x0: 44, x1: 66, z0: -110, z1: 70 },
-      { x0: -270, x1: 270, z0: 206, z1: 228 },
       { x0: TRACK.cx - TRACK.half - TRACK.r - 16, x1: TRACK.cx + TRACK.half + TRACK.r + 16, z0: TRACK.cz - TRACK.r - 16, z1: TRACK.cz + TRACK.r + 24 },
       ...PLOTS.map((p) => ({ x0: p.x0 - 4, x1: p.x0 + PLOT_SIZE + 4, z0: p.z0 - 4, z1: p.z0 + PLOT_SIZE + 6 })),
-      // The Sunset Strip and the cottages along the farm road (2.2).
-      { x0: 58, x1: 206, z0: 16, z1: 92 },
+      // Every road with its verges, every restaurant lot, and the cottages.
+      ...ROADS.map((r) => ({ x0: r.x0 - 5, x1: r.x1 + 5, z0: r.z0 - 5, z1: r.z1 + 5 })),
+      ...LOTS.map((l) => ({ x0: l.x0 - 3, x1: l.x1 + 3, z0: l.z0 - 3, z1: l.z1 + 3 })),
       ...COTTAGES.map((c) => ({ x0: c.x - 9, x1: c.x + 9, z0: c.z - 12, z1: c.z + 8 })),
+      // The built-up half of every neighbourhood (the woods behind the farms stay wild).
+      ...HOODS.map((h) => ({ x0: h.x0 - 2, x1: h.x1 + 2, z0: h.z0 + 44, z1: h.z1 + 2 })),
     ];
     const blocked = (x, z) => keepOut.some((k) => x > k.x0 && x < k.x1 && z > k.z0 && z < k.z1);
     const spots = [];
     let guard = 0;
-    while (spots.length < 520 && guard++ < 20000) {
+    while (spots.length < 1500 && guard++ < 40000) {
       const x = BOUNDS.minX + rnd() * (BOUNDS.maxX - BOUNDS.minX);
       const z = BOUNDS.minZ + rnd() * (BOUNDS.maxZ - BOUNDS.minZ);
       if (blocked(x, z)) continue;
       // Denser towards the edge of the valley.
-      const edge = Math.max(Math.abs(x) / BOUNDS.maxX, Math.abs(z) / BOUNDS.maxZ);
-      if (rnd() > 0.25 + edge * 0.9) continue;
+      const toEdge = Math.max(Math.abs(x) / BOUNDS.maxX, Math.abs(z) / BOUNDS.maxZ);
+      if (rnd() > 0.25 + toEdge * 0.9) continue;
       spots.push([x, z, 0.8 + rnd() * 0.8, rnd()]);
     }
     // A thick wall of trees just outside the bounds hides the edge of the world.
-    for (let a = 0; a < Math.PI * 2; a += 0.012) {
-      const x = Math.cos(a) * 330;
-      const z = Math.sin(a) * 320;
-      spots.push([x, z, 1.4 + rnd() * 0.8, rnd()]);
-    }
+    const edge = (x, z) => spots.push([x + (rnd() - 0.5) * 8, z + (rnd() - 0.5) * 8, 1.4 + rnd() * 0.8, rnd()]);
+    for (let x = BOUNDS.minX - 12; x <= BOUNDS.maxX + 12; x += 7) { edge(x, BOUNDS.minZ - 12); edge(x, BOUNDS.maxZ + 12); }
+    for (let z = BOUNDS.minZ - 12; z <= BOUNDS.maxZ + 12; z += 7) { edge(BOUNDS.minX - 12, z); edge(BOUNDS.maxX + 12, z); }
 
     const trunkGeo = new THREE.CylinderGeometry(0.2, 0.32, 2.6, 6);
     const leafMat = phong(0xffffff, { map: leafTexture(), alphaTest: 0.45, side: THREE.DoubleSide });
@@ -764,7 +772,7 @@ export class Outdoor {
     const geo = crossCards(1.1, 0.7, 2);
     geo.translate(0, 0.33, 0);
     const mat = phong(0xffffff, { map: grassTuftTexture(), alphaTest: 0.4, side: THREE.DoubleSide });
-    const N = 6000;
+    const N = 14000;
     const tufts = new THREE.InstancedMesh(geo, mat, N);
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
@@ -772,7 +780,7 @@ export class Outdoor {
     const c = new THREE.Color();
     let n = 0;
     let guard = 0;
-    while (n < N && guard++ < 60000) {
+    while (n < N && guard++ < 120000) {
       const x = BOUNDS.minX + rnd() * (BOUNDS.maxX - BOUNDS.minX);
       const z = BOUNDS.minZ + rnd() * (BOUNDS.maxZ - BOUNDS.minZ);
       if (blocked(x, z)) continue;

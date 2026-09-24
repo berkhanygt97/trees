@@ -212,6 +212,7 @@ net.on('welcome', (d) => {
   Object.assign(gameStates, d.games);
   hud.showSeeds(me.plot >= 0);
   world.farms.setPlots(d.plots);
+  world.hoods.setOwners(d.plots);
   fleet.set(d.vehicles, me.id);
 
   controls.pos.set(d.spawn.pos[0], d.spawn.pos[1] || 0, d.spawn.pos[2]);
@@ -279,6 +280,7 @@ net.on('orders', (o) => {
 net.on('plot', (p) => {
   if (!world || !p) return;
   world.farms.setPlot(p);
+  world.hoods.setOwners([p]);
   if (activePanel && activePanel.ui.onPlot && p.index === hud.wallet.plot) activePanel.ui.onPlot(p);
 });
 

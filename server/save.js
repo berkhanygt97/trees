@@ -7,9 +7,11 @@
 // .bak, so pulling the plug mid-save costs at most the last 30 seconds.
 import fs from 'node:fs';
 import path from 'node:path';
+import { SAVE_VERSION } from './migrate.js';
 
-// 2: farm layouts, workers, restaurants (2.2). Older saves are migrated on load.
-export const SAVE_VERSION = 2;
+// 1: up to 2.1. 2: farm layouts, workers, restaurants (2.2). 3: neighbourhoods
+// (3.0). Older saves are brought up to date on load; see migrate.js.
+export { SAVE_VERSION };
 
 export function slugOf(name) {
   const base = String(name).toLowerCase().normalize('NFKD')
@@ -78,6 +80,32 @@ export class SaveStore {
 
   savePlayer(data) {
     return this._write(path.join(this.playersDir, `${data.slug}.json`), { version: SAVE_VERSION, ...data });
+  }
+
+  /**
+   * Copies the whole save folder aside before an update changes it, once.
+   * An existing backup is never overwritten. Returns the backup folder, or null.
+   */
+  backupOnce(name) {
+    const dest = path.join(this.dir, name);
+    if (fs.existsSync(dest)) return null;
+    try {
+      fs.mkdirSync(path.join(dest, 'players'), { recursive: true });
+      const world = path.join(this.dir, 'world.json');
+      if (fs.existsSync(world)) fs.copyFileSync(world, path.join(dest, 'world.json'));
+      for (const f of fs.readdirSync(this.playersDir)) {
+        if (f.endsWith('.json')) fs.copyFileSync(path.join(this.playersDir, f), path.join(dest, 'players', f));
+      }
+      fs.writeFileSync(path.join(dest, 'README.txt'),
+        'Your saves exactly as they were before this update moved the farms into\n'
+        + 'the neighbourhoods. To go back: close the host, copy world.json and the\n'
+        + 'players folder from here over the ones in the folder above.\n');
+      console.log(`[save] backed up the old saves to ${dest}`);
+      return dest;
+    } catch (err) {
+      console.warn(`[save] could not back up the old saves: ${err.message}`);
+      return null;
+    }
   }
 
   list() {
