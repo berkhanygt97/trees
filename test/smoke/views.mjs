@@ -20,6 +20,8 @@ export const VIEWS = [
   { name: 'hood', pos: [street.x0 + 70, 0, midZ], yaw: -Math.PI / 2, pitch: 0.02 },
   { name: 'clubhouse', pos: [HQS[0].door[0] + 10, 0, HQS[0].door[2] + 14], yaw: 0.4, pitch: 0.08 },
   { name: 'avenue', pos: [-336, 0, 100], yaw: 0, pitch: 0 },
+  { name: 'hills', client: (c) => { c.controls.pos.y = 40; }, pos: [-200, 0, -300], yaw: 2.4, pitch: -0.12 },
+  { name: 'mountains', pos: [600, 0, 440], yaw: -0.6, pitch: 0.05 },
   { name: 'mainstreet', pos: [0, 0, 200], yaw: 0, pitch: 0 },
   { name: 'plaza', pos: [20, 0, 90], yaw: 0.35, pitch: 0.05 },
   { name: 'strip', pos: [70, 0, 54], yaw: -Math.PI / 2, pitch: 0 },

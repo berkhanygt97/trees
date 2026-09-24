@@ -2,8 +2,25 @@ import * as THREE from 'three';
 
 const cache = new Map();
 
+// Seeded randomness: every texture comes out exactly the same on every
+// machine (and every load), so all players see the same bricks and grass.
+let seed = 1;
+function rand() {
+  seed = (seed + 0x6d2b79f5) >>> 0;
+  let t = seed;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+function seedFrom(key) {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+  seed = h >>> 0;
+}
+
 function make(key, w, h, draw, { repeat = [1, 1], srgb = true } = {}) {
   if (cache.has(key)) return cache.get(key);
+  seedFrom(key);
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
   draw(cv.getContext('2d'), w, h);
@@ -22,8 +39,8 @@ export function carpetTexture() {
     g.fillStyle = '#4a0f22';
     g.fillRect(0, 0, w, h);
     for (let i = 0; i < 2600; i++) {
-      g.fillStyle = `rgba(255,255,255,${Math.random() * 0.05})`;
-      g.fillRect(Math.random() * w, Math.random() * h, 2, 2);
+      g.fillStyle = `rgba(255,255,255,${rand() * 0.05})`;
+      g.fillRect(rand() * w, rand() * h, 2, 2);
     }
     const suits = ['♠', '♥', '♦', '♣'];
     g.textAlign = 'center';
@@ -69,8 +86,8 @@ export function feltTexture(color = '#0f5c36') {
     g.fillStyle = color;
     g.fillRect(0, 0, w, h);
     for (let i = 0; i < 3000; i++) {
-      g.fillStyle = `rgba(0,0,0,${Math.random() * 0.12})`;
-      g.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5);
+      g.fillStyle = `rgba(0,0,0,${rand() * 0.12})`;
+      g.fillRect(rand() * w, rand() * h, 1.5, 1.5);
     }
   }, { repeat: [3, 3] });
 }
@@ -80,8 +97,8 @@ export function woodTexture() {
     g.fillStyle = '#4b2a17';
     g.fillRect(0, 0, w, h);
     for (let y = 0; y < h; y += 3) {
-      g.fillStyle = `rgba(0,0,0,${0.05 + Math.random() * 0.12})`;
-      g.fillRect(0, y, w, 1 + Math.random() * 2);
+      g.fillStyle = `rgba(0,0,0,${0.05 + rand() * 0.12})`;
+      g.fillRect(0, y, w, 1 + rand() * 2);
     }
   }, { repeat: [2, 2] });
 }
@@ -191,8 +208,8 @@ export function liveCanvas(w, h) {
 
 function speckle(g, w, h, n, colors, size = 2) {
   for (let i = 0; i < n; i++) {
-    g.fillStyle = colors[(Math.random() * colors.length) | 0];
-    g.fillRect(Math.random() * w, Math.random() * h, size, size);
+    g.fillStyle = colors[(rand() * colors.length) | 0];
+    g.fillRect(rand() * w, rand() * h, size, size);
   }
 }
 
@@ -205,11 +222,66 @@ export function grassTexture() {
   }, { repeat: [140, 140] });
 }
 
-export function asphaltTexture() {
-  return make('asphalt', 128, 128, (g, w, h) => {
-    g.fillStyle = '#3a3a40';
+/**
+ * Neutral ground for the terrain: light speckle and blades of grass, with no
+ * colour of its own. The terrain's vertex colours paint it green, dry, dusty
+ * or rocky, so one texture covers the whole valley.
+ */
+export function terrainTexture() {
+  return make('terrain', 256, 256, (g, w, h) => {
+    g.fillStyle = '#c8c8c8';
     g.fillRect(0, 0, w, h);
-    speckle(g, w, h, 2400, ['#44444b', '#2f2f35', '#505058'], 1.5);
+    speckle(g, w, h, 6000, ['#d6d6d6', '#b4b4b4', '#e2e2e2', '#a8a8a8', '#cfcfcf'], 2);
+    // Short strokes, like blades and twigs.
+    g.lineWidth = 1;
+    for (let i = 0; i < 900; i++) {
+      const x = rand() * w;
+      const y = rand() * h;
+      g.strokeStyle = rand() < 0.5 ? 'rgba(255,255,255,0.35)' : 'rgba(60,60,60,0.3)';
+      g.beginPath();
+      g.moveTo(x, y);
+      g.lineTo(x + (rand() - 0.5) * 3, y - 2 - rand() * 4);
+      g.stroke();
+    }
+    speckle(g, w, h, 120, ['#f4f0d0', '#ffffff'], 2);
+  });
+}
+
+export function asphaltTexture() {
+  return make('asphalt2', 256, 256, (g, w, h) => {
+    g.fillStyle = '#3c3c42';
+    g.fillRect(0, 0, w, h);
+    // Patched-over repairs, a shade darker or lighter.
+    for (let i = 0; i < 5; i++) {
+      g.fillStyle = rand() < 0.5 ? 'rgba(20,20,24,0.35)' : 'rgba(90,88,92,0.25)';
+      const pw = 20 + rand() * 60;
+      const ph = 14 + rand() * 40;
+      g.fillRect(rand() * (w - pw), rand() * (h - ph), pw, ph);
+    }
+    speckle(g, w, h, 9000, ['#46464d', '#303036', '#55555d', '#2a2a2f'], 1.5);
+    // Hairline cracks.
+    g.strokeStyle = 'rgba(16,16,18,0.7)';
+    g.lineWidth = 1;
+    for (let i = 0; i < 7; i++) {
+      let x = rand() * w;
+      let y = rand() * h;
+      g.beginPath();
+      g.moveTo(x, y);
+      for (let k = 0; k < 8; k++) { x += (rand() - 0.5) * 22; y += (rand() - 0.5) * 22; g.lineTo(x, y); }
+      g.stroke();
+    }
+    // A few oil stains.
+    for (let i = 0; i < 4; i++) {
+      const gr = g.createRadialGradient(0, 0, 0, 0, 0, 12);
+      gr.addColorStop(0, 'rgba(10,10,14,0.45)');
+      gr.addColorStop(1, 'rgba(10,10,14,0)');
+      g.save();
+      g.translate(rand() * w, rand() * h);
+      g.scale(1, 0.6 + rand() * 0.6);
+      g.fillStyle = gr;
+      g.fillRect(-12, -12, 24, 24);
+      g.restore();
+    }
   }, { repeat: [1, 1] });
 }
 
@@ -257,7 +329,7 @@ export function plankTexture(base = '#9b6b3d') {
       g.fillStyle = 'rgba(0,0,0,0.25)';
       g.fillRect(x, 0, 2, h);
       for (let y = 0; y < h; y += 3) {
-        g.fillStyle = `rgba(0,0,0,${Math.random() * 0.08})`;
+        g.fillStyle = `rgba(0,0,0,${rand() * 0.08})`;
         g.fillRect(x + 2, y, 14, 1);
       }
     }
@@ -272,7 +344,7 @@ export function brickTexture(base = '#9c4a36') {
       const off = row % 2 ? 16 : 0;
       for (let x = -16; x < w; x += 32) {
         g.fillStyle = base;
-        g.globalAlpha = 0.85 + Math.random() * 0.15;
+        g.globalAlpha = 0.85 + rand() * 0.15;
         g.fillRect(x + off + 1, row * 16 + 1, 30, 14);
       }
     }
@@ -340,9 +412,9 @@ function noiseFill(g, w, h, base, amount = 0.12, n = 2400, size = 2) {
   g.fillStyle = base;
   g.fillRect(0, 0, w, h);
   for (let i = 0; i < n; i++) {
-    const v = Math.random();
-    g.fillStyle = v < 0.5 ? `rgba(0,0,0,${Math.random() * amount})` : `rgba(255,255,255,${Math.random() * amount * 0.7})`;
-    g.fillRect(Math.random() * w, Math.random() * h, size, size);
+    const v = rand();
+    g.fillStyle = v < 0.5 ? `rgba(0,0,0,${rand() * amount})` : `rgba(255,255,255,${rand() * amount * 0.7})`;
+    g.fillRect(rand() * w, rand() * h, size, size);
   }
 }
 
@@ -359,8 +431,8 @@ export function plaidTexture(color = '#b83a2c') {
     for (let x = 20; x < w; x += 32) { g.fillRect(x, 0, 2, h); g.fillRect(0, x, w, 2); }
     g.globalAlpha = 1;
     for (let i = 0; i < 1500; i++) {
-      g.fillStyle = `rgba(0,0,0,${Math.random() * 0.1})`;
-      g.fillRect(Math.random() * w, Math.random() * h, 1, 2);
+      g.fillStyle = `rgba(0,0,0,${rand() * 0.1})`;
+      g.fillRect(rand() * w, rand() * h, 1, 2);
     }
   }, { repeat: [2, 2] });
 }
@@ -371,14 +443,14 @@ export function denimTexture() {
     g.fillRect(0, 0, w, h);
     for (let y = 0; y < h; y += 2) {
       for (let x = (y % 4); x < w; x += 4) {
-        g.fillStyle = `rgba(255,255,255,${0.04 + Math.random() * 0.06})`;
+        g.fillStyle = `rgba(255,255,255,${0.04 + rand() * 0.06})`;
         g.fillRect(x, y, 1, 2);
       }
     }
     // Worn patches and a seam.
     for (let i = 0; i < 6; i++) {
       g.fillStyle = 'rgba(200,220,255,0.08)';
-      g.beginPath(); g.ellipse(Math.random() * w, Math.random() * h, 14, 8, Math.random(), 0, 7); g.fill();
+      g.beginPath(); g.ellipse(rand() * w, rand() * h, 14, 8, rand(), 0, 7); g.fill();
     }
     g.fillStyle = 'rgba(230,180,90,0.5)';
     g.fillRect(w - 6, 0, 2, h);
@@ -390,11 +462,11 @@ export function strawTexture() {
     g.fillStyle = '#d8b560';
     g.fillRect(0, 0, w, h);
     for (let i = 0; i < 900; i++) {
-      const x = Math.random() * w;
-      const y = Math.random() * h;
-      g.strokeStyle = Math.random() < 0.5 ? 'rgba(120,80,20,0.35)' : 'rgba(255,240,180,0.4)';
+      const x = rand() * w;
+      const y = rand() * h;
+      g.strokeStyle = rand() < 0.5 ? 'rgba(120,80,20,0.35)' : 'rgba(255,240,180,0.4)';
       g.lineWidth = 1;
-      g.beginPath(); g.moveTo(x, y); g.lineTo(x + 6 + Math.random() * 8, y + (Math.random() - 0.5) * 3); g.stroke();
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + 6 + rand() * 8, y + (rand() - 0.5) * 3); g.stroke();
     }
   }, { repeat: [2, 1] });
 }
@@ -404,7 +476,7 @@ export function skinTexture(tone = '#d9a27a') {
     noiseFill(g, w, h, tone, 0.06, 500, 2);
     for (let i = 0; i < 20; i++) {
       g.fillStyle = 'rgba(150,60,40,0.06)';
-      g.beginPath(); g.arc(Math.random() * w, Math.random() * h, 3 + Math.random() * 5, 0, 7); g.fill();
+      g.beginPath(); g.arc(rand() * w, rand() * h, 3 + rand() * 5, 0, 7); g.fill();
     }
   }, { repeat: [1, 1] });
 }
@@ -463,9 +535,9 @@ export function hideTexture() {
     noiseFill(g, w, h, '#4a3326', 0.18, 2600, 2);
     g.strokeStyle = 'rgba(20,12,8,0.5)';
     for (let i = 0; i < 260; i++) {
-      const x = Math.random() * w;
-      const y = Math.random() * h;
-      g.beginPath(); g.moveTo(x, y); g.lineTo(x + (Math.random() - 0.5) * 3, y + 5 + Math.random() * 5); g.stroke();
+      const x = rand() * w;
+      const y = rand() * h;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + (rand() - 0.5) * 3, y + 5 + rand() * 5); g.stroke();
     }
   }, { repeat: [2, 1] });
 }
@@ -474,23 +546,23 @@ function leafCard(g, w, h, pine) {
   g.clearRect(0, 0, w, h);
   const blobs = pine ? 90 : 160;
   for (let i = 0; i < blobs; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const r = Math.sqrt(Math.random());
+    const a = rand() * Math.PI * 2;
+    const r = Math.sqrt(rand());
     let x;
     let y;
     if (pine) {
       // A tall triangle of needles.
-      y = Math.random() * h * 0.95 + h * 0.03;
+      y = rand() * h * 0.95 + h * 0.03;
       const half = (y / h) * w * 0.45;
-      x = w / 2 + (Math.random() - 0.5) * 2 * half;
+      x = w / 2 + (rand() - 0.5) * 2 * half;
     } else {
       x = w / 2 + Math.cos(a) * r * w * 0.44;
       y = h / 2 + Math.sin(a) * r * h * 0.42;
     }
-    const shade = 30 + Math.random() * 45;
-    g.fillStyle = pine ? `hsl(${130 + Math.random() * 20}, 40%, ${shade * 0.6}%)` : `hsl(${85 + Math.random() * 40}, 45%, ${shade * 0.75}%)`;
+    const shade = 30 + rand() * 45;
+    g.fillStyle = pine ? `hsl(${130 + rand() * 20}, 40%, ${shade * 0.6}%)` : `hsl(${85 + rand() * 40}, 45%, ${shade * 0.75}%)`;
     g.beginPath();
-    g.ellipse(x, y, pine ? 7 : 9 + Math.random() * 6, pine ? 4 : 6 + Math.random() * 5, Math.random() * 3, 0, 7);
+    g.ellipse(x, y, pine ? 7 : 9 + rand() * 6, pine ? 4 : 6 + rand() * 5, rand() * 3, 0, 7);
     g.fill();
   }
 }
@@ -512,11 +584,11 @@ export function grassTuftTexture() {
   const t = make('tuft', 64, 64, (g, w, h) => {
     g.clearRect(0, 0, w, h);
     for (let i = 0; i < 26; i++) {
-      const x = 6 + Math.random() * (w - 12);
-      const tall = 20 + Math.random() * 40;
-      g.strokeStyle = `hsl(${80 + Math.random() * 30}, 45%, ${28 + Math.random() * 22}%)`;
+      const x = 6 + rand() * (w - 12);
+      const tall = 20 + rand() * 40;
+      g.strokeStyle = `hsl(${80 + rand() * 30}, 45%, ${28 + rand() * 22}%)`;
       g.lineWidth = 2;
-      g.beginPath(); g.moveTo(x, h); g.quadraticCurveTo(x + (Math.random() - 0.5) * 8, h - tall / 2, x + (Math.random() - 0.5) * 14, h - tall); g.stroke();
+      g.beginPath(); g.moveTo(x, h); g.quadraticCurveTo(x + (rand() - 0.5) * 8, h - tall / 2, x + (rand() - 0.5) * 14, h - tall); g.stroke();
     }
   });
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
@@ -527,12 +599,12 @@ export function cloudTexture() {
   const t = make('clouds', 512, 512, (g, w, h) => {
     g.clearRect(0, 0, w, h);
     for (let i = 0; i < 70; i++) {
-      const x = Math.random() * w;
-      const y = Math.random() * h;
-      const r = 20 + Math.random() * 60;
+      const x = rand() * w;
+      const y = rand() * h;
+      const r = 20 + rand() * 60;
       for (let k = 0; k < 8; k++) {
-        const gx = x + (Math.random() - 0.5) * r * 2;
-        const gy = y + (Math.random() - 0.5) * r * 0.8;
+        const gx = x + (rand() - 0.5) * r * 2;
+        const gy = y + (rand() - 0.5) * r * 0.8;
         const gr = g.createRadialGradient(gx, gy, 0, gx, gy, r * 0.7);
         gr.addColorStop(0, 'rgba(255,255,255,0.32)');
         gr.addColorStop(1, 'rgba(255,255,255,0)');
@@ -553,7 +625,7 @@ export function roofTileTexture(base = '#8a3a2a') {
       g.fillStyle = 'rgba(0,0,0,0.35)';
       g.fillRect(0, y + 13, w, 3);
       for (let x = (row % 2) * 8; x < w; x += 16) {
-        g.fillStyle = `rgba(${Math.random() < 0.5 ? '0,0,0' : '255,255,255'},${Math.random() * 0.12})`;
+        g.fillStyle = `rgba(${rand() < 0.5 ? '0,0,0' : '255,255,255'},${rand() * 0.12})`;
         g.fillRect(x, y, 15, 13);
         g.fillStyle = 'rgba(0,0,0,0.25)';
         g.fillRect(x + 15, y, 1, 13);
@@ -575,7 +647,7 @@ export function metalTexture(base = '#8a8f96') {
     // Rust streaks.
     for (let i = 0; i < 10; i++) {
       g.fillStyle = 'rgba(140,70,30,0.25)';
-      g.fillRect(Math.random() * w, Math.random() * h * 0.5, 2 + Math.random() * 3, 20 + Math.random() * 60);
+      g.fillRect(rand() * w, rand() * h * 0.5, 2 + rand() * 3, 20 + rand() * 60);
     }
   }, { repeat: [1, 1] });
 }
@@ -605,12 +677,12 @@ export function woodGrainTexture(base = '#6b3f22') {
     g.fillStyle = base;
     g.fillRect(0, 0, w, h);
     for (let y = 0; y < h; y += 1) {
-      g.fillStyle = `rgba(0,0,0,${Math.random() * 0.18})`;
+      g.fillStyle = `rgba(0,0,0,${rand() * 0.18})`;
       g.fillRect(0, y, w, 1);
     }
     for (let i = 0; i < 12; i++) {
       g.strokeStyle = 'rgba(30,15,5,0.3)';
-      g.beginPath(); g.ellipse(Math.random() * w, Math.random() * h, 10, 2, 0, 0, 7); g.stroke();
+      g.beginPath(); g.ellipse(rand() * w, rand() * h, 10, 2, 0, 0, 7); g.stroke();
     }
   }, { repeat: [1, 1] });
 }

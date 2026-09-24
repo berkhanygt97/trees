@@ -59,7 +59,9 @@ export class World {
     // The casino's animated games only need updating when you might see them.
     const cx = ctx.camera.position.x;
     const cz = ctx.camera.position.z;
-    if (Math.abs(cx) < 140 && cz < 140 && cz > -120) this.casino.update(dt, ctx);
+    const near = Math.abs(cx) < 140 && cz < 140 && cz > -120;
+    this.casino.interior.visible = near;
+    if (near) this.casino.update(dt, ctx);
   }
 }
 

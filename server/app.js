@@ -21,15 +21,31 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.png': 'image/png',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.wasm': 'application/wasm',
 };
 
-// three.js ships inside node_modules; serving it from there keeps the game
+// Libraries ship inside node_modules; serving them from there keeps the game
 // fully playable with no internet connection at the party.
 const THREE_PATH = path.join(ROOT, 'node_modules', 'three', 'build', 'three.module.js');
+const VENDOR = {
+  '/vendor/three.module.js': THREE_PATH,
+};
+// Whole folders: three.js add-ons (geometry utilities, skeletons) and the physics engine.
+const VENDOR_DIRS = [
+  ['/vendor/three/addons/', path.join(ROOT, 'node_modules', 'three', 'examples', 'jsm')],
+  ['/vendor/rapier/', path.join(ROOT, 'node_modules', '@dimforge', 'rapier3d-compat')],
+];
+export const VENDOR_FILES = new Set(Object.values(VENDOR));
 
 function resolveFile(urlPath) {
   const clean = decodeURIComponent(urlPath.split('?')[0]);
-  if (clean === '/vendor/three.module.js') return THREE_PATH;
+  if (VENDOR[clean]) return VENDOR[clean];
+  for (const [prefix, dir] of VENDOR_DIRS) {
+    if (!clean.startsWith(prefix)) continue;
+    const full = path.normalize(path.join(dir, clean.slice(prefix.length)));
+    return full.startsWith(dir + path.sep) ? full : null;
+  }
 
   const base = clean.startsWith('/shared/') ? ROOT : path.join(ROOT, 'public');
   const rel = clean === '/' ? '/index.html' : clean;
@@ -82,9 +98,9 @@ export function startCasino(settings = {}) {
       });
       res.end(data);
     } catch {
-      if (file === THREE_PATH) {
+      if (VENDOR_FILES.has(file) || file.includes(`${path.sep}node_modules${path.sep}`)) {
         res.writeHead(500, { 'content-type': 'text/plain' })
-           .end('three.js is missing — run `npm install` in the project folder first.');
+           .end(`${path.basename(file)} is missing — run \`npm install\` in the project folder first.`);
         return;
       }
       res.writeHead(404).end('not found');

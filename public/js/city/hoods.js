@@ -8,6 +8,7 @@ import {
 } from '../textures.js';
 import { makeHalo } from '../neon.js';
 import { buildPalms } from '../palms.js';
+import { batchStatic, live, dynamic } from '../batcher.js';
 
 // The six neighbourhoods: pavements along each street, the gang's clubhouse at
 // the end nearest downtown, a row of houses, a park, the walls the gangs tag,
@@ -50,6 +51,7 @@ export class HoodView {
     this.neon = [];
     for (const h of HOODS) this._hood(h);
     this._lights();
+    this.batch = batchStatic(this.group, { chunk: 128 });
   }
 
   _hood(h) {
@@ -61,9 +63,6 @@ export class HoodView {
     for (const [a, b] of [HOOD_T.walk.n, HOOD_T.walk.s]) {
       const r = { x0: h.x0, x1: h.x1, z0: hz(h, a), z1: hz(h, b) };
       flat(g, r, 0.03, phong(0xffffff, { map: tiled(paving, r.x1 - r.x0, r.z1 - r.z0, 4) }));
-      // A kerb along the road edge.
-      const kz = a === HOOD_T.walk.n[0] ? r.z1 : r.z0;
-      box(g, r.x1 - r.x0, 0.16, 0.3, (r.x0 + r.x1) / 2, 0.08, kz, phong(0xbdb6a8));
     }
 
     // The clubhouse.
@@ -85,7 +84,7 @@ export class HoodView {
     // The sign over the door: the owner's gang, once someone lives here.
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(14, 2.2), basic(0xffffff, { map: boardTexture('CLUBHOUSE', '#8d8378', 'for rent') }));
     sign.position.set(cx, 7.3, b.z1 + 0.25);
-    hq.add(sign);
+    hq.add(dynamic(sign));
     // A yard: cracked concrete in front.
     const yard = { ...q.yard, z0: b.z1, z1: q.yard.z1 };
     flat(g, yard, 0.02, phong(0xffffff, { map: tiled(plasterTexture('#a9a39a'), yard.x1 - yard.x0, yard.z1 - yard.z0, 6) }));
@@ -100,8 +99,8 @@ export class HoodView {
     const face = new THREE.Mesh(new THREE.PlaneGeometry(street.z1 - street.z0 + 7, 2.4), faceMat);
     face.rotation.y = Math.PI / 2;
     face.position.set(0.4, 9.4, (street.z0 + street.z1) / 2);
-    arch.add(face);
-    const back = face.clone();
+    arch.add(dynamic(face));
+    const back = dynamic(face.clone());
     back.rotation.y = -Math.PI / 2;
     back.position.x = -0.4;
     arch.add(back);
@@ -169,7 +168,7 @@ export class HoodView {
     }
     const poleMat = phong(0x2b2b30, { shininess: 40 });
     const poles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.1, 0.14, 5.2, 8), poleMat, spots.length);
-    const headMat = basic(0x6a6a6a);
+    const headMat = live(basic(0x6a6a6a));
     this.lampMats.push(headMat);
     const heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.34, 10, 8), headMat, spots.length);
     const poolMat = basic(0xffffff, { map: glowTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 });

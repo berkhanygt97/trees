@@ -7,8 +7,9 @@
 // sampling, so asking for the ground under your feet is cheap.
 
 export const TERRAIN = {
-  enabled: false,       // switched on once the ground mesh and physics follow it
-  maxHeight: 22,        // the tallest hills, in metres
+  enabled: true,
+  maxHeight: 22,        // the tallest hills inside the valley, in metres
+  mountains: 150,       // the ring of mountains round the edge of the world
   rampIn: 60,           // metres over which the land rises away from anything flat
   cell: 4,              // grid spacing
   pad: 8,               // flat verge kept around every flat zone
@@ -21,8 +22,11 @@ let cols = 0;
 let rows = 0;
 
 /** Called once by map.js with the world's flat areas and extent. */
-export function configureTerrain(flatZones, worldBounds, margin = 300) {
+let world = { minX: -1, maxX: 1, minZ: -1, maxZ: 1 };
+
+export function configureTerrain(flatZones, worldBounds, margin = 420) {
   zones = flatZones;
+  world = { ...worldBounds };
   bounds = {
     minX: worldBounds.minX - margin, maxX: worldBounds.maxX + margin,
     minZ: worldBounds.minZ - margin, maxZ: worldBounds.maxZ + margin,
@@ -74,13 +78,22 @@ export function rawTerrainHeight(x, z) {
   if (d <= 0) return 0;
   const k = Math.min(1, d / TERRAIN.rampIn);
   const s = k * k * (3 - 2 * k);
-  // Hills get taller towards the edge of the world.
+  // Hills get taller towards the edge of the valley...
   const edge = Math.max(0, Math.min(1, Math.max(
     (Math.abs(x) - 250) / 500,
     (Math.abs(z) - 200) / 300,
   )));
-  return s * TERRAIN.maxHeight * (0.35 + 0.65 * edge) * (0.25 + fbm(x, z) * 1.1);
+  const n = fbm(x, z);
+  const hills = s * TERRAIN.maxHeight * (0.35 + 0.65 * edge) * (0.25 + n * 1.1);
+  // ...and beyond it rise the mountains, so the world never just stops.
+  const out = Math.max(Math.abs(x) - world.maxX, Math.abs(z) - world.maxZ, 0);
+  const m = Math.min(1, out / 260);
+  const mountains = m * m * (3 - 2 * m) * TERRAIN.mountains * (0.55 + 0.45 * fbm(x * 0.7 + 400, z * 0.7 - 200));
+  return hills + mountains;
 }
+
+/** Is (x, z) inside the playable valley? */
+export const inValley = (x, z) => x >= world.minX && x <= world.maxX && z >= world.minZ && z <= world.maxZ;
 
 function build() {
   const c = TERRAIN.cell;

@@ -8,6 +8,7 @@ import {
   pavingTexture, glowTexture,
 } from './textures.js';
 import { makeHalo, dropHalo } from './neon.js';
+import { batchStatic, live } from './batcher.js';
 
 // The Sunset Strip: pastel art-deco restaurants with neon signs, a glass front
 // and a proper inside (tables, the counter, a kitchen), and "for sale" signs
@@ -109,6 +110,7 @@ export class RestaurantView {
     }
     arch.position.set(STRIP.x0 + 3, 0, 0);
     g.add(arch);
+    live(face.material);
     this.neonMats.push(face.material, back.material);
   }
 
@@ -146,6 +148,7 @@ export class RestaurantView {
     this.lots.set(lot.id, entry);
     if (r) this._restaurant(g, lot, r, entry);
     else this._forSale(g, lot);
+    batchStatic(g, { chunk: 0 });
   }
 
   _forSale(g, lot) {
@@ -210,7 +213,7 @@ export class RestaurantView {
     box(g, W * 0.55, 2.8, 0.45, 0, H + 1.7, L(front), wall);
     box(g, W * 0.55 + 0.2, 0.25, 0.5, 0, H + 3.1, L(front), trim);
     const name = `${r.ownerName.toUpperCase()}'S ${def.sign}`;
-    const signMat = basic(0xffffff, { map: neonSignTexture(name, def.neon, r.open ? `${def.name.toLowerCase()} · open` : 'closed') });
+    const signMat = live(basic(0xffffff, { map: neonSignTexture(name, def.neon, r.open ? `${def.name.toLowerCase()} · open` : 'closed') }));
     this.neonMats.push(signMat);
     entry.neon.push(signMat);
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(W * 0.52, W * 0.52 / 4), signMat);

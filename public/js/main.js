@@ -149,7 +149,7 @@ function initScene() {
 
   // Debug handle: useful when you are hosting and want to poke at the valley.
   window.casino = {
-    controls, world, fleet, scene, camera, net, hud, gameStates, pipeline, boars, weapons, renderer, perf,
+    THREE, controls, world, fleet, scene, camera, net, hud, gameStates, pipeline, boars, weapons, renderer, perf,
     get workers() { return workers; },
     get npcs() { return npcs; },
     get restaurants() { return restaurants; },
@@ -952,6 +952,12 @@ function loop(now) {
       vy: car ? round2(car.yaw) : undefined,
       g: weapons.held || undefined,
     });
+  }
+
+  // Draw distance follows the fog; anything past it is never sent to the GPU.
+  if (Math.abs(camera.far - world.sky.drawFar) > 4) {
+    camera.far = world.sky.drawFar;
+    camera.updateProjectionMatrix();
   }
 
   world.update(dt, {

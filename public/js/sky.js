@@ -51,6 +51,7 @@ export class Sky {
     this.flash = 0;
     this.nextFlash = 4;
     this.night = 0;
+    this.drawFar = 760;
 
     this.top = new THREE.Color();
     this.horizon = new THREE.Color();
@@ -157,35 +158,44 @@ export class Sky {
     this.horizon.lerp(cloud, this.grey * 0.9);
     this.dome.material.uniforms.top.value.copy(this.top);
     this.dome.material.uniforms.horizon.value.copy(this.horizon);
+    // Everything in the sky sits just inside the draw distance, which follows
+    // the fog: nothing past the fog is drawn at all (San Andreas did the same).
+    const R = this.drawFar * 0.92;
     this.dome.position.copy(camera.position);
+    this.dome.scale.setScalar(R / 900);
     this.stars.position.copy(camera.position);
+    this.stars.scale.setScalar(R / 850);
 
     // Sun rises in the east (+x) at 6 and sets in the west at 20.
     const sunA = ((hour - 6) / 14) * Math.PI;
     const sunDir = new THREE.Vector3(Math.cos(sunA), Math.sin(sunA), 0.35).normalize();
     const moonA = ((hour + 24 - 19) % 24) / 12 * Math.PI;
     const moonDir = new THREE.Vector3(Math.cos(moonA), Math.sin(moonA), -0.3).normalize();
-    this.sunDisc.position.copy(camera.position).addScaledVector(sunDir, 800);
+    const orbit = R * 0.95;
+    this.sunDisc.position.copy(camera.position).addScaledVector(sunDir, orbit);
     this.sunDisc.lookAt(camera.position);
     this.sunDisc.visible = sunDir.y > -0.05 && this.grey < 0.6;
-    this.moonDisc.position.copy(camera.position).addScaledVector(moonDir, 800);
+    this.moonDisc.position.copy(camera.position).addScaledVector(moonDir, orbit);
+    this.moonDisc.scale.setScalar(orbit / 800);
     this.moonDisc.lookAt(camera.position);
     this.moonDisc.visible = moonDir.y > -0.05 && this.grey < 0.6;
 
     const sunUp = Math.max(0, Math.min(1, sunDir.y * 3));
     // Low sun: a big orange-pink ball, like every PS2 sunset.
     this.sunDisc.material.color.setRGB(1, 0.62 + sunUp * 0.33, 0.45 + sunUp * 0.4);
-    this.sunDisc.scale.setScalar(1.35 - sunUp * 0.35);
+    this.sunDisc.scale.setScalar((1.35 - sunUp * 0.35) * (orbit / 800));
     // Golden hour, for the colour grade: strongest around 7pm (and 6am).
     this.dusk = Math.max(0, 1 - Math.abs(hour - 19.2) / 1.6, 1 - Math.abs(hour - 6.3) / 1.2) * (1 - this.grey);
 
     // Clouds drift with the camera, lit by the sky: white by day, orange at dusk.
-    this.clouds.position.set(camera.position.x, camera.position.y + 260, camera.position.z);
+    this.clouds.position.set(camera.position.x, camera.position.y + 260 * (R / 900), camera.position.z);
+    this.clouds.scale.setScalar(R / 900);
     const cm = this.clouds.material;
     cm.map.offset.set((camera.position.x / 1800) * 3 + worldTime * 1e-6, (camera.position.z / 1800) * -3);
     cm.color.copy(this.horizon).lerp(C(0xffffff), 0.55 * (1 - this.night));
     cm.opacity = 0.35 + this.grey * 0.6;
-    this.glare.position.copy(camera.position).addScaledVector(sunDir, 780);
+    this.glare.position.copy(camera.position).addScaledVector(sunDir, orbit * 0.97);
+    this.glare.scale.set(320 * orbit / 800, 320 * orbit / 800, 1);
     this.glare.material.opacity = sunDir.y > -0.05 ? (0.55 - this.grey * 0.5) * Math.min(1, (sunDir.y + 0.05) * 6) : 0;
     this.glare.material.color.setHSL(0.1, 0.7, 0.6 + sunUp * 0.25);
     this.night = 1 - Math.max(0, Math.min(1, (sunDir.y + 0.08) * 5));
@@ -213,10 +223,12 @@ export class Sky {
     for (const l of this.casino.indoorLights) l.intensity = 0.5 * k;
 
     // Background and fog.
-    const fogNear = lerp(raining ? 50 : 140, 45, k);
-    const fogFar = lerp(raining ? 260 : 620, 120, k);
+    const fogNear = lerp(raining ? 50 : 160, 45, k);
+    const fogFar = lerp(raining ? 280 : 720, 120, k);
     this.scene.fog.near = fogNear;
     this.scene.fog.far = fogFar;
+    // The camera draws no further than the fog lets you see (read by main).
+    this.drawFar = fogFar + 40;
     this.scene.fog.color.copy(this.horizon).lerp(C(0x140b1c), k);
     this.scene.background.copy(this.horizon);
 

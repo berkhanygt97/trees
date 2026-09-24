@@ -14,6 +14,10 @@ import { buildPalms } from './palms.js';
 import { buildVehicle } from './vehicles.js';
 import { buildGun } from './guns.js';
 import { createAvatar } from './avatar.js';
+import { batchStatic, live, dynamic } from './batcher.js';
+import { Terrain } from './city/terrain.js';
+import { Roads } from './city/roads.js';
+import { terrainHeight } from '/shared/terrain.js';
 
 const phong = (color, o = {}) => new THREE.MeshPhongMaterial({ color, shininess: 8, specular: 0x111111, ...o });
 const basic = (color, o = {}) => new THREE.MeshBasicMaterial({ color, ...o });
@@ -136,6 +140,8 @@ export class Outdoor {
     this._track();
     this._trees();
     this._props();
+    // Hundreds of static boxes become a few dozen draw calls.
+    this.batch = batchStatic(this.group, { chunk: 128 });
   }
 
   // ------------------------------------------------- palms, poles, billboards
@@ -217,70 +223,19 @@ export class Outdoor {
   // ---------------------------------------------------------------- ground
 
   _ground() {
-    const w = BOUNDS.maxX - BOUNDS.minX + 400;
-    const d = BOUNDS.maxZ - BOUNDS.minZ + 400;
-    // A subdivided plane with colour painted into its vertices: lighter and
-    // darker patches, dry grass and bare earth, so the texture does not tile
-    // into an obvious grid. Sits a hair below the casino carpet.
-    const geo = new THREE.PlaneGeometry(w, d, 180, 180);
-    geo.rotateX(-Math.PI / 2);
-    const n1 = valueNoise(11);
-    const n2 = valueNoise(23);
-    const colors = [];
-    const pos = geo.attributes.position;
-    const c = new THREE.Color();
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const z = pos.getZ(i);
-      const big = n1(x / 60, z / 60);
-      const small = n2(x / 14, z / 14);
-      // San Andreas countryside: plenty of sun-bleached, dusty patches.
-      const dry = Math.max(0, big - 0.45) * 1.8;
-      c.setRGB(0.92 + small * 0.16 + dry * 0.42, 0.95 + small * 0.12 + dry * 0.16, 0.85 + small * 0.1 - dry * 0.14);
-      colors.push(c.r, c.g, c.b);
-    }
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    const g = new THREE.Mesh(geo, phong(0xffffff, { map: grassTexture(), vertexColors: true }));
-    g.position.y = -0.03;
-    g.material.map.repeat.set(w / 4, d / 4);
-    this.group.add(g);
-    // Hills on the horizon so the world does not end at a cliff of fog.
-    // Dusty, scrubby hills: some green, some baked ochre.
-    const hillMats = [0x3d6b35, 0x5f6e3a, 0x8a7a4a, 0x6b5a3a].map((c) => phong(c, { flatShading: true }));
-    const rnd = seeded(7);
-    for (let i = 0; i < 40; i++) {
-      const a = (i / 40) * Math.PI * 2;
-      const rx = BOUNDS.maxX + 170 + rnd() * 80;
-      const rz = BOUNDS.maxZ + 170 + rnd() * 80;
-      const h = 60 + rnd() * 110;
-      const hill = new THREE.Mesh(new THREE.ConeGeometry(120 + rnd() * 90, h, 7), hillMats[Math.floor(rnd() * hillMats.length)]);
-      hill.position.set(Math.cos(a) * rx, h / 2 - 4, Math.sin(a) * rz);
-      this.group.add(hill);
-    }
+    // The land itself: rolling hills between the built-up areas and a ring of
+    // mountains round the edge (city/terrain.js), all from the shared height grid.
+    this.terrain = new Terrain(this.scene);
   }
 
   _roads() {
-    const asphalt = asphaltTexture();
     const paving = pavingTexture();
     const pz = flat(this.group, PLAZA.x0, PLAZA.x1, PLAZA.z0, PLAZA.z1, 0.012,
       phong(0xffffff, { map: tiled(paving, PLAZA.x1 - PLAZA.x0, PLAZA.z1 - PLAZA.z0, 4) }));
     pz.userData.ground = true;
 
-    const line = basic(0xf2e6b0);
-    ROADS.forEach((r, i) => {
-      const w = r.x1 - r.x0;
-      const d = r.z1 - r.z0;
-      const mat = phong(0xffffff, { map: tiled(asphalt, w, d, 6) });
-      this.roadMats.push(mat);
-      flat(this.group, r.x0, r.x1, r.z0, r.z1, 0.02 + i * 0.001, mat);
-      // Dashed centre line along the long axis.
-      const along = d > w;
-      const len = along ? d : w;
-      for (let s = 2; s < len - 2; s += 6) {
-        if (along) flat(this.group, (r.x0 + r.x1) / 2 - 0.12, (r.x0 + r.x1) / 2 + 0.12, r.z0 + s, r.z0 + s + 3, 0.03, line);
-        else flat(this.group, r.x0 + s, r.x0 + s + 3, (r.z0 + r.z1) / 2 - 0.12, (r.z0 + r.z1) / 2 + 0.12, 0.03, line);
-      }
-    });
+    // Tarmac, kerbs and markings for every road (city/roads.js).
+    this.roads = new Roads(this.group);
 
     // Pavements either side of the main street, in front of the shops.
     for (const [a, b] of [[-12, -6], [6, 12]]) {
@@ -303,6 +258,7 @@ export class Outdoor {
     top.position.y = 3.3;
     f.add(top);
     f.position.set(0, 0, 55);
+    dynamic(water);
     this.group.add(f);
     this.obstacles.push({ x: 0, z: 55, r: 4.4 });
     this.fountainWater = water;
@@ -370,11 +326,13 @@ export class Outdoor {
     keeper.label.scale.multiplyScalar(0.8);
     keeper.group.position.set(counterX + inward * 1.3, 0, sz);
     keeper.group.rotation.y = s.open === 'east' ? Math.PI / 2 : -Math.PI / 2;
+    // Shopkeepers stand behind their counters: posed once, then merged into
+    // the shop (their name tags stay separate).
+    keeper.update(0.016, false, false);
     g.add(keeper.group);
-    this.keepers.push(keeper);
 
     // Hanging light inside.
-    const bulbMat = basic(0xfff0c0);
+    const bulbMat = live(basic(0xfff0c0));
     this.lampMats.push(bulbMat);
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), bulbMat);
     bulb.position.set(cx, H - 0.8, cz);
@@ -452,7 +410,10 @@ export class Outdoor {
         v.group.position.set(x, m.id === 'combine' ? 0 : 0.25, z);
         v.group.rotation.y = i * 1.3;
         g.add(v.group);
-        if (m.id !== 'combine' && m.id !== 'tractor') this.displays.push(v.group);
+        // Show cars turn on their plinths: merged inside themselves, so a whole
+        // car is a handful of draw calls, and left out of the town's batch.
+        batchStatic(v.group, { chunk: 0 });
+        if (m.id !== 'combine' && m.id !== 'tractor') this.displays.push(dynamic(v.group));
         else v.group.rotation.y = inward > 0 ? -Math.PI / 2 : Math.PI / 2;
         this.obstacles.push({ x, z, r: m.id === 'combine' ? 3 : 2.6 });
       });
@@ -500,7 +461,7 @@ export class Outdoor {
     const poleMat = phong(0x2b2b30, { shininess: 40 });
     const pole = new THREE.CylinderGeometry(0.1, 0.14, 5.2, 8);
     const poles = new THREE.InstancedMesh(pole, poleMat, spots.length);
-    const headMat = basic(0x6a6a6a);
+    const headMat = live(basic(0x6a6a6a));
     this.lampMats.push(headMat);
     const heads = new THREE.InstancedMesh(new THREE.SphereGeometry(0.34, 10, 8), headMat, spots.length);
     const poolMat = basic(0xffffff, { map: glowTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 });
@@ -723,9 +684,10 @@ export class Outdoor {
       spots.push([x, z, 0.8 + rnd() * 0.8, rnd()]);
     }
     // A thick wall of trees just outside the bounds hides the edge of the world.
-    const edge = (x, z) => spots.push([x + (rnd() - 0.5) * 8, z + (rnd() - 0.5) * 8, 1.4 + rnd() * 0.8, rnd()]);
-    for (let x = BOUNDS.minX - 12; x <= BOUNDS.maxX + 12; x += 7) { edge(x, BOUNDS.minZ - 12); edge(x, BOUNDS.maxZ + 12); }
-    for (let z = BOUNDS.minZ - 12; z <= BOUNDS.maxZ + 12; z += 7) { edge(BOUNDS.minX - 12, z); edge(BOUNDS.maxX + 12, z); }
+    // Beyond the edge of the valley the mountains rise; a scatter of pines climbs them.
+    const edge = (x, z) => spots.push([x + (rnd() - 0.5) * 24, z + (rnd() - 0.5) * 24, 1.3 + rnd() * 0.9, rnd() * 0.5]);
+    for (let x = BOUNDS.minX - 40; x <= BOUNDS.maxX + 40; x += 11) { edge(x, BOUNDS.minZ - 20 - rnd() * 60); edge(x, BOUNDS.maxZ + 20 + rnd() * 60); }
+    for (let z = BOUNDS.minZ - 40; z <= BOUNDS.maxZ + 40; z += 11) { edge(BOUNDS.minX - 20 - rnd() * 60, z); edge(BOUNDS.maxX + 20 + rnd() * 60, z); }
 
     const trunkGeo = new THREE.CylinderGeometry(0.2, 0.32, 2.6, 6);
     const leafMat = phong(0xffffff, { map: leafTexture(), alphaTest: 0.45, side: THREE.DoubleSide });
@@ -741,21 +703,22 @@ export class Outdoor {
     let np = 0;
     let nr = 0;
     spots.forEach(([x, z, k, v], i) => {
+      const y = terrainHeight(x, z) - 0.2;
       s.set(k, k, k);
       q.setFromAxisAngle(up, v * 6.28);
-      m.compose(new THREE.Vector3(x, 1.3 * k, z), q, s);
+      m.compose(new THREE.Vector3(x, y + 1.3 * k, z), q, s);
       trunks.setMatrixAt(i, m);
       if (v < 0.5) {
-        m.compose(new THREE.Vector3(x, 5.0 * k, z), q, s);
+        m.compose(new THREE.Vector3(x, y + 5.0 * k, z), q, s);
         pines.setMatrixAt(np, m);
         pines.setColorAt(np++, c.setHSL(0.3, 0.2, 0.75 + v * 0.3));
       } else {
         // Two crowns stacked, so broadleaf trees have some depth.
-        m.compose(new THREE.Vector3(x, 4.2 * k, z), q, s);
+        m.compose(new THREE.Vector3(x, y + 4.2 * k, z), q, s);
         rounds.setMatrixAt(nr, m);
         rounds.setColorAt(nr++, c.setHSL(0.2 + (v - 0.5) * 0.1, 0.25, 0.75 + (v - 0.5) * 0.3));
         q.setFromAxisAngle(up, v * 6.28 + 0.8);
-        m.compose(new THREE.Vector3(x + 0.4, 5.6 * k, z - 0.3), q, s.clone().multiplyScalar(0.75));
+        m.compose(new THREE.Vector3(x + 0.4, y + 5.6 * k, z - 0.3), q, s.clone().multiplyScalar(0.75));
         rounds.setMatrixAt(nr, m);
         rounds.setColorAt(nr++, c.setHSL(0.22, 0.25, 0.85));
       }
@@ -786,7 +749,7 @@ export class Outdoor {
       if (blocked(x, z)) continue;
       const k = 0.7 + rnd() * 0.8;
       q.setFromAxisAngle(up, rnd() * 6.28);
-      m.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(k, k * (0.8 + rnd() * 0.5), k));
+      m.compose(new THREE.Vector3(x, terrainHeight(x, z) - 0.05, z), q, new THREE.Vector3(k, k * (0.8 + rnd() * 0.5), k));
       tufts.setMatrixAt(n, m);
       tufts.setColorAt(n, c.setHSL(0.2 + rnd() * 0.06, 0.2, 0.7 + rnd() * 0.25));
       n++;
@@ -802,11 +765,7 @@ export class Outdoor {
     // Rain makes the tarmac dark and shiny, and the lights glint off it.
     if (Math.abs((this._wet || 0) - wet) > 0.01) {
       this._wet = wet;
-      for (const m of this.roadMats) {
-        m.color.setScalar(1 - wet * 0.35);
-        m.shininess = 8 + wet * 90;
-        m.specular.setScalar(0.07 + wet * 0.55);
-      }
+      this.roads.setWet(wet);
     }
     for (const d of this.displays) d.rotation.y += dt * 0.35;
     for (const k of this.keepers) k.update(dt, false, false);

@@ -17,7 +17,13 @@ const basic = (color, o = {}) => new THREE.MeshBasicMaterial({ color, ...o });
 /** The casino building: everything inside it, plus its outside shell. */
 export class Casino {
   constructor(scene) {
-    this.scene = scene;
+    // The outside of the building is always there; everything inside lives in
+    // its own group, which is only drawn when you are near enough to see in.
+    this.world = scene;
+    this.exterior = new THREE.Group();
+    this.interior = new THREE.Group();
+    scene.add(this.exterior, this.interior);
+    this.scene = this.interior;
     this.obstacles = [];
     this.t = 0;
 
@@ -46,7 +52,7 @@ export class Casino {
     // "casino" and "outdoors" depending on where you are standing.
     this.ambient = new THREE.AmbientLight(0x7a5666, 1.15);
     this.hemi = new THREE.HemisphereLight(0xffd9a0, 0x30121f, 0.5);
-    this.scene.add(this.ambient, this.hemi);
+    this.world.add(this.ambient, this.hemi);
 
     this.chandelierLights = [];
     const spots = [
@@ -153,7 +159,7 @@ export class Casino {
     const box = (x0, x1, y0, y1, z0, z1, mat = outer) => {
       const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), mat);
       m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-      this.scene.add(m);
+      this.exterior.add(m);
       return m;
     };
     const { MIN_X, MAX_X, MIN_Z, MAX_Z } = ROOM;
@@ -193,13 +199,13 @@ export class Casino {
       m.makeTranslation(MIN_X - T + (i + 0.5) * ((MAX_X - MIN_X + 2 * T) / 80), H - 0.6, MAX_Z + T + 0.2);
       bulbs.setMatrixAt(i, m);
     }
-    this.scene.add(bulbs);
+    this.exterior.add(bulbs);
     this.marquee = bulbs;
 
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(40, 10),
       basic(0xffffff, { map: signTexture('CASINO ROYALE', '#f2c14e', 'open all night · the house always wins'), transparent: true }));
     sign.position.set(0, H + 4.2, MAX_Z + T + 0.1);
-    this.scene.add(sign);
+    this.exterior.add(sign);
     this.outsideSign = sign;
     for (const sx of [-1, 1]) {
       const post = box(sx * 19 - 0.3, sx * 19 + 0.3, H, H + 8, MAX_Z + T - 0.3, MAX_Z + T + 0.1, outer);
