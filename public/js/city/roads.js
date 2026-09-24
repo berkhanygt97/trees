@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from '../gfx/materials.js';
 import { noCast } from '../shadows.js';
 import { ROADS, PLAZA } from '/shared/map.js';
 import { asphaltTexture } from '../textures.js';
@@ -151,21 +152,21 @@ export class Roads {
 
     const asphalt = asphaltTexture().clone();
     asphalt.needsUpdate = true;
-    this.tarMat = noCast(live(new THREE.MeshPhongMaterial({ map: asphalt, shininess: 8, specular: 0x111111 })));
-    const paint = (color) => noCast(new THREE.MeshLambertMaterial({ color, polygonOffset: true, polygonOffsetFactor: -2 }));
+    this.tarMat = noCast(live(pbr(0xffffff, { map: asphalt })));
+    const paint = (color) => noCast(pbr(color, { roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -2 }));
     this.group.add(
       tar.mesh(this.tarMat),
       white.mesh(paint(0xe8e4d4)),
       yellow.mesh(paint(0xe2b634)),
-      kerb.mesh(noCast(new THREE.MeshLambertMaterial({ color: 0xb8b2a4 }))),
+      kerb.mesh(noCast(pbr(0xb8b2a4, { roughness: 0.85 }))),
     );
   }
 
   /** Rain makes the tarmac dark and shiny. */
   setWet(wet) {
     const m = this.tarMat;
+    // Rain: darker, and smooth enough to mirror the sky and the lamps.
     m.color.setScalar(1 - wet * 0.35);
-    m.shininess = 8 + wet * 90;
-    m.specular.setScalar(0.07 + wet * 0.55);
+    m.roughness = 1 - wet * 0.72;
   }
 }

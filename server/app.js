@@ -2,6 +2,7 @@
 // desktop app, or by a test — anything that wants a room running.
 import http from 'node:http';
 import fsp from 'node:fs/promises';
+import zlib from 'node:zlib';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -23,7 +24,16 @@ const MIME = {
   '.png': 'image/png',
   '.mjs': 'text/javascript; charset=utf-8',
   '.wasm': 'application/wasm',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.hdr': 'application/octet-stream',
+  '.ktx2': 'image/ktx2',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
 };
+// Worth compressing on the way out (images and wasm are already compressed).
+const COMPRESS = new Set(['.html', '.js', '.mjs', '.css', '.json', '.svg', '.txt', '.md']);
 
 // Libraries ship inside node_modules; serving them from there keeps the game
 // fully playable with no internet connection at the party.
@@ -31,9 +41,11 @@ const THREE_PATH = path.join(ROOT, 'node_modules', 'three', 'build', 'three.modu
 const VENDOR = {
   '/vendor/three.module.js': THREE_PATH,
 };
-// Whole folders: three.js add-ons (geometry utilities, skeletons) and the physics engine.
+// Whole folders: the three.js add-ons the game uses (post-processing), and the
+// physics engine. The add-ons are a copy kept in public/vendor/three-addons,
+// because the desktop build leaves node_modules/three/examples out.
 const VENDOR_DIRS = [
-  ['/vendor/three/addons/', path.join(ROOT, 'node_modules', 'three', 'examples', 'jsm')],
+  ['/vendor/three/addons/', path.join(ROOT, 'public', 'vendor', 'three-addons')],
   ['/vendor/rapier/', path.join(ROOT, 'node_modules', '@dimforge', 'rapier3d-compat')],
 ];
 export const VENDOR_FILES = new Set(Object.values(VENDOR));
@@ -88,15 +100,35 @@ export function startCasino(settings = {}) {
   applySettings(settings);
   const port = Math.round(positive(settings.port, 3000));
 
+  // Files are checked on every load (no-cache) but only sent again when they
+  // changed (ETag), so guests do not pull every texture down each time, and
+  // text is gzipped once and kept.
+  const gz = new Map();
   const server = http.createServer(async (req, res) => {
     const file = resolveFile(req.url || '/');
     if (!file) { res.writeHead(403).end('forbidden'); return; }
     try {
-      const data = await fsp.readFile(file);
-      res.writeHead(200, {
-        'content-type': MIME[path.extname(file)] || 'application/octet-stream',
+      const st = await fsp.stat(file);
+      if (!st.isFile()) throw new Error('not a file');
+      const etag = `"${st.size.toString(36)}-${Math.floor(st.mtimeMs).toString(36)}"`;
+      const ext = path.extname(file).toLowerCase();
+      const head = {
+        'content-type': MIME[ext] || 'application/octet-stream',
         'cache-control': 'no-cache',
-      });
+        etag,
+        'last-modified': st.mtime.toUTCString(),
+      };
+      if (req.headers['if-none-match'] === etag) { res.writeHead(304, head).end(); return; }
+      let data = await fsp.readFile(file);
+      if (COMPRESS.has(ext) && data.length > 1024 && /\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
+        const hit = gz.get(file);
+        if (hit && hit.etag === etag) data = hit.data;
+        else { data = zlib.gzipSync(data, { level: 6 }); gz.set(file, { etag, data }); }
+        head['content-encoding'] = 'gzip';
+        head.vary = 'accept-encoding';
+      }
+      head['content-length'] = data.length;
+      res.writeHead(200, head);
       res.end(data);
     } catch {
       if (VENDOR_FILES.has(file) || file.includes(`${path.sep}node_modules${path.sep}`)) {

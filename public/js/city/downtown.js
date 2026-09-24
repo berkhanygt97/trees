@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from '../gfx/materials.js';
 import { BUILDINGS, LOTS_OPEN, CANOPY, PUMPS } from '/shared/downtown.js';
 import {
   facadeTexture, facadeNightTexture, roofGravelTexture, shopfrontTexture, plasterTexture,
@@ -12,7 +13,7 @@ import { batchStatic, live, dynamic } from '../batcher.js';
 // and stucco by day; after dark, windows light up one by one and the neon
 // comes on.
 
-const lambert = (color, o = {}) => new THREE.MeshLambertMaterial({ color, ...o });
+const lambert = (color, o = {}) => pbr(color, { roughness: 0.92, ...o });
 const basic = (color, o = {}) => new THREE.MeshBasicMaterial({ color, ...o });
 
 function box(parent, w, h, d, x, y, z, mat) {

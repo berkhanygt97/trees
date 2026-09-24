@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { pbr } from './gfx/materials.js';
+import { createSkyMaterial, hazeAt, installFog } from './gfx/atmosphere.js';
+import { Environment } from './gfx/env.js';
+import { markShadows } from './shadows.js';
 import { createCharacter } from './character.js';
 import { buildVehicle } from './vehicles.js';
 import { LOOKS } from '/shared/looks.js';
@@ -14,12 +18,30 @@ renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
 renderer.setScissorTest(true);
 document.body.appendChild(renderer.domElement);
 
+// Lit like the game at mid-morning: the same sky for reflections and fill,
+// a warm sun with soft shadows, and the same tone mapping.
+installFog();
+renderer.toneMapping = THREE.AgXToneMapping;
+renderer.toneMappingExposure = 1.35;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
-scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x4a4238, 1.6));
-const sun = new THREE.DirectionalLight(0xfff0d8, 2.2);
-sun.position.set(3, 6, 5);
-scene.add(sun);
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 60), new THREE.MeshLambertMaterial({ color: 0x3a3a3e }));
+const sunDir = new THREE.Vector3(0.45, 0.7, 0.55).normalize();
+const skyMat = createSkyMaterial();
+skyMat.uniforms.sunDir.value.copy(sunDir);
+hazeAt(sunDir.y, 0, skyMat.uniforms.haze.value, skyMat.uniforms.hazeSun.value);
+skyMat.uniforms.cloudsOn.value = 0;
+const env = new Environment(renderer, skyMat, 64);
+scene.environment = env.update(0, new THREE.Vector3(), sunDir, 0);
+scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x4a4238, 0.3));
+const sun = new THREE.DirectionalLight(0xfff0d8, 3.2);
+sun.position.copy(sunDir).multiplyScalar(10);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.left = sun.shadow.camera.bottom = -6;
+sun.shadow.camera.right = sun.shadow.camera.top = 6;
+scene.add(sun, sun.target);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 60), pbr(0x3a3a3e, { roughness: 0.6 }));
 floor.rotation.x = -Math.PI / 2;
 floor.position.z = -10;
 scene.add(floor);
@@ -111,6 +133,9 @@ function tile(s, x, y, w, h, frame, tag) {
   camera.position.set(s.x, up, dist);
   camera.lookAt(s.x, look, 0);
   camera.updateProjectionMatrix();
+  // The sun's shadow follows whoever is in this tile.
+  sun.target.position.set(s.x, 0, 0);
+  sun.position.copy(sunDir).multiplyScalar(10).add(sun.target.position);
   renderer.render(scene, camera);
   if (tag) { tag.style.left = `${x + w / 2}px`; tag.style.top = `${y + h - 26}px`; }
 }
@@ -124,6 +149,7 @@ function grid(list, cols, frame) {
   list.forEach((s, i) => tile(s, (i % cols) * w, 40 + Math.floor(i / cols) * h, w - 2, h - 2, frame, tags[i]));
 }
 
+markShadows(scene);
 let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.1, (now - last) / 1000);

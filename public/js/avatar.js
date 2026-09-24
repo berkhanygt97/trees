@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from './gfx/materials.js';
 import {
   plaidTexture, skinTexture,
 } from './textures.js';
@@ -11,8 +12,8 @@ import { GUN_BY_ID } from '/shared/catalog.js';
 // the way people looked in a 2004 open-world game.
 
 const SKIN_TONE = '#d59a72';
-const phong = (color, o = {}) => new THREE.MeshPhongMaterial({ color, shininess: 10, specular: 0x1a1a1a, ...o });
-const skinMat = () => phong(0xffffff, { map: skinTexture(SKIN_TONE), shininess: 18, specular: 0x2a1a14 });
+const phong = (color, o = {}) => pbr(color, { shininess: 10, ...o });
+const skinMat = () => phong(0xffffff, { map: skinTexture(SKIN_TONE), roughness: 0.6 });
 
 function mesh(parent, geo, mat, x = 0, y = 0, z = 0) {
   const m = new THREE.Mesh(geo, mat);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from '../gfx/materials.js';
 import { noCast } from '../shadows.js';
 import { terrainGrid, inValley, distToFlat } from '/shared/terrain.js';
 import { BOUNDS } from '/shared/map.js';
@@ -46,7 +47,7 @@ export class Terrain {
     scene.add(this.group);
     const tex = terrainTexture();
     // Double-sided so the skirts under each patch edge show from either side.
-    this.material = noCast(new THREE.MeshLambertMaterial({ map: tex, vertexColors: true, side: THREE.DoubleSide }));
+    this.material = noCast(pbr(0xffffff, { map: tex, vertexColors: true, side: THREE.DoubleSide }));
     this.g = terrainGrid();
     const { cols, rows, cell, minX, minZ } = this.g;
     const maxX = minX + (cols - 1) * cell;

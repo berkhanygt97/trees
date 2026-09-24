@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from './gfx/materials.js';
 import { mergeParts } from './geo.js';
 
 // Palm trees for the Strip and the plaza: a curved, ringed trunk and a crown
@@ -51,7 +52,7 @@ function crownGeometry() {
 /** `spots` = [[x, z], ...]. Returns { group, obstacles }. */
 export function buildPalms(spots, seed = 7) {
   const group = new THREE.Group();
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const mat = pbr(0xffffff, { vertexColors: true, roughness: 0.85 });
   const trunk = new THREE.InstancedMesh(trunkGeometry(), mat, spots.length);
   const crown = new THREE.InstancedMesh(crownGeometry(), mat, spots.length);
   const m = new THREE.Matrix4();

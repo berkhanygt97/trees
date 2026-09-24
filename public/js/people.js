@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from './gfx/materials.js';
 import { mergeParts } from './geo.js';
 import { labelSprite } from './textures.js';
 
@@ -7,7 +8,7 @@ import { labelSprite } from './textures.js';
 // low poly, five draw calls a person (torso, two arms, two legs), so forty of
 // them cost about as much as two players.
 
-const MAT = new THREE.MeshLambertMaterial({ vertexColors: true });
+const MAT = pbr(0xffffff, { vertexColors: true, roughness: 0.85 });
 
 // Shared primitive shapes (copied into each person's merged mesh).
 const G = {

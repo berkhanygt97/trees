@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from '../gfx/materials.js';
 import { ROADS, STATIC_BOXES, LOTS, PLOTS, PLOT_SIZE, PLAZA } from '/shared/map.js';
 import { BUILDINGS, LOTS_OPEN } from '/shared/downtown.js';
 import { PARKS, HOODS } from '/shared/hoods.js';
@@ -9,7 +10,7 @@ import { live } from '../batcher.js';
 // one instanced mesh per part. Every prop is also listed in `this.items`
 // ({ kind, x, z, yaw, r }) so the physics can knock them over later.
 
-const lambert = (color, o = {}) => new THREE.MeshLambertMaterial({ color, ...o });
+const lambert = (color, o = {}) => pbr(color, { roughness: 0.8, ...o });
 
 // A tiny seeded RNG so every client puts the same bin in the same place.
 function seeded(seed) {

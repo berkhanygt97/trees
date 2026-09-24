@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { surface, surfaceFor, registerSurface, mapsFromFields } from './gfx/surfaces.js';
 
 const cache = new Map();
 
@@ -228,128 +229,32 @@ export function grassTexture() {
  * or rocky, so one texture covers the whole valley.
  */
 export function terrainTexture() {
-  return make('terrain', 256, 256, (g, w, h) => {
-    g.fillStyle = '#c8c8c8';
-    g.fillRect(0, 0, w, h);
-    speckle(g, w, h, 6000, ['#d6d6d6', '#b4b4b4', '#e2e2e2', '#a8a8a8', '#cfcfcf'], 2);
-    // Short strokes, like blades and twigs.
-    g.lineWidth = 1;
-    for (let i = 0; i < 900; i++) {
-      const x = rand() * w;
-      const y = rand() * h;
-      g.strokeStyle = rand() < 0.5 ? 'rgba(255,255,255,0.35)' : 'rgba(60,60,60,0.3)';
-      g.beginPath();
-      g.moveTo(x, y);
-      g.lineTo(x + (rand() - 0.5) * 3, y - 2 - rand() * 4);
-      g.stroke();
-    }
-    speckle(g, w, h, 120, ['#f4f0d0', '#ffffff'], 2);
-  });
+  return surface('terrain', '#c8c8c8').map;
 }
 
 export function asphaltTexture() {
-  return make('asphalt2', 256, 256, (g, w, h) => {
-    g.fillStyle = '#3c3c42';
-    g.fillRect(0, 0, w, h);
-    // Patched-over repairs, a shade darker or lighter.
-    for (let i = 0; i < 5; i++) {
-      g.fillStyle = rand() < 0.5 ? 'rgba(20,20,24,0.35)' : 'rgba(90,88,92,0.25)';
-      const pw = 20 + rand() * 60;
-      const ph = 14 + rand() * 40;
-      g.fillRect(rand() * (w - pw), rand() * (h - ph), pw, ph);
-    }
-    speckle(g, w, h, 9000, ['#46464d', '#303036', '#55555d', '#2a2a2f'], 1.5);
-    // Hairline cracks.
-    g.strokeStyle = 'rgba(16,16,18,0.7)';
-    g.lineWidth = 1;
-    for (let i = 0; i < 7; i++) {
-      let x = rand() * w;
-      let y = rand() * h;
-      g.beginPath();
-      g.moveTo(x, y);
-      for (let k = 0; k < 8; k++) { x += (rand() - 0.5) * 22; y += (rand() - 0.5) * 22; g.lineTo(x, y); }
-      g.stroke();
-    }
-    // A few oil stains.
-    for (let i = 0; i < 4; i++) {
-      const gr = g.createRadialGradient(0, 0, 0, 0, 0, 12);
-      gr.addColorStop(0, 'rgba(10,10,14,0.45)');
-      gr.addColorStop(1, 'rgba(10,10,14,0)');
-      g.save();
-      g.translate(rand() * w, rand() * h);
-      g.scale(1, 0.6 + rand() * 0.6);
-      g.fillStyle = gr;
-      g.fillRect(-12, -12, 24, 24);
-      g.restore();
-    }
-  }, { repeat: [1, 1] });
+  return surface('asphalt', '#56565c').map;
 }
 
 export function pavingTexture() {
-  return make('paving', 128, 128, (g, w, h) => {
-    g.fillStyle = '#8d8578';
-    g.fillRect(0, 0, w, h);
-    g.strokeStyle = 'rgba(40,34,28,0.45)';
-    g.lineWidth = 2;
-    for (let y = 0; y <= h; y += 32) {
-      g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke();
-      const off = (y / 32) % 2 ? 16 : 0;
-      for (let x = off; x <= w; x += 32) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 32); g.stroke(); }
-    }
-    speckle(g, w, h, 600, ['rgba(0,0,0,0.08)', 'rgba(255,255,255,0.06)'], 2);
-  }, { repeat: [1, 1] });
+  return surface('paving', '#8d8578').map;
 }
 
 export function dirtTexture() {
-  return make('dirt', 128, 128, (g, w, h) => {
-    g.fillStyle = '#7a5a3a';
-    g.fillRect(0, 0, w, h);
-    speckle(g, w, h, 2200, ['#86643f', '#6b4e31', '#8f6d47', '#5e432a'], 2);
-  }, { repeat: [1, 1] });
+  return surface('dirt', '#7a5a3a').map;
 }
 
 /** Plowed soil: dark furrows running across the tile. */
 export function soilTexture() {
-  return make('soil', 64, 64, (g, w, h) => {
-    g.fillStyle = '#ffffff';
-    g.fillRect(0, 0, w, h);
-    for (let y = 0; y < h; y += 8) {
-      g.fillStyle = 'rgba(0,0,0,0.28)';
-      g.fillRect(0, y + 5, w, 3);
-    }
-    speckle(g, w, h, 300, ['rgba(0,0,0,0.12)', 'rgba(255,255,255,0.12)'], 2);
-  }, { repeat: [1, 1] });
+  return surface('soil', '#ffffff').map;
 }
 
 export function plankTexture(base = '#9b6b3d') {
-  return make('plank' + base, 128, 128, (g, w, h) => {
-    g.fillStyle = base;
-    g.fillRect(0, 0, w, h);
-    for (let x = 0; x < w; x += 16) {
-      g.fillStyle = 'rgba(0,0,0,0.25)';
-      g.fillRect(x, 0, 2, h);
-      for (let y = 0; y < h; y += 3) {
-        g.fillStyle = `rgba(0,0,0,${rand() * 0.08})`;
-        g.fillRect(x + 2, y, 14, 1);
-      }
-    }
-  }, { repeat: [1, 1] });
+  return surface('plank', base).map;
 }
 
 export function brickTexture(base = '#9c4a36') {
-  return make('brick' + base, 128, 128, (g, w, h) => {
-    g.fillStyle = '#d8cbb8';
-    g.fillRect(0, 0, w, h);
-    for (let row = 0; row < 8; row++) {
-      const off = row % 2 ? 16 : 0;
-      for (let x = -16; x < w; x += 32) {
-        g.fillStyle = base;
-        g.globalAlpha = 0.85 + rand() * 0.15;
-        g.fillRect(x + off + 1, row * 16 + 1, 30, 14);
-      }
-    }
-    g.globalAlpha = 1;
-  }, { repeat: [1, 1] });
+  return surface('brick', base).map;
 }
 
 /** A flat sign with a dark board, for shop fronts and farm gates. */
@@ -682,47 +587,15 @@ export function cloudTexture() {
 }
 
 export function roofTileTexture(base = '#8a3a2a') {
-  return make(`roof:${base}`, 128, 128, (g, w, h) => {
-    g.fillStyle = base;
-    g.fillRect(0, 0, w, h);
-    for (let row = 0; row < 8; row++) {
-      const y = row * 16;
-      g.fillStyle = 'rgba(0,0,0,0.35)';
-      g.fillRect(0, y + 13, w, 3);
-      for (let x = (row % 2) * 8; x < w; x += 16) {
-        g.fillStyle = `rgba(${rand() < 0.5 ? '0,0,0' : '255,255,255'},${rand() * 0.12})`;
-        g.fillRect(x, y, 15, 13);
-        g.fillStyle = 'rgba(0,0,0,0.25)';
-        g.fillRect(x + 15, y, 1, 13);
-      }
-    }
-  }, { repeat: [1, 1] });
+  return surface('rooftile', base).map;
 }
 
 export function metalTexture(base = '#8a8f96') {
-  return make(`metal:${base}`, 128, 128, (g, w, h) => {
-    noiseFill(g, w, h, base, 0.08, 1200, 2);
-    // Corrugation.
-    for (let x = 0; x < w; x += 8) {
-      g.fillStyle = 'rgba(255,255,255,0.12)';
-      g.fillRect(x, 0, 3, h);
-      g.fillStyle = 'rgba(0,0,0,0.15)';
-      g.fillRect(x + 5, 0, 2, h);
-    }
-    // Rust streaks.
-    for (let i = 0; i < 10; i++) {
-      g.fillStyle = 'rgba(140,70,30,0.25)';
-      g.fillRect(rand() * w, rand() * h * 0.5, 2 + rand() * 3, 20 + rand() * 60);
-    }
-  }, { repeat: [1, 1] });
+  return surface('metal', base).map;
 }
 
 export function plasterTexture(base = '#e6dcc8') {
-  return make(`plaster:${base}`, 128, 128, (g, w, h) => {
-    noiseFill(g, w, h, base, 0.07, 2000, 2);
-    g.fillStyle = 'rgba(80,60,40,0.12)';
-    g.fillRect(0, h - 18, w, 18);   // grime near the ground
-  }, { repeat: [1, 1] });
+  return surface('plaster', base).map;
 }
 
 /** Soft dark disc for blob shadows under cars, people and boars. */
@@ -884,7 +757,7 @@ const FACADES = {
 
 export function facadeTexture(style) {
   const f = FACADES[style] || FACADES.office;
-  return make(`facade:${style}`, 256, 256, (g, w, h) => {
+  const tex = make(`facade:${style}`, 256, 256, (g, w, h) => {
     const bw = w / 4;
     const bh = h / 4;
     g.fillStyle = f.wall;
@@ -898,14 +771,12 @@ export function facadeTexture(style) {
         const y = j * bh + wy * bh;
         g.fillStyle = f.frame;
         g.fillRect(x - 2, y - 2, ww * bw + 4, wh * bh + 4);
-        const gr = g.createLinearGradient(x, y, x + ww * bw, y + wh * bh);
+        // Dark glass: the sky it reflects comes from the lighting, not the paint.
         const c = f.glass[(rand() * f.glass.length) | 0];
-        gr.addColorStop(0, c);
-        gr.addColorStop(0.55, '#9fc4d8');
-        gr.addColorStop(0.6, c);
-        gr.addColorStop(1, c);
-        g.fillStyle = gr;
+        g.fillStyle = c;
         g.fillRect(x, y, ww * bw, wh * bh);
+        g.fillStyle = 'rgba(0,0,0,0.25)';
+        g.fillRect(x, y, ww * bw, wh * bh * 0.5);
         // Mullion.
         g.fillStyle = f.frame;
         g.fillRect(x + (ww * bw) / 2 - 1, y, 2, wh * bh);
@@ -918,6 +789,40 @@ export function facadeTexture(style) {
       }
     }
   });
+  if (!surfaceFor(tex)) registerSurface(tex, facadeMaps(f, 256));
+  return tex;
+}
+
+/**
+ * Relief and shine for a facade tile, from the same layout the painter uses:
+ * glass recessed behind its frame and smooth enough to mirror the sky, walls
+ * rough, bands and sills standing proud.
+ */
+function facadeMaps(f, n) {
+  const height = new Float32Array(n * n).fill(0.8);
+  const rough = new Float32Array(n * n).fill(0.86);
+  const rect = (x0, y0, w, h, ht, r) => {
+    for (let y = Math.max(0, Math.floor(y0)); y < Math.min(n, Math.ceil(y0 + h)); y++) {
+      for (let x = Math.max(0, Math.floor(x0)); x < Math.min(n, Math.ceil(x0 + w)); x++) { height[y * n + x] = ht; rough[y * n + x] = r; }
+    }
+  };
+  for (let i = 0; i < n * n; i++) height[i] += (Math.sin(i * 12.9898) * 43758.5453 % 1) * 0.02;
+  const bw = n / 4;
+  const bh = n / 4;
+  for (let j = 0; j < 4; j++) {
+    if (f.band) rect(0, j * bh + bh * 0.9, n, bh * 0.1, 0.95, 0.8);
+    for (let i = 0; i < 4; i++) {
+      const [wx, wy, ww, wh] = f.win;
+      const x = i * bw + wx * bw;
+      const y = j * bh + wy * bh;
+      rect(x - 3, y - 3, ww * bw + 6, wh * bh + 6, 0.9, 0.45);       // frame
+      rect(x - 4, y + wh * bh + 2, ww * bw + 8, 3, 1, 0.7);           // sill
+      rect(x, y, ww * bw, wh * bh, 0.35, 0.04);                        // glass
+      rect(x + (ww * bw) / 2 - 1, y, 2, wh * bh, 0.8, 0.45);           // mullion
+      if (f.door) rect(i * bw + bw * 0.12, j * bh + bh * 0.25, bw * 0.28, bh * 0.75, 0.55, 0.55);
+    }
+  }
+  return mapsFromFields(n, n, height, rough, 5);
 }
 
 /** The same tile at night: some windows lit, the rest dark. */
@@ -943,16 +848,12 @@ export function facadeNightTexture(style) {
 
 /** Tar-and-gravel flat roof. */
 export function roofGravelTexture() {
-  return make('roofgravel', 128, 128, (g, w, h) => {
-    g.fillStyle = '#6c6862';
-    g.fillRect(0, 0, w, h);
-    speckle(g, w, h, 3000, ['#7a766f', '#5e5a55', '#86827a', '#55514c'], 2);
-  });
+  return surface('gravel', '#6c6862').map;
 }
 
 /** A shop front: big glass, a door, and a sign band left blank for the sign. */
 export function shopfrontTexture(color = '#d9c7a4') {
-  return make(`shopfront:${color}`, 256, 128, (g, w, h) => {
+  const tex = make(`shopfront:${color}`, 256, 128, (g, w, h) => {
     g.fillStyle = color;
     g.fillRect(0, 0, w, h);
     speckle(g, w, h, 800, ['rgba(0,0,0,0.07)', 'rgba(255,255,255,0.07)'], 2);
@@ -967,6 +868,22 @@ export function shopfrontTexture(color = '#d9c7a4') {
     g.fillStyle = '#2a2a2e';
     for (let x = 12 + (w - 24) / 3; x < w - 12; x += (w - 24) / 3) g.fillRect(x - 2, 44, 4, h - 52);
   });
+  if (!surfaceFor(tex)) {
+    // The big window is glass: set back and glossy.
+    const w = 256;
+    const h = 128;
+    const height = new Float32Array(w * h).fill(0.8);
+    const rough = new Float32Array(w * h).fill(0.85);
+    for (let y = 40; y < h - 4; y++) {
+      for (let x = 8; x < w - 8; x++) {
+        const glass = y >= 44 && y < h - 8 && x >= 12 && x < w - 12;
+        height[y * w + x] = glass ? 0.3 : 0.6;
+        rough[y * w + x] = glass ? 0.04 : 0.4;
+      }
+    }
+    registerSurface(tex, mapsFromFields(w, h, height, rough, 4));
+  }
+  return tex;
 }
 
 /**

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from './gfx/materials.js';
 import { ROOM, STATIONS, HORSES, ROCKETS } from '/shared/config.js';
 import { CASINO } from '/shared/map.js';
 import { WHEEL as WHEEL_ORDER, REDS } from '/shared/roulette.js';
@@ -11,7 +12,7 @@ const LANE_GAP = -2.3;
 
 // Phong, not Lambert: Lambert shades per-vertex, which leaves big flat panels
 // like the floor and walls lit only at their corners.
-const lam = (color, o = {}) => new THREE.MeshPhongMaterial({ color, shininess: 6, specular: 0x141018, ...o });
+const lam = (color, o = {}) => pbr(color, { shininess: 6, ...o });
 const basic = (color, o = {}) => new THREE.MeshBasicMaterial({ color, ...o });
 
 /** The casino building: everything inside it, plus its outside shell. */
@@ -74,12 +75,15 @@ export class Casino {
       this.lightSources.push(light);
       this._chandelier(x, z);
     }
+    // These two live in the scene, not the interior group: a hidden group's
+    // lights drop out of the count, and every shader would rebuild at the door.
+    // Outdoors the sky turns them down to nothing.
     this.key = new THREE.DirectionalLight(0xfff0d8, 0.5);
     this.key.position.set(20, 30, 20);
-    this.scene.add(this.key);
+    this.world.add(this.key);
     this.trackLight = new THREE.DirectionalLight(0xdfe8ff, 0.5);
     this.trackLight.position.set(0, 20, -10);
-    this.scene.add(this.trackLight);
+    this.world.add(this.trackLight);
     this.indoorLights = [this.key, this.trackLight];
   }
 

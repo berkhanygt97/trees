@@ -17,6 +17,9 @@ import { createAvatar, createViewModel } from './avatar.js';
 import { Smoke } from './fx.js';
 import { GAME_UIS } from './ui/index.js';
 import { Pipeline } from './post.js';
+import { Quality } from './gfx/quality.js';
+import { installFog } from './gfx/atmosphere.js';
+import { Environment } from './gfx/env.js';
 import { BoarView } from './boarsview.js';
 import { Weapons } from './weapons.js';
 import { buildCockpit } from './cockpit.js';
@@ -40,6 +43,7 @@ const enterBtn = document.getElementById('enter');
 const joinStatus = document.getElementById('join-status');
 
 let renderer, scene, camera, world, fleet, controls, viewModel, smoke, selfAvatar, pipeline, boars, weapons, workers, perf, rig;
+let quality, env;
 let physics = null;               // Rapier, once it has loaded (driving falls back to the simple model until then)
 let jobs = [];                    // today's Job Centre candidates
 let restaurants, npcs, crowd;
@@ -117,17 +121,20 @@ const worldTime = () => clock.time + (net.now() - clock.serverNow) * clock.rate;
 // ------------------------------------------------------------------ scene
 
 function initScene() {
-  // No MSAA: the world is drawn at a reduced resolution and scaled up soft anyway.
+  // Height fog and the shared uniforms have to be in place before the first
+  // material compiles.
+  installFog();
+  quality = new Quality();
+  // No MSAA: the post pipeline anti-aliases (SMAA/FXAA) after tone mapping.
   renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, quality.preset.pixelRatio));
   renderer.setSize(innerWidth, innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0b0714);
-  scene.fog = new THREE.Fog(0x140b1c, 45, 120);
 
   camera = new THREE.PerspectiveCamera(78, innerWidth / innerHeight, 0.1, 1400);
 
@@ -139,12 +146,15 @@ function initScene() {
   rig = new CameraRig(camera, world);
   controls.thirdPerson = !rig.firstPerson;
   controls.chase = controls.thirdPerson;
-  pipeline = new Pipeline(renderer);
-  // Quality presets also switch the sun's shadows.
-  pipeline.onQuality = (q) => world.sky.setShadows(q.shadows);
-  pipeline.onQuality(pipeline.quality);
+  pipeline = new Pipeline(renderer, quality);
+  env = new Environment(renderer, world.sky.material, quality.preset.envSize);
+  // A graphics preset sets the pixel ratio, shadows, view distance, clouds,
+  // how many real lights there are and the size of the sky's reflections.
+  quality.onChange = applyPreset;
+  applyPreset(quality.preset);
   world.sky.focus = controls.pos;
   perf = new PerfMeter(renderer);
+  perf.extra = () => `graphics ${quality.label} · ${Math.round(quality.scale * 100)}% scale`;
   boars = new BoarView(scene);
   units = new UnitsView(scene);
   raidView = new RaidView(scene);
@@ -198,6 +208,19 @@ function initScene() {
     renderer.setSize(innerWidth, innerHeight);
     pipeline.resize();
   });
+}
+
+// How far you can see on each preset (fog closes in before it).
+const VIEW_FAR = { ultra: 1100, high: 900, medium: 760, low: 600 };
+
+function applyPreset(p) {
+  renderer.setPixelRatio(Math.min(devicePixelRatio, p.pixelRatio));
+  renderer.setSize(innerWidth, innerHeight);
+  world.sky.setShadows(p.shadows, p.shadowSpan);
+  world.sky.setView({ far: VIEW_FAR[p.id] || 900, clouds: p.clouds });
+  world.lights.resize(p.lights);
+  env.setSize(p.envSize);
+  pipeline.resize();
 }
 
 // ------------------------------------------------------------------ aiming
@@ -379,6 +402,9 @@ net.on('welcome', (d) => {
   } else {
     hud.toast(`Welcome back, ${me.name}.`, 'info');
   }
+  // Compile every shader the valley needs now, in the background, rather
+  // than the first time each thing comes into view (which stutters).
+  if (renderer.compileAsync) renderer.compileAsync(scene, camera).catch(() => {});
   requestAnimationFrame(loop);
 });
 
@@ -1033,8 +1059,7 @@ addEventListener('keydown', (e) => {
     return;
   }
   if (e.code === 'KeyP') {
-    const q = pipeline.cycleQuality();
-    hud.toast(`Graphics: ${q.name}`, 'info');
+    hud.toast(`Graphics: ${quality.cycle()}`, 'info');
     return;
   }
   if (controls.frozen) return;
@@ -1112,9 +1137,12 @@ let lastRadarBlips = 0;
 let lastZone = 0;
 function loop(now) {
   requestAnimationFrame(loop);
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const frameTime = (now - last) / 1000;
+  const dt = Math.min(0.05, frameTime);
   last = now;
   perf.begin();
+  // Auto graphics and dynamic resolution watch the real frame time.
+  if (quality.frame(frameTime)) pipeline.resize();
   const serverNow = net.now();
   const wt = worldTime();
 
@@ -1352,21 +1380,34 @@ function loop(now) {
   hud.setClock(wt, clock.weather);
   hud.setWar(war, serverNow);
 
+  // Sky light and reflections: the live sky outdoors, the casino's own inside.
+  const sky = world.sky;
+  scene.environment = sky.inside > 0.5 ? env.indoor : env.update(now, camera.position, sky.sunDir, sky.cover);
   pipeline.render(scene, camera, {
-    dusk: world.sky.dusk || 0,
-    night: world.sky.inside > 0.5 ? 0 : world.sky.night,
-    inside: world.sky.inside,
+    dusk: sky.dusk || 0,
+    night: sky.inside > 0.5 ? 0 : sky.night,
+    inside: sky.inside,
     fade,
     wasted: koUntil ? 1 : 0,
-    flash: world.sky.flash * 0.25 * (1 - world.sky.inside),
+    flash: sky.flash * 0.25 * (1 - sky.inside),
     dt,
     overlayFov: 58 * (0.86 + 0.14 * camera.fov / 78),
     ambient: world.casino.ambient,
+    environment: scene.environment,
+    sunDir: sky.sunDir,
+    exposure: exposureFor(sky),
   });
   perf.end(dt);
 }
 
 const round2 = (v) => Math.round(v * 100) / 100;
+
+/** How far the eye opens: less in bright sun, more at dusk and at night, a set level indoors. */
+function exposureFor(sky) {
+  const sunUp = Math.max(0, Math.min(1, sky.sunDir.y * 2.5));
+  const out = (3.4 + (1.25 - 3.4) * Math.sqrt(sunUp)) * (1 + sky.grey * 0.35);
+  return out + (1.5 - out) * sky.inside;
+}
 const HALF_Y = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 
 /** Skulls in the corner while your hood is being raided. */

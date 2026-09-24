@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from './gfx/materials.js';
 import { noCast } from './shadows.js';
 import {
   BOUNDS, PLAZA, ROADS, SHOPS, ORDERS_BOARD, PLOTS, PLOT_SIZE, GATE, TRACK, RAMPS, CASINO, COTTAGES, STRIP,
@@ -21,7 +22,7 @@ import { Terrain } from './city/terrain.js';
 import { Roads } from './city/roads.js';
 import { terrainHeight } from '/shared/terrain.js';
 
-const phong = (color, o = {}) => new THREE.MeshPhongMaterial({ color, shininess: 8, specular: 0x111111, ...o });
+const phong = (color, o = {}) => pbr(color, { shininess: 8, ...o });
 const basic = (color, o = {}) => new THREE.MeshBasicMaterial({ color, ...o });
 
 /** Tiles a texture so one repeat covers `size` metres, cloned per use. */

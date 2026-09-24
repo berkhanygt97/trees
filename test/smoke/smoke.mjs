@@ -18,7 +18,7 @@ import { startCasino } from '../../server/app.js';
 import { VIEWS } from './views.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const outDir = path.resolve(here, '..', '..', 'test-output', 'smoke');
+const outDir = process.env.SMOKE_OUT ? path.resolve(process.env.SMOKE_OUT) : path.resolve(here, '..', '..', 'test-output', 'smoke');
 fs.mkdirSync(outDir, { recursive: true });
 process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers';
 
@@ -68,6 +68,14 @@ const browser = await chromium.launch({
   args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--use-gl=angle'],
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+// The graphics preset to test (SMOKE_GFX=ultra|high|medium|low; Medium by
+// default, since this browser draws on the CPU), with dynamic resolution off
+// so the screenshots are at the preset's full scale.
+const gfx = process.env.SMOKE_GFX || 'medium';
+await page.addInitScript((g) => {
+  try { localStorage.setItem('valley.gfx', g.gfx); localStorage.setItem('valley.dynres', '0'); if (g.tm) localStorage.setItem('valley.tonemap', g.tm); } catch { /* ignore */ }
+}, { gfx, tm: process.env.SMOKE_TONEMAP || '' });
+console.log(`graphics: ${gfx}`);
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
 page.on('console', (m) => {
   if (m.type() === 'error' && !/pointer ?lock|Failed to load resource/i.test(m.text())) errors.push(`console: ${m.text()}`);

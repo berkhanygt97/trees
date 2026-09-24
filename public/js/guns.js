@@ -1,15 +1,16 @@
 import * as THREE from 'three';
+import { pbr } from './gfx/materials.js';
 import { woodGrainTexture, gunMetalTexture } from './textures.js';
 
 // Every gun, built from boxes and cylinders with wood and steel textures.
 // Local frame: the barrel points down -Z, the butt is at +Z, the origin is
 // the pistol grip where the right hand goes.
 
-const phong = (color, o = {}) => new THREE.MeshPhongMaterial({ color, shininess: 30, specular: 0x444444, ...o });
-const STEEL = () => phong(0xffffff, { map: gunMetalTexture(), shininess: 70, specular: 0x777777 });
-const BLUED = () => phong(0x3a3f47, { shininess: 90, specular: 0x9aa3ad });
-const WOOD = (c) => phong(0xffffff, { map: woodGrainTexture(c), shininess: 25 });
-const BRASS = () => phong(0xc9a24a, { shininess: 90, specular: 0xffe7a0 });
+const phong = (color, o = {}) => pbr(color, { shininess: 30, ...o });
+const STEEL = () => phong(0xffffff, { map: gunMetalTexture(), metalness: 0.9, roughness: 0.35 });
+const BLUED = () => phong(0x3a3f47, { metalness: 0.85, roughness: 0.3 });
+const WOOD = (c) => phong(0xffffff, { map: woodGrainTexture(c), roughness: 0.6 });
+const BRASS = () => phong(0xc9a24a, { metalness: 1, roughness: 0.28 });
 const BLACK = () => phong(0x1c1d20, { shininess: 20 });
 
 function box(parent, w, h, d, x, y, z, mat, rx = 0) {

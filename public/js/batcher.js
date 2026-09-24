@@ -44,11 +44,16 @@ function canonical(t) {
 
 const hex = (c) => (c ? c.getHexString() : '-');
 
+// Every texture slot a material can have. They all share the colour map's
+// tiling (gfx/materials.js makes sure of it), so all of them are baked the same.
+const MAPS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap', 'bumpMap'];
+
 function matKey(m) {
-  const map = m.map ? texKey(m.map) : '-';
   return [
-    m.type, hex(m.color), hex(m.emissive), map, m.vertexColors ? 1 : 0, m.transparent ? 1 : 0, m.opacity,
-    m.alphaTest, m.side, m.flatShading ? 1 : 0, m.shininess, hex(m.specular), m.depthWrite ? 1 : 0,
+    m.type, hex(m.color), hex(m.emissive), ...MAPS.map((k) => (m[k] ? texKey(m[k]) : '-')),
+    m.vertexColors ? 1 : 0, m.transparent ? 1 : 0, m.opacity,
+    m.alphaTest, m.side, m.flatShading ? 1 : 0, m.roughness, m.metalness, m.emissiveIntensity, m.envMapIntensity,
+    m.normalScale ? m.normalScale.x : '-', m.shininess, hex(m.specular), m.depthWrite ? 1 : 0,
     m.depthTest ? 1 : 0, m.fog ? 1 : 0, m.blending, m.wireframe ? 1 : 0, m.polygonOffset ? 1 : 0,
   ].join('/');
 }
@@ -58,7 +63,7 @@ function sharedMaterial(m) {
   let s = sharedMats.get(k);
   if (!s) {
     s = m.clone();
-    if (m.map) s.map = canonical(m.map);
+    for (const slot of MAPS) if (m[slot]) s[slot] = canonical(m[slot]);
     sharedMats.set(k, s);
   }
   return { key: k, material: s };

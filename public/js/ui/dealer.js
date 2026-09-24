@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from '../gfx/materials.js';
 import { VEHICLES, PAINTS, money } from '/shared/catalog.js';
 import { div, esc } from './util.js';
 import { buildVehicle } from '../vehicles.js';
@@ -30,7 +31,7 @@ export function createCarDealer(ctx) {
   key.position.set(5, 8, 6);
   scene.add(key);
   const cam = new THREE.PerspectiveCamera(32, 640 / 250, 0.1, 100);
-  const floor = new THREE.Mesh(new THREE.CylinderGeometry(4.6, 4.6, 0.2, 40), new THREE.MeshPhongMaterial({ color: 0x2b2230, shininess: 80 }));
+  const floor = new THREE.Mesh(new THREE.CylinderGeometry(4.6, 4.6, 0.2, 40), pbr(0x2b2230, { roughness: 0.25 }));
   floor.position.y = -0.1;
   scene.add(floor);
   let model = null;

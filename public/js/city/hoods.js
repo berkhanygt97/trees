@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from '../gfx/materials.js';
 import {
   HOODS, HOOD_T, HOOD_HOUSES, HQS, TAG_POINTS, PARKS, HOOD_STREETS, hx, hz, hoodRect,
 } from '/shared/hoods.js';
@@ -17,7 +18,7 @@ import { mergeByMaterial } from '../merge.js';
 // and an arch over the street with the owner's name on it once somebody moves
 // in. Colours and signs follow whoever owns the hood.
 
-const phong = (color, o = {}) => new THREE.MeshPhongMaterial({ color, shininess: 8, specular: 0x111111, ...o });
+const phong = (color, o = {}) => pbr(color, { shininess: 8, ...o });
 const basic = (color, o = {}) => new THREE.MeshBasicMaterial({ color, ...o });
 
 function box(parent, w, h, d, x, y, z, mat) {
@@ -142,7 +143,7 @@ export class HoodView {
       box(g, along ? 6 : 0.4, 2.6, along ? 0.4 : 6, t.x, 1.3, t.z, phong(0xffffff, { map: tiled(plasterTexture('#cfc6b4'), 6, 2.6, 3) }));
       // The paint on it: whoever tagged it last (the hood's own gang by default).
       const paint = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 2.3),
-        new THREE.MeshLambertMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+        pbr(0xffffff, { roughness: 0.85, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
       const n = { south: [0, 1], north: [0, -1], east: [1, 0], west: [-1, 0] }[t.face];
       paint.position.set(t.x + n[0] * 0.22, 1.35, t.z + n[1] * 0.22);
       paint.rotation.y = Math.atan2(n[0], n[1]);

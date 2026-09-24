@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from './gfx/materials.js';
 import { groundHeight } from '/shared/map.js';
 import { buildVehicle } from './vehicles.js';
 import { glowTexture } from './textures.js';
@@ -109,14 +110,14 @@ export class RaidView {
 function moneyBag() {
   const g = new THREE.Group();
   const sack = new THREE.Group();
-  const cloth = new THREE.MeshLambertMaterial({ color: 0x5d7a2e });
+  const cloth = pbr(0x5d7a2e, { roughness: 0.95 });
   const body = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10), cloth);
   body.scale.set(1, 0.85, 1);
   sack.add(body);
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.14, 0.16, 10), cloth);
   neck.position.y = 0.3;
   sack.add(neck);
-  const tie = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.02, 6, 12), new THREE.MeshLambertMaterial({ color: 0xc9a24a }));
+  const tie = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.02, 6, 12), pbr(0xc9a24a, { roughness: 0.8 }));
   tie.rotation.x = Math.PI / 2;
   tie.position.y = 0.32;
   sack.add(tie);

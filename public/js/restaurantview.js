@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from './gfx/materials.js';
 import { RESTAURANTS, dishPrice, money } from '/shared/catalog.js';
 import {
   LOTS, LOT_BY_ID, STRIP, RESTO, COTTAGES, lotYaw, lotTables, lotSpots, restaurantBoxes,
@@ -14,7 +15,7 @@ import { batchStatic, live } from './batcher.js';
 // and a proper inside (tables, the counter, a kitchen), and "for sale" signs
 // on the empty lots. Built from boxes like everything else.
 
-const phong = (color, o = {}) => new THREE.MeshPhongMaterial({ color, shininess: 12, specular: 0x222222, ...o });
+const phong = (color, o = {}) => pbr(color, { shininess: 12, ...o });
 const basic = (color, o = {}) => new THREE.MeshBasicMaterial({ color, ...o });
 const H = 4.6;           // wall height
 
@@ -197,7 +198,7 @@ export class RestaurantView {
     for (let z = front + 3; z < back - 1; z += 5) box(g, W * 0.6, 0.05, 0.6, 0, H - 0.05, L(z), basic(0xfff3d6));
 
     // The front: glass either side of the door, with deco pillars.
-    const glass = new THREE.MeshPhongMaterial({ color: 0x9fd8ff, transparent: true, opacity: 0.28, shininess: 100, specular: 0xffffff, depthWrite: false });
+    const glass = pbr(0x9fd8ff, { transparent: true, opacity: 0.28, roughness: 0.05, depthWrite: false });
     const doorHalf = RESTO.doorHalf;
     for (const s of [-1, 1]) {
       const w = W / 2 - doorHalf;

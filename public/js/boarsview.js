@@ -1,11 +1,12 @@
 import * as THREE from 'three';
+import { pbr } from './gfx/materials.js';
 import { hideTexture, shadowTexture } from './textures.js';
 
 // Wild boars as the players see them. The server owns where they are; this
 // just glides them between snapshots, trots their legs, and knocks them over
 // when they die.
 
-const phong = (color, o = {}) => new THREE.MeshPhongMaterial({ color, shininess: 6, specular: 0x111111, ...o });
+const phong = (color, o = {}) => pbr(color, { shininess: 6, ...o });
 const STATES = ['approach', 'eat', 'charge', 'flee', 'dead', 'windup'];
 
 function box(parent, w, h, d, x, y, z, mat) {

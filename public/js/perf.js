@@ -29,7 +29,8 @@ export class PerfMeter {
         const m = this.renderer.info.memory;
         this.el.textContent = `${this.fps} fps · worst ${Math.round(this.worst * 1000)} ms\n`
           + `${this.calls} draw calls · ${(this.tris / 1000).toFixed(0)}k tris\n`
-          + `${m.geometries} geometries · ${m.textures} textures`;
+          + `${m.geometries} geometries · ${m.textures} textures`
+          + (this.extra ? `\n${this.extra()}` : '');
       }
       this.frames = 0;
       this.acc = 0;

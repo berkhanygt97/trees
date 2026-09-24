@@ -12,6 +12,11 @@ import { DAY_MS, HOUR_MS } from '../shared/catalog.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
+// Graphics: on laptops with two GPUs, play on the faster one, and do not let
+// an old driver blocklist switch WebGL features off.
+app.commandLine.appendSwitch('force_high_performance_gpu');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+
 const DEFAULTS = {
   port: 3000,
   startCash: 500,

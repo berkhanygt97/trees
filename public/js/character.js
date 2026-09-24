@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from './gfx/materials.js';
 import { plaidTexture, denimTexture, strawTexture, faceTexture, hawaiiTexture, leatherTexture, labelSprite } from './textures.js';
 import { buildGun } from './guns.js';
 import { mergeGeometries } from './merge.js';
@@ -905,7 +906,7 @@ function geometryFor(look) {
 function materialFor(look) {
   const k = JSON.stringify(look);
   if (!materialCache.has(k)) {
-    materialCache.set(k, new THREE.MeshLambertMaterial({ map: paintAtlas(look) }));
+    materialCache.set(k, pbr(0xffffff, { map: paintAtlas(look), roughness: 0.8 }));
   }
   return materialCache.get(k);
 }
@@ -1000,7 +1001,7 @@ export function createCharacter(lookIn = {}, { name = null, tagColor = '#ffffff'
 
   // Cigar in the corner of the mouth; hidden until one is bought.
   const cigar = new THREE.Group();
-  const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.14, 6), new THREE.MeshLambertMaterial({ color: 0x5b3a1e }));
+  const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.014, 0.14, 6), pbr(0x5b3a1e, { roughness: 0.8 }));
   stick.rotation.set(0, -0.4, Math.PI / 2);
   cigar.add(stick);
   const ember = new THREE.Mesh(new THREE.SphereGeometry(0.014, 6, 4), new THREE.MeshBasicMaterial({ color: 0xff7a2a }));
@@ -1241,7 +1242,7 @@ export function createCharacter(lookIn = {}, { name = null, tagColor = '#ffffff'
     setBag(on) {
       if (!!on === !!bag) return;
       if (on) {
-        bag = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), new THREE.MeshLambertMaterial({ color: 0x5d7a2e }));
+        bag = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), pbr(0x5d7a2e, { roughness: 0.95 }));
         bag.scale.set(1, 1.15, 0.9);
         bag.position.set(0, -0.28, 0);
         bones[B.wristL].add(bag);

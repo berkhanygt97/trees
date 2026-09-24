@@ -14,16 +14,31 @@ const POOL = 6;
 
 export class LightPool {
   constructor(scene, size = POOL) {
+    this.scene = scene;
     this.lights = [];
-    for (let i = 0; i < size; i++) {
-      const l = new THREE.PointLight(0xffffff, 0, 20, 2);
-      l.position.set(0, -100, 0);
-      scene.add(l);
-      this.lights.push(l);
-    }
+    this.resize(size);
     this.sources = [];
     this.picked = [];
     this.cutoff = Infinity;
+    this.frame = 0;
+  }
+
+  /**
+   * How many real lights there are (the graphics preset decides). Changing it
+   * makes every lit shader rebuild once, so it only happens with the preset.
+   */
+  resize(size) {
+    while (this.lights.length > size) {
+      const l = this.lights.pop();
+      this.scene.remove(l);
+      l.dispose();
+    }
+    while (this.lights.length < size) {
+      const l = new THREE.PointLight(0xffffff, 0, 20, 2);
+      l.position.set(0, -100, 0);
+      this.scene.add(l);
+      this.lights.push(l);
+    }
     this.frame = 0;
   }
 

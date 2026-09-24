@@ -6,9 +6,9 @@ import { PLOTS, HQS, plotSpawn } from '../../shared/map.js';
 import { HOOD_STREETS, TAG_POINTS } from '../../shared/hoods.js';
 import { RIVALS } from '../../shared/catalog.js';
 
-const at = (room, hour) => {
+const at = (room, hour, weather = 'clear') => {
   room.clock.time = Math.floor(room.clock.time / DAY_MS) * DAY_MS + hour * HOUR_MS;
-  room.clock.weather = 'clear';
+  room.clock.weather = weather;
   room.clock.weatherUntil = room.clock.time + 3 * HOUR_MS;
   room.broadcast('clock', room.clock.state());
 };
@@ -230,4 +230,8 @@ export const VIEWS = [
     client: (c) => { c.rig.mode = 'tp'; c.rig.fresh = true; } },
   { name: 'dusk', client: (c) => { c.rig.mode = 'tp'; }, server: (room) => at(room, 19.2), pos: [street.x0 + 120, 0, midZ], yaw: -Math.PI / 2, pitch: 0.05 },
   { name: 'night', server: (room) => at(room, 23), pos: [street.x0 + 200, 0, midZ], yaw: -Math.PI / 2, pitch: 0.05 },
+  // Weather: wet roads mirroring the sky and the lamps, fog closing in.
+  { name: 'rain', server: (room) => at(room, 15, 'rain'), pos: [0, 0, 200], yaw: 0, pitch: -0.05, wait: 7000 },
+  { name: 'storm-night', server: (room) => at(room, 21.5, 'storm'), pos: [-60, 0, 216], yaw: 1.2, pitch: 0.05, wait: 7000 },
+  { name: 'back-to-clear', server: (room) => at(room, 12), wait: 500 },
 ];

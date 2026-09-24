@@ -1,52 +1,25 @@
 import * as THREE from 'three';
 import { DAY_MS } from '/shared/catalog.js';
-import { cloudTexture, glowTexture } from './textures.js';
+import { createSkyMaterial, hazeAt, sunColorAt, FOG } from './gfx/atmosphere.js';
 
-// Sun, moon, stars, rain and lightning. Also decides how the scene is lit:
-// outdoors follows the time of day, and stepping into the casino fades over to
-// the casino's own warm lighting (there is no night inside a casino).
+// Sun, moon, stars, clouds, rain and lightning. Also decides how the scene is
+// lit: outdoors follows the time of day, and stepping into the casino fades
+// over to the casino's own warm lighting (there is no night inside a casino).
+// The sky itself is one shader (gfx/atmosphere.js); this file drives it.
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const C = (hex) => new THREE.Color(hex);
 
-// [hour, zenith, horizon] keyframes for a clear day. San Andreas by day: a
-// hazy blue sky over a dusty, smoggy horizon. Vice City at dusk: pink and
-// purple. Night: deep violet, never quite black.
-const SKY_KEYS = [
-  [0, C(0x0a0520), C(0x241034)],
-  [5, C(0x120a2c), C(0x3a1a44)],
-  [6.2, C(0x4a3a8a), C(0xff9a6a)],
-  [8, C(0x5a8fcf), C(0xdccfb0)],
-  [12, C(0x4f86cc), C(0xdcd2b4)],
-  [17, C(0x5a80c8), C(0xe8c89a)],
-  [18.8, C(0x6a4a9a), C(0xffa25a)],
-  [19.6, C(0x5a2a7a), C(0xff5a8a)],
-  [20.6, C(0x1c0c3c), C(0x5a1f5a)],
-  [24, C(0x0a0520), C(0x241034)],
-];
-
-function skyAt(hour, outTop, outHorizon) {
-  for (let i = 0; i < SKY_KEYS.length - 1; i++) {
-    const [h0, t0, z0] = SKY_KEYS[i];
-    const [h1, t1, z1] = SKY_KEYS[i + 1];
-    if (hour >= h0 && hour <= h1) {
-      const k = (hour - h0) / (h1 - h0);
-      outTop.copy(t0).lerp(t1, k);
-      outHorizon.copy(z0).lerp(z1, k);
-      return;
-    }
-  }
-}
-
-const OVERCAST = C(0x7d8591);
-const STORM = C(0x3a4150);
-
-const SHADOW_R = 40;
 const UP = new THREE.Vector3(0, 1, 0);
 const tmpA = new THREE.Vector3();
 const tmpB = new THREE.Vector3();
 const tmpC = new THREE.Vector3();
 const tmpD = new THREE.Vector3();
+const tmpCol = new THREE.Color();
+
+// How cloudy each kind of weather is, and how thick the air gets.
+const COVER = { clear: 0.3, cloudy: 0.62, rain: 0.86, storm: 0.95 };
+const DENSITY = { clear: 0.0009, cloudy: 0.0013, rain: 0.0045, storm: 0.0065 };
 
 export class Sky {
   constructor(scene, casino) {
@@ -58,84 +31,49 @@ export class Sky {
     this.flash = 0;
     this.nextFlash = 4;
     this.night = 0;
-    this.drawFar = 760;
+    this.dusk = 0;
+    this.grey = 0;
+    this.cover = COVER.clear;
+    this.density = DENSITY.clear;
+    this.viewFar = 900;      // set by the graphics preset
+    this.drawFar = 900;
+    this.shadowR = 55;
+    this.sunDir = new THREE.Vector3(0, 1, 0);
+    this.moonDir = new THREE.Vector3(0, -1, 0);
+    this.sunColor = new THREE.Color(1, 1, 1);
+    this.haze = new THREE.Color();
+    this.hazeSun = new THREE.Color();
 
-    this.top = new THREE.Color();
-    this.horizon = new THREE.Color();
-
-    // Gradient dome that follows the camera.
-    this.dome = new THREE.Mesh(
-      new THREE.SphereGeometry(900, 32, 16),
-      new THREE.ShaderMaterial({
-        side: THREE.BackSide,
-        depthWrite: false,
-        fog: false,
-        uniforms: { top: { value: new THREE.Color() }, horizon: { value: new THREE.Color() } },
-        vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-        fragmentShader: 'uniform vec3 top; uniform vec3 horizon; varying vec3 vDir; void main(){ float h = clamp(vDir.y * 1.6, 0.0, 1.0); gl_FragColor = vec4(mix(horizon, top, pow(h, 0.7)), 1.0); }',
-      }),
-    );
+    // One sky shader on a box round the camera, drawn behind everything.
+    this.material = createSkyMaterial();
+    this.dome = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), this.material);
+    this.dome.frustumCulled = false;
     this.dome.renderOrder = -10;
     scene.add(this.dome);
 
-    this.sunDisc = new THREE.Mesh(new THREE.CircleGeometry(40, 28), new THREE.MeshBasicMaterial({ color: 0xfff1c4, fog: false }));
-    this.moonDisc = new THREE.Mesh(new THREE.CircleGeometry(18, 24), new THREE.MeshBasicMaterial({ color: 0xdfe6ff, fog: false }));
-    scene.add(this.sunDisc, this.moonDisc);
-
-    // Stars.
-    const starGeo = new THREE.BufferGeometry();
-    const pts = [];
-    for (let i = 0; i < 900; i++) {
-      const u = Math.random() * Math.PI * 2;
-      const v = Math.random() * 0.9 + 0.08;
-      pts.push(Math.cos(u) * Math.cos(v) * 850, Math.sin(v) * 850, Math.sin(u) * Math.cos(v) * 850);
-    }
-    starGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
-    this.stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 2.2, sizeAttenuation: false, transparent: true, fog: false }));
-    scene.add(this.stars);
+    scene.fog = new THREE.FogExp2(0x9aa8b8, this.density);
 
     // Outdoor lights; the casino's own lights are blended against these.
-    this.sun = new THREE.DirectionalLight(0xfff2dc, 1.8);
+    this.sun = new THREE.DirectionalLight(0xfff2dc, 2.5);
     this.moon = new THREE.DirectionalLight(0x8fa4ff, 0.25);
     // The sun's shadows cover the ground round you (`focus`, set by main),
     // not the whole valley: sharp where you are looking, free further out.
     this.focus = null;
-    const sc = this.sun.shadow.camera;
-    sc.left = sc.bottom = -SHADOW_R;
-    sc.right = sc.top = SHADOW_R;
-    sc.near = 1;
-    sc.far = 400;
-    this.sun.shadow.bias = -0.0006;
-    this.sun.shadow.normalBias = 0.035;
+    this._shadowSpan(this.shadowR);
+    this.sun.shadow.bias = -0.0004;
+    this.sun.shadow.normalBias = 0.03;
     scene.add(this.sun, this.moon, this.sun.target, this.moon.target);
 
-    // A drifting cloud layer, tinted by the sky, and a glare round the sun.
-    const clouds = cloudTexture();
-    // Fades to nothing towards its rim, so the layer has no visible edge and
-    // never reaches the camera's far plane.
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = 128;
-    const g = cv.getContext('2d');
-    const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-    gr.addColorStop(0, '#fff');
-    gr.addColorStop(0.55, '#fff');
-    gr.addColorStop(1, '#000');
-    g.fillStyle = gr;
-    g.fillRect(0, 0, 128, 128);
-    this.clouds = new THREE.Mesh(
-      new THREE.PlaneGeometry(1800, 1800),
-      new THREE.MeshBasicMaterial({ map: clouds, alphaMap: new THREE.CanvasTexture(cv), transparent: true, depthWrite: false, fog: false, opacity: 0.8 }),
-    );
-    this.clouds.rotation.x = Math.PI / 2;
-    this.clouds.renderOrder = -9;
-    scene.add(this.clouds);
-    this.glare = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: glowTexture(), color: 0xfff0c0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-    }));
-    this.glare.scale.set(320, 320, 1);
-    scene.add(this.glare);
-
     this._rain(scene);
+  }
+
+  _shadowSpan(r) {
+    const sc = this.sun.shadow.camera;
+    sc.left = sc.bottom = -r;
+    sc.right = sc.top = r;
+    sc.near = 1;
+    sc.far = 500;
+    sc.updateProjectionMatrix();
   }
 
   _rain(scene) {
@@ -156,108 +94,108 @@ export class Sky {
 
   setWeather(w) { this.weather = w; }
 
-  /** worldTime in ms; camera for positioning the dome and the rain. */
+  /** From the graphics preset: how far you can see, and whether there are clouds. */
+  setView({ far, clouds }) {
+    this.viewFar = far;
+    this.material.uniforms.cloudsOn.value = clouds ? 1 : 0;
+  }
+
+  /** worldTime in ms; camera for positioning the sky and the rain. */
   update(dt, worldTime, camera, insideCasino) {
     const hour = ((worldTime % DAY_MS) + DAY_MS) % DAY_MS / DAY_MS * 24;
     this.inside += ((insideCasino ? 1 : 0) - this.inside) * Math.min(1, dt * 4);
     const k = this.inside;
+    const ease = Math.min(1, dt * 0.4);
 
     const raining = this.weather === 'rain' || this.weather === 'storm';
     this.wetness += ((raining ? 1 : 0) - this.wetness) * Math.min(1, dt * 0.5);
-    const grey = this.weather === 'storm' ? 0.85 : this.weather === 'rain' ? 0.65 : this.weather === 'cloudy' ? 0.4 : 0;
-    this.grey = (this.grey || 0) + (grey - (this.grey || 0)) * Math.min(1, dt * 0.4);
-
-    // Sky colours.
-    skyAt(hour, this.top, this.horizon);
-    const dayness = Math.max(0, Math.min(1, (this.top.r + this.top.g + this.top.b) / 1.4));
-    const cloud = (this.weather === 'storm' ? STORM : OVERCAST).clone().multiplyScalar(0.25 + dayness * 0.75);
-    this.top.lerp(cloud, this.grey);
-    this.horizon.lerp(cloud, this.grey * 0.9);
-    this.dome.material.uniforms.top.value.copy(this.top);
-    this.dome.material.uniforms.horizon.value.copy(this.horizon);
-    // Everything in the sky sits just inside the draw distance, which follows
-    // the fog: nothing past the fog is drawn at all (San Andreas did the same).
-    const R = this.drawFar * 0.92;
-    this.dome.position.copy(camera.position);
-    this.dome.scale.setScalar(R / 900);
-    this.stars.position.copy(camera.position);
-    this.stars.scale.setScalar(R / 850);
+    const grey = this.weather === 'storm' ? 0.85 : this.weather === 'rain' ? 0.62 : this.weather === 'cloudy' ? 0.3 : 0;
+    this.grey += (grey - this.grey) * ease;
+    this.cover += ((COVER[this.weather] ?? COVER.clear) - this.cover) * ease;
+    this.density += ((DENSITY[this.weather] ?? DENSITY.clear) - this.density) * ease;
 
     // Sun rises in the east (+x) at 6 and sets in the west at 20.
     const sunA = ((hour - 6) / 14) * Math.PI;
-    const sunDir = new THREE.Vector3(Math.cos(sunA), Math.sin(sunA), 0.35).normalize();
+    const sunDir = this.sunDir.set(Math.cos(sunA), Math.sin(sunA), 0.35).normalize();
     const moonA = ((hour + 24 - 19) % 24) / 12 * Math.PI;
-    const moonDir = new THREE.Vector3(Math.cos(moonA), Math.sin(moonA), -0.3).normalize();
-    const orbit = R * 0.95;
-    this.sunDisc.position.copy(camera.position).addScaledVector(sunDir, orbit);
-    this.sunDisc.lookAt(camera.position);
-    this.sunDisc.visible = sunDir.y > -0.05 && this.grey < 0.6;
-    this.moonDisc.position.copy(camera.position).addScaledVector(moonDir, orbit);
-    this.moonDisc.scale.setScalar(orbit / 800);
-    this.moonDisc.lookAt(camera.position);
-    this.moonDisc.visible = moonDir.y > -0.05 && this.grey < 0.6;
-
+    const moonDir = this.moonDir.set(Math.cos(moonA), Math.sin(moonA), -0.3).normalize();
     const sunUp = Math.max(0, Math.min(1, sunDir.y * 3));
-    // Low sun: a big orange-pink ball, like every PS2 sunset.
-    this.sunDisc.material.color.setRGB(1, 0.62 + sunUp * 0.33, 0.45 + sunUp * 0.4);
-    this.sunDisc.scale.setScalar((1.35 - sunUp * 0.35) * (orbit / 800));
+    this.night = 1 - Math.max(0, Math.min(1, (sunDir.y + 0.08) * 5));
     // Golden hour, for the colour grade: strongest around 7pm (and 6am).
     this.dusk = Math.max(0, 1 - Math.abs(hour - 19.2) / 1.6, 1 - Math.abs(hour - 6.3) / 1.2) * (1 - this.grey);
+    const dayL = Math.max(0, Math.min(1, sunDir.y * 4 + 0.3));
 
-    // Clouds drift with the camera, lit by the sky: white by day, orange at dusk.
-    this.clouds.position.set(camera.position.x, camera.position.y + 260 * (R / 900), camera.position.z);
-    this.clouds.scale.setScalar(R / 900);
-    const cm = this.clouds.material;
-    cm.map.offset.set((camera.position.x / 1800) * 3 + worldTime * 1e-6, (camera.position.z / 1800) * -3);
-    cm.color.copy(this.horizon).lerp(C(0xffffff), 0.55 * (1 - this.night));
-    cm.opacity = 0.35 + this.grey * 0.6;
-    this.glare.position.copy(camera.position).addScaledVector(sunDir, orbit * 0.97);
-    this.glare.scale.set(320 * orbit / 800, 320 * orbit / 800, 1);
-    this.glare.material.opacity = sunDir.y > -0.05 ? (0.55 - this.grey * 0.5) * Math.min(1, (sunDir.y + 0.05) * 6) : 0;
-    this.glare.material.color.setHSL(0.1, 0.7, 0.6 + sunUp * 0.25);
-    this.night = 1 - Math.max(0, Math.min(1, (sunDir.y + 0.08) * 5));
-    this.stars.material.opacity = this.night * (1 - this.grey);
+    // The air, the sun and the clouds.
+    hazeAt(sunDir.y, this.grey, this.haze, this.hazeSun);
+    sunColorAt(sunDir.y, this.sunColor);
+    const u = this.material.uniforms;
+    u.sunDir.value.copy(sunDir);
+    u.moonDir.value.copy(moonDir);
+    u.night.value = this.night;
+    u.dusk.value = this.dusk;
+    u.grey.value = this.grey;
+    u.cloudCover.value = this.cover;
+    u.cloudTime.value = (worldTime / 1000) % 100000;
+    u.haze.value.copy(this.haze);
+    u.hazeSun.value.copy(this.hazeSun);
+    const storm = this.weather === 'storm' ? 1 : 0;
+    u.overcast.value.setRGB(0.4, 0.42, 0.46).multiplyScalar(dayL * (1 - 0.4 * storm) + 0.02);
+    u.cloudSun.value.copy(this.sunColor).multiplyScalar(sunUp * 1.1 * (1 - this.grey * 0.5)).add(tmpCol.setRGB(0.02, 0.025, 0.04).multiplyScalar(this.night));
+    u.cloudShade.value.setRGB(0.36, 0.4, 0.48).multiplyScalar(dayL * (1 - 0.35 * this.grey)).add(tmpCol.setRGB(0.008, 0.01, 0.018));
+    u.ground.value.setRGB(0.2, 0.19, 0.15).multiply(tmpCol.copy(this.sunColor).multiplyScalar(sunUp * 0.9).add(this.haze));
+
+    // The sky box sits round the camera; it is drawn at the far plane whatever its size.
+    this.dome.position.copy(camera.position);
+    this.dome.scale.setScalar(100);
 
     // Directional lights. Neither shines into the casino.
     this._placeSun(sunDir, this.focus || camera.position);
-    this.sun.intensity = sunUp * (2.5 - this.grey * 1.7) * (1 - k);
-    this.sun.color.setHSL(0.1, 0.6, 0.55 + sunUp * 0.4);
+    this.sun.intensity = sunUp * (3.2 - this.grey * 2.4) * (1 - k);
+    this.sun.color.copy(this.sunColor);
     this.moon.position.copy(camera.position).addScaledVector(moonDir, 100);
     this.moon.target.position.copy(camera.position);
-    this.moon.intensity = Math.max(0, moonDir.y) * 0.35 * (1 - k) * (1 - this.grey * 0.6);
+    this.moon.intensity = Math.max(0, moonDir.y) * 0.3 * (1 - k) * (1 - this.grey * 0.6);
 
-    // Ambient: outdoors follows the sky; indoors is the casino's own mood.
-    // Less flat fill by day than before shadows: the sun does the work, so
-    // shadowed sides read as shade. Overcast days fill in (no sun, soft light).
-    const outAmb = lerp(0.28, lerp(0.62, 0.95, this.grey), 1 - this.night) * (1 - this.grey * 0.3);
-    const flash = this.flash;
+    // Ambient: outdoors, the sky's own light (bluish by day, deep blue at
+    // night); indoors, the casino's mood. Overcast days fill in: no sun, soft light.
+    // By day most of the fill now comes from the sky itself (the environment
+    // map every material sees), so the flat ambient only tops it up; at night
+    // the sky is nearly black and the ambient carries the moonlight.
+    const envShare = lerp(0.28, 1, this.night);
+    const outAmb = lerp(0.3, lerp(0.55, 1.0, this.grey), 1 - this.night) * (1 - this.grey * 0.25) * envShare;
     const amb = this.casino.ambient;
-    amb.intensity = lerp(outAmb, 1.15, k) + flash * 2.5 * (1 - k);
-    amb.color.copy(this.horizon).lerp(C(0xffffff), 0.45).lerp(C(0x7a5666), k);
+    amb.intensity = lerp(outAmb, 0.7, k) + this.flash * 2.5 * (1 - k);
+    amb.color.copy(this.haze).lerp(C(0xffffff), 0.35).lerp(C(0x7a5666), k);
+    if (this.night > 0.5) amb.color.lerp(C(0x4a5a8a), (this.night - 0.5) * 2 * (1 - k));
     const hemi = this.casino.hemi;
-    hemi.intensity = lerp(0.6, 0.5, k);
-    hemi.color.copy(this.top).lerp(C(0xffffff), 0.3).lerp(C(0xffd9a0), k);
-    hemi.groundColor.set(0x3a4a2a).lerp(C(0x30121f), k);
+    hemi.intensity = lerp(0.7 * envShare, 0.35, k);
+    hemi.color.copy(this.haze).lerp(C(0x9ab8e8), 0.4 * (1 - this.grey)).lerp(C(0xffd9a0), k);
+    hemi.groundColor.set(0x4a4432).multiplyScalar(0.4 + 0.6 * dayL).lerp(C(0x30121f), k);
     for (const l of this.casino.indoorLights) l.intensity = 0.5 * k;
 
-    // Background and fog.
-    const fogNear = lerp(raining ? 50 : 160, 45, k);
-    const fogFar = lerp(raining ? 280 : 720, 120, k);
-    this.scene.fog.near = fogNear;
-    this.scene.fog.far = fogFar;
-    // The camera draws no further than the fog lets you see (read by main).
-    this.drawFar = fogFar + 40;
-    this.scene.fog.color.copy(this.horizon).lerp(C(0x140b1c), k);
-    this.scene.background.copy(this.horizon);
+    // Fog: thick in the rain, thin up in the hills, glowing towards the sun.
+    const fog = this.scene.fog;
+    fog.density = lerp(this.density, 0.0008, k);
+    fog.color.copy(this.haze).lerp(C(0x140b1c), k);
+    FOG.fogSunDir.value.copy(sunDir);
+    FOG.fogSunColor.value.copy(this.hazeSun).lerp(C(0x140b1c), k);
+    FOG.fogFalloff.value = raining ? 0.0015 : 0.0028;
+    FOG.fogBase.value = 0;
+    this.scene.background.copy(this.haze);
+    // The camera draws no further than you can see through the air (read by main).
+    this.drawFar = lerp(Math.min(this.viewFar, raining ? 520 : this.viewFar), 160, k);
+    FOG.fogEnd.value = this.drawFar;
 
     this._updateRain(dt, camera, k);
     this._updateLightning(dt, k);
   }
 
-  /** Sun shadows on (map size in texels) or off (0). */
-  setShadows(size) {
+  /** Sun shadows: map size in texels (0 = off) and the width of ground they cover. */
+  setShadows(size, span = 110) {
     const on = size > 0;
     this.sun.castShadow = on;
+    this.shadowR = Math.max(10, span / 2);
+    this._shadowSpan(this.shadowR);
     if (on && this.sun.shadow.mapSize.x !== size) {
       this.sun.shadow.mapSize.set(size, size);
       if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
@@ -267,7 +205,7 @@ export class Sky {
   _placeSun(sunDir, focus) {
     // Snap the shadow camera to whole shadow-map texels, so the shadows
     // do not crawl as you walk.
-    const texel = (SHADOW_R * 2) / this.sun.shadow.mapSize.x;
+    const texel = (this.shadowR * 2) / this.sun.shadow.mapSize.x;
     const fwd = tmpA.copy(sunDir).negate();
     const right = tmpB.crossVectors(fwd, UP);
     if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
@@ -278,7 +216,7 @@ export class Sky {
     const c = focus.dot(fwd);
     const centre = tmpD.copy(right).multiplyScalar(a).addScaledVector(up, b).addScaledVector(fwd, c);
     this.sun.target.position.copy(centre);
-    this.sun.position.copy(centre).addScaledVector(sunDir, 200);
+    this.sun.position.copy(centre).addScaledVector(sunDir, 250);
     // Below the horizon, or indoors, there is nothing to cast: skip drawing the map.
     this.sun.shadow.autoUpdate = sunDir.y > 0.02 && this.inside < 0.5;
   }

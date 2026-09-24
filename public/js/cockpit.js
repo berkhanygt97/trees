@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from './gfx/materials.js';
 import { dashTexture, plaidTexture } from './textures.js';
 import { makeHand } from './avatar.js';
 
@@ -6,7 +7,7 @@ import { makeHand } from './avatar.js';
 // cluster with needles, a steering wheel that turns, and your own hands on
 // it. Only the local driver's vehicle ever gets one.
 
-const phong = (color, o = {}) => new THREE.MeshPhongMaterial({ color, shininess: 20, specular: 0x222222, ...o });
+const phong = (color, o = {}) => pbr(color, { shininess: 20, ...o });
 
 // How each body is laid out inside. `wid` is the cabin width.
 const INTERIOR = {

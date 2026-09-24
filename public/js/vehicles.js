@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr, metal, glass } from './gfx/materials.js';
 import { VEHICLE_BY_ID } from '/shared/catalog.js';
 import { labelSprite, shadowTexture } from './textures.js';
 import { mergeGeometries } from './merge.js';
@@ -6,46 +7,23 @@ import { mergeGeometries } from './merge.js';
 // Cars have shaped bodies: a side profile (sloping bonnet, raked windscreen,
 // boot, wheel arches) extruded to the car's width with rounded edges, a glass
 // cabin on top with pillars and a roof, chrome bumpers, a grille and mirrors.
-// Paint, glass and chrome reflect a little painted sky, the way cars shone on
-// a PS2. Machines (tractor, combine, scooter) are built from parts.
+// Paint, glass and chrome reflect the live sky (scene.environment). Machines
+// (tractor, combine, scooter) are built from parts.
 // Local frame: forward is -Z (the same as a player's yaw), up is +Y.
 
-/** A tiny sky, ground and horizon for things to reflect: one cube map for every car. */
-function reflections() {
-  const face = (top, mid, bottom) => {
-    const cv = document.createElement('canvas');
-    cv.width = cv.height = 32;
-    const g = cv.getContext('2d');
-    const gr = g.createLinearGradient(0, 0, 0, 32);
-    gr.addColorStop(0, top);
-    gr.addColorStop(0.5, mid);
-    gr.addColorStop(0.56, '#6a6258');
-    gr.addColorStop(1, bottom);
-    g.fillStyle = gr;
-    g.fillRect(0, 0, 32, 32);
-    return cv;
-  };
-  const side = face('#9cc4e8', '#f4e2c4', '#4a4238');
-  const up = face('#8ab8e6', '#a8cdee', '#a8cdee');
-  const down = face('#3a342e', '#3a342e', '#3a342e');
-  const cube = new THREE.CubeTexture([side, side, up, down, side, side]);
-  cube.colorSpace = THREE.SRGBColorSpace;
-  cube.needsUpdate = true;
-  return cube;
-}
-const ENV = reflections();
 
-const phong = (color, o = {}) => new THREE.MeshPhongMaterial({ color, shininess: 40, specular: 0x333333, ...o });
-const shiny = (color, reflectivity, o = {}) => phong(color, { envMap: ENV, reflectivity, combine: THREE.MixOperation, ...o });
-const GLASS = shiny(0x141c26, 0.55, { shininess: 90, specular: 0x8899aa });
-const TYRE = phong(0x151515, { shininess: 5 });
-const RIM = shiny(0xc8c8c8, 0.6, { shininess: 80 });
-const CHROME = shiny(0xffffff, 0.85, { shininess: 100, specular: 0xffffff });
-const GRILLE = phong(0x1a1a1c, { shininess: 30 });
+const phong = (color, o = {}) => pbr(color, { shininess: 40, ...o });
+// Car paint is glossy; the sky's reflections come from scene.environment.
+const shiny = (color, o = {}) => pbr(color, { roughness: 0.28, metalness: 0.15, ...o });
+const GLASS = glass(0x141c26);
+const TYRE = phong(0x151515, { roughness: 0.92 });
+const RIM = metal(0xc8c8c8, 0.25);
+const CHROME = metal(0xffffff, 0.08);
+const GRILLE = phong(0x1a1a1c, { roughness: 0.6 });
 const HEAD = new THREE.MeshBasicMaterial({ color: 0xfff6d0 });
 const TAIL = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
 const DARK = phong(0x222226, { shininess: 10 });
-const TINT = phong(0x121820, { shininess: 90, specular: 0x6a7a8a });
+const TINT = glass(0x121820);
 
 /** Physical dimensions the controls and the farm need. */
 export const SPECS = {
@@ -452,7 +430,7 @@ export function buildVehicle(modelId, color = '#d93a3a', { implement = null, lab
   const body = new THREE.Group();
   group.add(body);
   const wheels = [];
-  const paint = shiny(color, 0.12, { shininess: 70, specular: 0x5a5a5a });
+  const paint = shiny(color);
   BUILDERS[model.body](body, wheels, paint);
 
   const spec = SPECS[model.body];

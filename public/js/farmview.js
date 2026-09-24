@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { pbr } from './gfx/materials.js';
 import { mergeParts as merge } from './geo.js';
 import { CROPS, CROP_BY_ID, cropProgress, isWatered } from '/shared/catalog.js';
 import { PLOTS, PLOT_SIZE, GATE, TILE, PADS, tileCenter, tileIndex, padWorld } from '/shared/map.js';
@@ -8,7 +9,7 @@ import { soilTexture, plankTexture, brickTexture, boardTexture, roofTileTexture,
 // Crops are one InstancedMesh per crop (plus one for its fruit), so a whole
 // valley of fields is a couple of dozen draw calls.
 
-const phong = (color, o = {}) => new THREE.MeshPhongMaterial({ color, shininess: 8, specular: 0x111111, ...o });
+const phong = (color, o = {}) => pbr(color, { shininess: 8, ...o });
 const basic = (color, o = {}) => new THREE.MeshBasicMaterial({ color, ...o });
 const CAP = PLOTS.length * 400;
 
