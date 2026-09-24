@@ -96,8 +96,7 @@ function flakeMap() {
   }
   flakes = new THREE.DataTexture(data, n, n);
   flakes.wrapS = flakes.wrapT = THREE.RepeatWrapping;
-  flakes.repeat.set(12, 12);
-  flakes.magFilter = THREE.NearestFilter;
+  flakes.repeat.set(24, 24);
   flakes.generateMipmaps = true;
   flakes.minFilter = THREE.LinearMipmapLinearFilter;
   flakes.needsUpdate = true;
@@ -114,9 +113,9 @@ export function carPaint(color, { metallic = 0.35, worn = false } = {}) {
     metalness: metallic * 0.6,
     roughness: worn ? 0.6 : 0.38,
     normalMap: metallic > 0 ? flakeMap() : null,
-    normalScale: new THREE.Vector2(0.35, 0.35),
+    normalScale: new THREE.Vector2(0.18, 0.18),
     clearcoat: worn ? 0.25 : 1,
-    clearcoatRoughness: worn ? 0.3 : 0.04,
+    clearcoatRoughness: worn ? 0.3 : 0.08,
     envMapIntensity: 1.1,
   });
 }

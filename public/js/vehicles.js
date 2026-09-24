@@ -29,6 +29,9 @@ const TAIL = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
 const DARK = phong(0x222226, { shininess: 10 });
 const TINT = carGlass(0x121820, { opacity: 0.6 });
 const SEAT = pbr(0x2a2826, { roughness: 0.9 });
+const LINING = pbr(0x57544e, { roughness: 0.95 });
+/** Box faces: +x, -x, +y, -y, +z, -z. A roof is lacquered on top and lined with cloth underneath. */
+const lined = (paint) => [paint, paint, paint, LINING, paint, paint];
 const DASH = pbr(0x1b1b1e, { roughness: 0.55 });
 
 /** A tyre's tread: blocks across it and two grooves round it (u round, v across). */
@@ -192,15 +195,15 @@ function car(g, wheels, paint, o) {
     const roofY = belt + cabH + 0.02;
     if (o.ttop) {
       // T-top: a centre bar and rails front and back, the glass showing between.
-      box(g, 0.26, 0.07, roofLen + 0.08, 0, roofY, -(roofF + roofB) / 2, paint);
-      box(g, wid - 0.18, 0.07, 0.14, 0, roofY, -roofF + 0.03, paint);
-      box(g, wid - 0.18, 0.07, 0.14, 0, roofY, -roofB - 0.03, paint);
+      box(g, 0.26, 0.07, roofLen + 0.08, 0, roofY, -(roofF + roofB) / 2, lined(paint));
+      box(g, wid - 0.18, 0.07, 0.14, 0, roofY, -roofF + 0.03, lined(paint));
+      box(g, wid - 0.18, 0.07, 0.14, 0, roofY, -roofB - 0.03, lined(paint));
       for (const sx of [-1, 1]) {
         box(g, 0.06, 0.07, roofLen + 0.08, sx * (wid / 2 - 0.12), roofY, -(roofF + roofB) / 2, paint);
         box(g, wid / 2 - 0.3, 0.03, roofLen - 0.2, sx * (wid / 4 + 0.02), roofY + 0.02, -(roofF + roofB) / 2, TINT);   // the glass panel
       }
     } else {
-      box(g, wid - 0.18, 0.07, roofLen + 0.08, 0, roofY, -(roofF + roofB) / 2, paint);
+      box(g, wid - 0.18, 0.07, roofLen + 0.08, 0, roofY, -(roofF + roofB) / 2, lined(paint));
     }
     const pillar = (u0, u1, x) => {
       const dz = -(u1 - u0);
@@ -501,10 +504,14 @@ export function buildVehicle(modelId, color = '#d93a3a', { implement = null, lab
   // Its own lamps, so each car can switch them on and brake on its own.
   const head = HEAD.clone();
   const tail = TAIL.clone();
+  const lamps = [];
   body.traverse((o) => {
-    if (o.material === HEAD) o.material = head;
+    if (o.material === HEAD) { o.material = head; lamps.push(o); }
     else if (o.material === TAIL) o.material = tail;
   });
+  // From the driver's seat the headlamps are out of sight: never let a
+  // sliver of one glow over the bonnet.
+  if (body.userData.riderHides && model.kind !== 'machine') body.userData.riderHides.push(...lamps);
   const HEAD_RGB = new THREE.Color(0xfff6d0);
   const TAIL_RGB = new THREE.Color(0xff2a2a);
   let lastSpeed = 0;

@@ -1308,13 +1308,15 @@ function loop(now) {
   if (triggerHeld && weapons.out && weapons.gun.auto && !car && controls.locked && weapons.fire()) selfAvatar.fire();
 
   // Your headlights light the road ahead after dark (a light from the pool).
-  if (!headlight) headlight = world.lights.add([{ x: 0, y: -50, z: 0, color: 0xfff0d0, intensity: 0, range: 26, night: true, priority: 60 }])[0];
+  // It sits low, under the bonnet line, so it lights the road and what is
+  // ahead, not a hot spot on your own lacquer.
+  if (!headlight) headlight = world.lights.add([{ x: 0, y: -50, z: 0, color: 0xfff0d0, intensity: 0, range: 30, night: true, priority: 60 }])[0];
   if (car) {
-    const r = car.spec.radius + 4;
+    const r = car.spec.radius + 6;
     headlight.x = controls.pos.x - Math.sin(car.yaw) * r;
     headlight.z = controls.pos.z - Math.cos(car.yaw) * r;
-    headlight.y = controls.pos.y + 1.2;
-    headlight.intensity = 90;
+    headlight.y = controls.pos.y + 0.6;
+    headlight.intensity = 70;
   } else headlight.intensity = 0;
 
   // Shadow flags for whatever was added since last time (cars, people, farms).
