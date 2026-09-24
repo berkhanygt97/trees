@@ -16,6 +16,7 @@
     "build:linux": "npx --yes electron-builder --linux"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "0.20.0",
     "three": "^0.169.0",
     "ws": "^8.18.0"
   },
