@@ -3,10 +3,11 @@ import {
   CROP_BY_ID, ITEMS, SELLABLE, HOUSES, ANIMAL_HOUSES, PROCESSORS, PROCESS_QUEUE_MAX,
   FIELD_SIZES, FIELD_PRICES, FIELD_LEVELS, VEHICLE_BY_ID, MAX_VEHICLES,
   IMPLEMENT_BY_ID, PAINTS, RESALE, GUN_BY_ID, PLAYER_HP, WORKER_ROLES, RESTAURANTS, levelOf, levelProgress,
+  ARMOR, hoodLevel, soldierCap,
 } from '../shared/catalog.js';
 import {
   BOUNDS, PLOTS, STATION_BY_ID, TOWN_SPAWN, PAD_KEYS, plotSpawn, tileCenter, tileIndex,
-  padStation, validateLayout, cleanLayout, defaultLayout, LOT_BY_ID, LOTS,
+  padStation, validateLayout, cleanLayout, defaultLayout, LOT_BY_ID, LOTS, hoodSpawn, HOSPITAL_DOOR,
 } from '../shared/map.js';
 import { rnd, pick } from './rng.js';
 import { CasinoEvents } from './casino-events.js';
@@ -15,6 +16,8 @@ import { Market, Orders } from './economy.js';
 import { slugOf } from './save.js';
 import { SAVE_VERSION, versionOf, upgradeProfile, upgradeWorld } from './migrate.js';
 import { Wildlife } from './boars.js';
+import { Combat } from './combat.js';
+import { Hoods } from './hoods.js';
 import { Staff } from './workers.js';
 import { Restaurants } from './restaurants.js';
 import {
@@ -40,12 +43,13 @@ const RAIN_EVERY_MS = 20_000;
 const SHOP_OF = {
   seed: 'farmshop', feed: 'animalshop', animal: 'animalshop', coop: 'animalshop', barn: 'animalshop', pen: 'animalshop',
   mill: 'builder', dairy: 'builder', bakery: 'builder', house: 'builder',
-  field: 'landoffice', lot: 'landoffice', implement: 'machinery', gun: 'gunshop',
+  field: 'landoffice', lot: 'landoffice', implement: 'machinery', gun: 'gunshop', armor: 'gunshop',
 };
 
 const LAYOUT_FEE = 100;           // per building (or field) moved with the planner
 
-const KO_MS = 4000;
+const KO_MS = 6000;                // wasted: how long before you come round
+const SPAWN_SAFE_MS = 3000;        // nobody can hurt you for this long after
 const REGEN_DELAY_MS = 5000;
 const REGEN_PER_S = 6;
 
@@ -77,6 +81,8 @@ export class Room {
 
     this.round = new CasinoEvents(this);
     this.wildlife = new Wildlife(this);
+    this.combat = new Combat(this);
+    this.hoods = new Hoods(this);
     this.restaurants = new Restaurants(this);
     this.staff = new Staff(this, world && world.staff);
 
@@ -183,6 +189,8 @@ export class Room {
       plots: this.publicPlots(),
       vehicles: this.publicVehicles(),
       boars: this.wildlife.snapshot(),
+      unitlist: this.combat.unitList(),
+      units: this.combat.snapshot(),
       workers: this.staff.publicWorkers(),
       restaurants: this.restaurants.publicRestaurants(),
       npcs: this.restaurants.snapshotNpcs(),
@@ -245,7 +253,7 @@ export class Room {
 
   publicPlayer(p) {
     // `cigar` rides along in the player list so everyone can see who is smoking.
-    return { id: p.id, slug: p.slug, name: p.name, color: p.color, hat: p.hat, cigar: !!p.cigar, plot: p.plot };
+    return { id: p.id, slug: p.slug, name: p.name, color: p.color, hat: p.hat, cigar: !!p.cigar, plot: p.plot, gang: p.gang.name };
   }
 
   publicPlayers() {
@@ -274,6 +282,10 @@ export class Room {
         pen: b.pen ? b.pen.animals : null,
         mill: !!b.mill, dairy: !!b.dairy, bakery: !!b.bakery,
       },
+      // The hood: its gang, what has been built up, and what is knocked about.
+      gang: owner.gang.name,
+      up: owner.hood.up,
+      hp: owner.hood.hp,
     };
   }
 
@@ -405,7 +417,10 @@ export class Room {
       lotIds: this.lotIdsFor(p),
       tills: Math.round(this.restaurants.tills(p)),
       carrying: p.carrying || null,
-      staffCap: { farm: this.staff.capAt(p, 'farm'), restaurant: this.staff.capAt(p, 'restaurant') },
+      staffCap: { farm: this.staff.capAt(p, 'farm'), restaurant: this.staff.capAt(p, 'restaurant'), hood: this.staff.capAt(p, 'hood') },
+      armor: Math.round(p.armor),
+      gang: p.gang,
+      hood: p.plot >= 0 ? this.hoods.summary(p) : null,
     });
   }
 
@@ -530,6 +545,7 @@ export class Room {
     // Farm buildings and restaurant counters answer to their owner only.
     if (st.plot != null && st.plot !== p.plot) return null;
     if (st.lot != null && !p.restaurants.some((r) => r.lot === st.lot)) return null;
+    if (st.game === 'hq' && st.hood !== p.plot) return null;
     return st;
   }
 
@@ -558,6 +574,7 @@ export class Room {
       case 'hire': return this.onHire(p, msg.d);
       case 'staff': return this.onStaff(p, msg.d);
       case 'resto': return this.onResto(p, msg.d);
+      case 'hood': return this.onHood(p, msg.d);
       case 'drop': return this.onDrop(p);
       case 'spill': return this.restaurants.spill(p);
       case 'deliver': return this.onDeliver(p, msg.d);
@@ -834,6 +851,14 @@ export class Room {
       p.reloadUntil = 0;
       this.send(p.id, 'ammo', { gun: p.gun, mag: p.mag, reloadUntil: 0 });
       return this._bought(p, shop, `a ${def.name}`);
+    }
+
+    if (kind === 'armor') {
+      if (lvl < ARMOR.level) return deny(`Rusty keeps the vests for farm level ${ARMOR.level} and up`);
+      if (p.armor >= ARMOR.max) return deny('You are already wearing a full vest');
+      if (!this._spend(p, ARMOR.price)) return deny(`A vest costs ${money(ARMOR.price)}`);
+      p.armor = ARMOR.max;
+      return this._bought(p, shop, 'a bulletproof vest');
     }
 
     if (kind === 'implement') {
@@ -1116,14 +1141,14 @@ export class Room {
     // The muzzle has to be roughly where you are standing.
     if (Math.hypot(o[0] - p.pos[0], o[2] - p.pos[2]) > 3 || Math.abs(o[1] - p.pos[1] - 1.6) > 2) return;
     // Rate of fire (a little slack for LAN jitter), magazine and reload.
-    if (now - p.lastShot < gun.rate * 1000 - 90 || now < p.reloadUntil || p.mag <= 0) {
+    if (now - p.lastShot < gun.rate * 1000 - Math.min(90, gun.rate * 400) || now < p.reloadUntil || p.mag <= 0) {
       return this.send(p.id, 'ammo', { gun: p.gun, mag: p.mag, reloadUntil: p.reloadUntil });
     }
     p.lastShot = now;
     p.mag--;
     // How old the boars on the shooter's screen were (interpolation + half a
     // round trip); boars.js caps it.
-    const res = this.wildlife.shoot(p, gun, o, dir, Number(d.lag) || 0);
+    const res = this.combat.shoot(p, gun, o, dir, Number(d.lag) || 0);
     this.send(p.id, 'shotres', { hits: res.hits, mag: p.mag });
     // Everyone else hears it and sees the tracer.
     const payload = JSON.stringify({ t: 'shot', d: { pid: p.id, gun: gun.id, o: o.map(r2), e: res.end.map(r2) } });
@@ -1153,21 +1178,66 @@ export class Room {
     this.sendWallet(p);
   }
 
+  // ------------------------------------------------------------------ hood
+
+  /** At the clubhouse: buy an upgrade, rename the gang, pay for repairs. */
+  onHood(p, d) {
+    if (!d || p.plot < 0) return;
+    if (!this.nearStation(p, `h${p.plot}-hq`)) return this.error(p, 'Go to your clubhouse for that');
+    let res;
+    if (d.act === 'upgrade') res = this.hoods.upgrade(p, d.key);
+    else if (d.act === 'rename') res = this.hoods.rename(p, d.name);
+    else if (d.act === 'repair') res = this.hoods.repair(p, d.key);
+    else return undefined;
+    if (res.error) return this.error(p, res.error);
+    this.send(p.id, 'toast', { text: res.ok, kind: 'good' });
+    this.sendWallet(p);
+    return undefined;
+  }
+
+  // Restaurants ask these (restaurants.js).
+  footfall(p, res) { return this.hoods.footfall(p, res); }
+  closedFor(p, res) { return this.hoods.closedFor(p, res); }
+
   // ---------------------------------------------------------------- health
 
-  hurtPlayer(p, dmg, dir, cause) {
+  /**
+   * Somebody (a boar, a raider, a rival at war) hurt a player. Armour soaks
+   * up most of it while it lasts. At zero: wasted. You come round at your
+   * clubhouse (or the hospital if you have no hood) a few seconds later.
+   * `by` is whoever did it (a player, a unit, or nothing).
+   */
+  hurtPlayer(p, dmg, dir, cause, by = null) {
     const now = Date.now();
-    if (now < p.koUntil) return;
+    if (now < p.koUntil || now < (p.safeUntil || 0)) return;
+    if (p.armor > 0) {
+      const soaked = Math.min(p.armor, dmg * ARMOR.absorb);
+      p.armor -= soaked;
+      dmg -= soaked;
+    }
     p.hp = Math.max(0, p.hp - dmg);
     p.lastHurt = now;
-    this.send(p.id, 'hurt', { hp: p.hp, dmg, dir, cause });
-    if (p.hp <= 0) {
-      p.koUntil = now + KO_MS;
-      const plot = p.plot >= 0 ? PLOTS[p.plot] : null;
-      const spawn = plot ? plotSpawn(plot) : TOWN_SPAWN;
-      this.send(p.id, 'ko', { ms: KO_MS, spawn: spawn.pos, yaw: spawn.yaw });
-      this.toastAll(`${p.name} got flattened by a wild boar.`, 'warn');
+    this.send(p.id, 'hurt', { hp: p.hp, armor: Math.round(p.armor), dmg, dir, cause });
+    if (p.hp > 0) return;
+    p.koUntil = now + KO_MS;
+    p.armor = 0;
+    p.stats.wasted = (p.stats.wasted || 0) + 1;
+    if (this.onWasted) this.onWasted(p, by);
+    const spawn = this.respawnPoint(p);
+    const who = by && by.name ? by.name : null;
+    const how = cause === 'boar' ? 'got flattened by a wild boar' : who ? `got wasted by ${who}` : 'got wasted';
+    this.send(p.id, 'ko', { ms: KO_MS, spawn: spawn.pos, yaw: spawn.yaw, cause, by: who, where: spawn.label });
+    this.toastAll(`${p.name} ${how}.`, 'warn');
+  }
+
+  /** Where you come round: your clubhouse, unless it is being fought over; else the hospital. */
+  respawnPoint(p) {
+    if (p.plot >= 0) {
+      const contested = this.wars && this.wars.contested && this.wars.contested(p.plot);
+      if (!contested) return { ...hoodSpawn(p.plot), label: 'You come round at your clubhouse…' };
+      return { ...plotSpawn(PLOTS[p.plot]), label: 'Your clubhouse is under fire. You come round at the farm gate…' };
     }
+    return { pos: [...HOSPITAL_DOOR.pos], yaw: HOSPITAL_DOOR.yaw, label: 'You come round at County General…' };
   }
 
   _healthTick(now, dt) {
@@ -1175,7 +1245,13 @@ export class Room {
       if (p.koUntil && now >= p.koUntil) {
         p.koUntil = 0;
         p.hp = PLAYER_HP;
-        this.send(p.id, 'hp', { hp: p.hp });
+        p.safeUntil = now + SPAWN_SAFE_MS;
+        // A big clubhouse has vests waiting for you when you come round.
+        if (p.plot >= 0 && hoodLevel(p.hood, 'hq') >= 3) p.armor = Math.max(p.armor, 50);
+        const spawn = this.respawnPoint(p);
+        p.pos = [...spawn.pos];
+        this.send(p.id, 'hp', { hp: p.hp, armor: Math.round(p.armor) });
+        this.walletSoon(p);
         continue;
       }
       if (p.hp < PLAYER_HP && !p.koUntil && now - p.lastHurt > REGEN_DELAY_MS) {
@@ -1413,6 +1489,7 @@ export class Room {
     }
 
     this.wildlife.tick();
+    this.combat.tick(now);
     this.staff.tick(now);
     this.restaurants.tick(now);
     if (now - (this.lastWalletFlush || 0) >= 250) {
@@ -1460,6 +1537,7 @@ export class Room {
 
   _newDay() {
     this.staff.payWages();
+    this.hoods.collectRent();
     this.market.newDay();
     this.orders.refill(this.clock.time, this._topLevel());
     this.broadcast('market', this.market.state());

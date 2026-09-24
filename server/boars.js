@@ -5,6 +5,9 @@
 import { MINUTE, boarStats, levelOf } from '../shared/catalog.js';
 import { PLOTS, PLOT_SIZE, tileCenter, tileIndex } from '../shared/map.js';
 import { rnd } from './rng.js';
+import { raySphere, spreadDir, poseAt } from './ballistics.js';
+
+export { raySphere };
 
 const RAID_MIN = 7 * MINUTE;         // world time between raids on one farm
 const RAID_MAX = 13 * MINUTE;
@@ -335,7 +338,7 @@ export class Wildlife {
     for (const b of this.boars.values()) {
       if (b.state === 'dead') continue;
       poses.push([b, b.x, b.z, b.yaw]);
-      const past = poseAt(b, then);
+      const past = poseAt(b.hist, then);
       if (past && Math.hypot(past[0] - b.x, past[1] - b.z) > 0.05) poses.push([b, past[0], past[1], past[2]]);
     }
     for (let k = 0; k < gun.pellets; k++) {
@@ -369,6 +372,26 @@ export class Wildlife {
     return { end, hits: results };
   }
 
+  /**
+   * Every live boar as spheres to shoot at (see combat.js): where it is now,
+   * and where the shooter saw it `then`. Sphere: [centre, radius, damage x].
+   */
+  targets(then) {
+    const out = [];
+    for (const b of this.boars.values()) {
+      if (b.state === 'dead') continue;
+      const poses = [[b.x, b.z, b.yaw]];
+      const past = poseAt(b.hist, then);
+      if (past && Math.hypot(past[0] - b.x, past[1] - b.z) > 0.05) poses.push(past);
+      for (const [x, z, yaw] of poses) {
+        const fx = -Math.sin(yaw);
+        const fz = -Math.cos(yaw);
+        out.push({ kind: 'boar', id: b.id, ref: b, spheres: [[[x + fx * 0.75, 0.62, z + fz * 0.75], HEAD_R, 2, true], [[x, 0.55, z], BODY_R, 1, false]] });
+      }
+    }
+    return out;
+  }
+
   /** Applies damage. Returns true if that killed it. */
   damage(b, amount, by, angry) {
     if (b.state === 'dead') return false;
@@ -394,56 +417,4 @@ export class Wildlife {
   }
 }
 
-// ------------------------------------------------------------------ maths
-
-/** Where a boar stood at time `t`, from its trail; null if the trail is empty. */
-function poseAt(b, t) {
-  const h = b.hist;
-  if (!h || !h.length) return null;
-  if (t <= h[0][0]) return [h[0][1], h[0][2], h[0][3]];
-  for (let i = h.length - 1; i > 0; i--) {
-    const a = h[i - 1];
-    const c = h[i];
-    if (t >= a[0]) {
-      const k = c[0] > a[0] ? Math.min(1, (t - a[0]) / (c[0] - a[0])) : 1;
-      return [a[1] + (c[1] - a[1]) * k, a[2] + (c[2] - a[2]) * k, c[3]];
-    }
-  }
-  return [h[h.length - 1][1], h[h.length - 1][2], h[h.length - 1][3]];
-}
-
-function spreadDir(d, spread) {
-  if (!spread) return d;
-  const a = rnd() * Math.PI * 2;
-  const r = Math.sqrt(rnd()) * spread;
-  // Any two vectors perpendicular to d.
-  const up = Math.abs(d[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-  const u = norm(cross(d, up));
-  const v = cross(d, u);
-  return norm([
-    d[0] + (u[0] * Math.cos(a) + v[0] * Math.sin(a)) * r,
-    d[1] + (u[1] * Math.cos(a) + v[1] * Math.sin(a)) * r,
-    d[2] + (u[2] * Math.cos(a) + v[2] * Math.sin(a)) * r,
-  ]);
-}
-
-/** Distance along a unit ray to a sphere, or null. */
-export function raySphere(o, d, c, r) {
-  const ox = o[0] - c[0];
-  const oy = o[1] - c[1];
-  const oz = o[2] - c[2];
-  const b = ox * d[0] + oy * d[1] + oz * d[2];
-  const cc = ox * ox + oy * oy + oz * oz - r * r;
-  const disc = b * b - cc;
-  if (disc < 0) return null;
-  const t = -b - Math.sqrt(disc);
-  return t >= 0 ? t : null;
-}
-
-const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-function norm(v) {
-  const l = Math.hypot(v[0], v[1], v[2]) || 1;
-  return [v[0] / l, v[1] / l, v[2] / l];
-}
 const r2 = (v) => Math.round(v * 100) / 100;
-

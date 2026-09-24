@@ -3,6 +3,7 @@
 import {
   CROP_BY_ID, ITEMS, HOUSES, ANIMAL_HOUSES, PROCESSORS, FIELD_MAX, PROCESS_QUEUE_MAX, RESTAURANTS, WORKER_ROLES,
   cropProgress, isWatered, wateredFor, countsAgainstStorage, levelOf,
+  HOOD_UPGRADES, ARMOR, GANG_NAME_MAX, defaultGangName, hoodMax,
 } from '../shared/catalog.js';
 import { defaultLayout, cleanLayout } from '../shared/map.js';
 
@@ -264,7 +265,14 @@ export function newProfile({ name, slug, color, hat, plot, cash, pos, yaw }) {
     stats: {
       harvested: 0, sold: 0, wagered: 0, biggestWin: 0, orders: 0, boars: 0, playSeconds: 0,
       served: 0, deliveries: 0, wagesPaid: 0,
+      kills: 0, wasted: 0, raidsRepelled: 0, warsWon: 0, warsLost: 0,
     },
+    // 3.0: your gang, your hood's upgrades and building health, your armour,
+    // and when you last went to war.
+    gang: { name: defaultGangName(slug || name || ''), tag: null },
+    hood: { up: {}, hp: {} },
+    armor: 0,
+    war: { lastDeclared: 0, protectUntil: 0 },
   };
 }
 
@@ -278,6 +286,19 @@ export function migrateProfile(p) {
   while (out.field.tiles.length < TILE_COUNT) out.field.tiles.push(null);
   out.buildings = { ...fresh.buildings, ...(p.buildings || {}) };
   out.stats = { ...fresh.stats, ...(p.stats || {}) };
+  // 3.0: gang, hood, armour, wars. Older saves get a gang named after them.
+  const gang = p.gang && typeof p.gang === 'object' ? p.gang : {};
+  out.gang = { name: typeof gang.name === 'string' && gang.name.trim() ? gang.name.slice(0, GANG_NAME_MAX) : fresh.gang.name, tag: gang.tag || null };
+  const hood = p.hood && typeof p.hood === 'object' ? p.hood : {};
+  out.hood = { up: {}, hp: {} };
+  for (const k of Object.keys(HOOD_UPGRADES)) {
+    const v = hood.up && hood.up[k];
+    if (Number.isInteger(v) && v >= HOOD_UPGRADES[k].start && v <= hoodMax(k)) out.hood.up[k] = v;
+  }
+  for (const [k, v] of Object.entries(hood.hp || {})) if (Number.isFinite(v) && v >= 0 && v < 100) out.hood.hp[k] = v;
+  out.armor = Number.isFinite(p.armor) ? Math.max(0, Math.min(ARMOR.max, p.armor)) : 0;
+  const war = p.war && typeof p.war === 'object' ? p.war : {};
+  out.war = { lastDeclared: Number(war.lastDeclared) || 0, protectUntil: Number(war.protectUntil) || 0 };
   out.vehicles = Array.isArray(p.vehicles) ? p.vehicles : [];
   out.implements = Array.isArray(p.implements) ? p.implements : [];
   // Everyone has Grandpa's rifle, including farmers from before guns existed.

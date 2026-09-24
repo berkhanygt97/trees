@@ -142,7 +142,13 @@ export const GUNS = [
   { id: 'shotgun',   name: 'Pump Shotgun',         price: 4500,  level: 4, damage: 17,  pellets: 8, rate: 1.0,  mag: 6,  reload: 3.4, spread: 0.075, range: 32,  zoom: 1.2, action: 'pump',  blurb: 'For when the boar is already in the carrots.' },
   { id: 'semiauto',  name: 'Semi-Auto Rifle',      price: 9000,  level: 6, damage: 40,  pellets: 1, rate: 0.28, mag: 15, reload: 2.4, spread: 0.012, range: 120, zoom: 1.6, action: 'semi',  blurb: 'Squeeze as fast as you like.' },
   { id: 'biggame',   name: 'Big Game Rifle',       price: 18000, level: 8, damage: 170, pellets: 1, rate: 1.3,  mag: 4,  reload: 3.0, spread: 0.002, range: 170, zoom: 2.4, action: 'bolt',  blurb: 'Drops anything with tusks in one or two.' },
+  // 3.0: city guns, for when the trouble walks on two legs.
+  { id: 'pistol',    name: '9mm Pistol',           price: 900,   level: 2, damage: 26,  pellets: 1, rate: 0.28, mag: 12, reload: 1.5, spread: 0.018, range: 60,  zoom: 1.25, action: 'semi', blurb: 'Light, quick, twelve in the clip. A gang staple.' },
+  { id: 'smg',       name: 'Machine Pistol',       price: 7500,  level: 5, damage: 15,  pellets: 1, rate: 0.085, mag: 30, reload: 2.2, spread: 0.035, range: 55, zoom: 1.3, action: 'auto', auto: true, blurb: 'Hold the trigger. Empties a clip in under three seconds.' },
 ];
+
+/** Body armour from Rusty's: soaks up most of a hit until it is used up. */
+export const ARMOR = { price: 600, level: 2, max: 100, absorb: 0.6 };
 export const GUN_BY_ID = Object.fromEntries(GUNS.map((g) => [g.id, g]));
 
 // ------------------------------------------------------------------- boars
@@ -249,6 +255,7 @@ export const WORKER_ROLES = {
   cook:     { name: 'Cook',            icon: '👨‍🍳', place: 'restaurant', wage: 160, blurb: 'Cooks every order. Faster cooks, shorter waits.' },
   waiter:   { name: 'Waiter',          icon: '🤵', place: 'restaurant', wage: 100, blurb: 'Seats customers and carries the food out.' },
   driver:   { name: 'Delivery Driver', icon: '🛵', place: 'restaurant', wage: 110, blurb: 'Takes the phone orders you do not ride out yourself.' },
+  soldier:  { name: 'Soldier',         icon: '🔫', place: 'hood', wage: 180, blurb: 'Patrols your hood with a gun and fights off raiders and rival gangs. Your clubhouse decides how many.' },
 };
 
 export const WORKER_TRAITS = {
@@ -348,4 +355,60 @@ export function nextAction(tile, now) {
 export const money = (n) => {
   const v = Math.round(n);
   return (v < 0 ? '-$' : '$') + Math.abs(v).toLocaleString('en-US');
+};
+
+// ------------------------------------------------------------- the hood
+//
+// Each farmer runs a neighbourhood: their farm, their restaurants, their
+// gang's clubhouse. Everyone they hire is in the gang. Upgrades are bought at
+// the clubhouse; `levels` are the prices of each level in turn.
+
+export const HOOD_UPGRADES = {
+  hq:        { name: 'Clubhouse',       icon: '🏚️', start: 1, levels: [15000, 45000, 120000], level: 1, blurb: 'Room for more soldiers (2, 4, 6, 8). At level 3 you come round wearing armour.' },
+  armory:    { name: 'Armoury',         icon: '🔫', start: 0, levels: [8000, 25000, 60000], level: 3, blurb: 'Better guns for your gang (pistols, then machine pistols, then rifles), and every worker fights back.' },
+  walls:     { name: 'Walls & Gates',   icon: '🧱', start: 0, levels: [6000, 18000, 40000], level: 3, blurb: 'Your buildings take 20% less damage for each level.' },
+  cctv:      { name: 'Lookouts & CCTV', icon: '📹', start: 0, levels: [5000, 20000], level: 4, blurb: 'Earlier warning of a raid, and raiders show on your radar.' },
+  safes:     { name: 'Safes',           icon: '🔒', start: 0, levels: [4000, 12000, 30000], level: 4, blurb: 'Tills take longer to crack, and a cracked till gives up less.' },
+  street:    { name: 'Streetscape',     icon: '🌴', start: 0, levels: [7000, 22000, 55000], level: 4, blurb: 'Palm trees, lights and fresh paint: 15% more customers a level.' },
+  billboard: { name: 'Billboard',       icon: '📣', start: 0, levels: [10000], level: 6, blurb: 'A big sign on the avenue: 10% more customers.' },
+  houses:    { name: 'Do Up the Houses', icon: '🏠', start: 0, levels: [12000, 35000], level: 5, blurb: 'Rent from the six houses every morning, and more phone orders.' },
+};
+
+/** A hood's upgrade level (start level when it has never been bought). */
+export const hoodLevel = (hood, key) => {
+  const v = hood && hood.up && hood.up[key];
+  return Number.isFinite(v) ? v : HOOD_UPGRADES[key].start;
+};
+export const hoodMax = (key) => HOOD_UPGRADES[key].start + HOOD_UPGRADES[key].levels.length;
+
+export const soldierCap = (hq) => [0, 2, 4, 6, 8][Math.max(0, Math.min(4, hq))];
+export const gangGun = (armory) => ['pistol', 'pistol', 'smg', 'semiauto'][Math.max(0, Math.min(3, armory))];
+export const wallsFactor = (walls) => 1 - 0.2 * walls;
+export const crackSeconds = (safes) => 6 * (1 + 0.5 * safes);
+export const lootShare = (safes) => [0.6, 0.5, 0.4, 0.3][Math.max(0, Math.min(3, safes))];
+export const streetFootfall = (street, billboard) => 1 + 0.15 * street + 0.1 * billboard;
+export const houseRent = (houses) => [0, 900, 2400][Math.max(0, Math.min(2, houses))];
+export const raidWarning = (cctv) => [20, 45, 75][Math.max(0, Math.min(2, cctv))];
+
+// Building health (hood.hp, 0..100; missing = 100). Below half, a restaurant
+// loses customers; at 0 it is wrecked and shut until repaired.
+export const BUILDING_VALUE = { restaurant: 20000, hq: 15000, house: 5000 };
+export const REPAIR_RATE = 0.15;
+export const repairCost = (kind, hp, level = 1) => Math.ceil(((100 - hp) / 100) * BUILDING_VALUE[kind] * level * REPAIR_RATE / 10) * 10;
+
+// Gang names: a farmer's gang starts as something that fits the name.
+const GANG_A = ['Cornfield', 'Tractor', 'Haybale', 'Barnyard', 'Pitchfork', 'Dustbowl', 'Silo', 'Scarecrow', 'Harvest', 'Hog Lane', 'Rooster', 'Prairie'];
+const GANG_B = ['Kings', 'Boys', 'Mafia', 'Crew', 'Posse', 'Syndicate', 'Family', 'Riders', 'Ballers', 'Outlaws', 'Saints', 'Kartel'];
+export function defaultGangName(slug) {
+  let h = 0;
+  for (const c of String(slug)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return `${GANG_A[h % GANG_A.length]} ${GANG_B[(h >>> 8) % GANG_B.length]}`;
+}
+export const GANG_NAME_MAX = 22;
+
+// The rival gangs that come raiding. Original names, original colours.
+export const RIVALS = {
+  coyotes: { name: 'Los Coyotes', color: '#e67e22', accent: '#e67e22', outfit: 'street', top: 'tank', legs: 'khaki', head: 'bandana', mask: true, car: 'muscle' },
+  devils:  { name: 'Dust Devils MC', color: '#2d2d33', accent: '#8e1b1b', outfit: 'biker', head: 'bandana', car: 'pickup' },
+  serpents: { name: 'Neon Serpents', color: '#16a085', accent: '#ffffff', outfit: 'track', head: 'capback', car: 'coupe' },
 };

@@ -10,7 +10,7 @@
 // ms"), and every client animates it by itself.
 import {
   CROP_BY_ID, ITEMS, SELLABLE, ANIMAL_HOUSES, PROCESSORS, PROCESS_QUEUE_MAX,
-  WORKER_ROLES, WORKER_TRAITS, WORKER_NAMES, FARM_WORKER_CAP,
+  WORKER_ROLES, WORKER_TRAITS, WORKER_NAMES, FARM_WORKER_CAP, soldierCap, hoodLevel,
   workerWage, workerSeconds, onShift, levelOf, cropProgress, isWatered, money,
 } from '../shared/catalog.js';
 import { PLOTS, padStation, tileCenter, tileIndex } from '../shared/map.js';
@@ -89,6 +89,7 @@ export class Staff {
 
   capAt(p, place, lot = null) {
     if (place === 'farm') return p.plot >= 0 ? FARM_WORKER_CAP[p.house] : 0;
+    if (place === 'hood') return p.plot >= 0 ? soldierCap(hoodLevel(p.hood, 'hq')) : 0;
     const R = this.room.restaurants;
     if (!R) return 0;
     if (lot != null) return R.staffCap(R.of(p, lot));
@@ -109,12 +110,13 @@ export class Staff {
     const def = WORKER_ROLES[role];
     if (!def) return { error: 'Pick a job for them' };
     if (def.place === 'restaurant' && !p.restaurants.length) return { error: 'You need a restaurant first' };
-    if (def.place === 'farm' && p.plot < 0) return { error: 'You need a farm first' };
+    if ((def.place === 'farm' || def.place === 'hood') && p.plot < 0) return { error: 'You need a farm first' };
     const lot = def.place === 'restaurant' ? this._pickLot(p, wantLot) : null;
     const cap = this.capAt(p, def.place, lot);
     if (this.countAt(p, def.place, lot) >= cap) {
       return { error: def.place === 'farm'
         ? `Your house has room for ${cap} farm hand${cap === 1 ? '' : 's'}. A bigger house fits more.`
+        : def.place === 'hood' ? `Your clubhouse has room for ${cap} soldier${cap === 1 ? '' : 's'}. Upgrade it for more.`
         : `That restaurant has room for ${cap} staff. Level it up for more.` };
     }
     const wage = workerWage(role, cand.speed, cand.trait);
@@ -218,8 +220,10 @@ export class Staff {
     const out = [];
     for (const p of this.room.profiles.values()) {
       for (const w of p.workers) {
+        // Soldiers are drawn from the combat units (combat.js), not walked about here.
+        if (w.role === 'soldier') continue;
         const r = this.rt.get(w.id);
-        out.push({ id: w.id, owner: p.slug, name: w.name, role: w.role, look: w.look, ev: r ? r.ev : null });
+        out.push({ id: w.id, owner: p.slug, name: w.name, role: w.role, look: w.look, ev: r ? r.ev : null, color: p.color });
       }
     }
     return out;
@@ -228,6 +232,10 @@ export class Staff {
   /** The boss's view of their staff: who is doing what, and why not. */
   staffFor(p) {
     return p.workers.map((w) => {
+      if (w.role === 'soldier') {
+        const hurt = w.hurtUntil && this.room.clock.time < w.hurtUntil;
+        return { ...w, status: hurt ? 'In hospital' : p.ws ? 'On patrol' : 'Off duty', done: 0 };
+      }
       const r = this.rt.get(w.id);
       return { ...w, status: r ? r.status : 'Starting', done: r ? r.done : 0 };
     });
@@ -243,6 +251,7 @@ export class Staff {
     for (const p of this.room.profiles.values()) {
       if (!p.workers.length) continue;
       for (const w of p.workers) {
+        if (w.role === 'soldier') continue;
         let r = this.rt.get(w.id);
         if (!r) r = this._spawn(p, w);
         if (now < r.until) continue;
@@ -279,6 +288,7 @@ export class Staff {
   _next(p, w, r, now) {
     const clock = this.room.clock;
     if (w.off === clock.day) return this._idle(r, now, 'Unpaid — took the day off', this._home(p, w), 'home');
+    if (w.hurtUntil && clock.time < w.hurtUntil) return this._idle(r, now, 'In hospital', this._home(p, w), 'home');
     if (!onShift(w.trait, clock.hour)) return this._idle(r, now, 'Off shift', this._home(p, w), 'home');
     let job = null;
     let why = 'Nothing to do';

@@ -477,7 +477,12 @@ export function deliverySpots() {
   return out;
 }
 
-export const ALL_STATIONS = [...CASINO_STATIONS, ...TOWN_STATIONS, ...PLOT_STATIONS, ...RESTAURANT_STATIONS];
+/** Each gang's clubhouse door: upgrades, the gang's name, repairs. Only its own boss can use it. */
+export const HOOD_STATIONS = HQS.map((q) => ({
+  id: `h${q.hood}-hq`, game: 'hq', hood: q.hood, name: 'Clubhouse', pos: q.door, yaw: 0, radius: 3.5, solid: 0,
+}));
+
+export const ALL_STATIONS = [...CASINO_STATIONS, ...TOWN_STATIONS, ...PLOT_STATIONS, ...RESTAURANT_STATIONS, ...HOOD_STATIONS];
 export const STATION_BY_ID = new Map(ALL_STATIONS.map((s) => [s.id, s]));
 
 // ------------------------------------------------------------- colliders

@@ -587,6 +587,7 @@ function addAvatar(p) {
 
 function stationUsable(st) {
   if (st.lot != null) return (hud.wallet.restaurants || []).some((r) => r.lot === st.lot);
+  if (st.game === 'hq') return st.hood === hud.wallet.plot;
   if (st.plot == null) return true;
   if (st.plot !== hud.wallet.plot) return false;
   if (st.pad === 'house' || st.pad === 'bin') return true;
