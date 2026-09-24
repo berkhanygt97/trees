@@ -146,6 +146,28 @@ export const VIEWS = [
     room.raids.loot.set('l-smoke', { id: 'l-smoke', x: tag.pos[0] + 1.5, z: tag.pos[2] + 2, amount: 1200, owner: 'nobody', lot: 0, hood: me.plot, at: Date.now() + 1e9 });
     room.raids._broadcastLoot();
   }, pos: [TAG_POINTS[1].pos[0] + 2, 0, TAG_POINTS[1].pos[2] + 7], yaw: 0.25, pitch: -0.12, wait: 2500 },
+  { name: 'war', server: (room, me) => {
+    // A second boss, with nobody at the keyboard, to go to war with.
+    const ws = { readyState: 1, bufferedAmount: 0, send() {}, terminate() {} };
+    const rival = room.addPlayer(ws, 'Rival', 'k-rival');
+    rival.xp = me.xp = 20000;
+    me.money = 1e5;
+    me.war.lastDeclared = 0;
+    room.wars.cooldowns = {};
+    const res = room.wars.declare(me, rival);
+    if (res.error) throw new Error(res.error);
+    room.wars.war.startsAt = Date.now() + 2500;
+    room.wars.war.endsAt = room.wars.war.startsAt + 6 * 60_000;
+    room.wars.war.score[me.slug] = 7;
+    room.wars.war.score[rival.slug] = 4;
+    room.combat.tick();
+  }, client: (c) => { c.rig.mode = 'tp'; c.rig.fresh = true; },
+    steps: async (page, room, me) => {
+      await page.waitForTimeout(4000);
+      const rival = [...room.players.values()].find((p) => p !== me);
+      const wall = TAG_POINTS.find((t) => t.hood === rival.plot && t.k === 1);
+      await page.evaluate(([x, z]) => { window.casino.controls.pos.set(x, 0, z + 2.2); window.casino.controls.yaw = 0; }, [wall.pos[0], wall.pos[2]]);
+    }, wait: 2500 },
   { name: 'afternoon', server: (room) => at(room, 16.5), pos: [street.x0 + 45, 0, midZ], yaw: Math.PI / 2 + 0.5, pitch: -0.1,
     client: (c) => { c.rig.mode = 'tp'; c.rig.fresh = true; } },
   { name: 'dusk', client: (c) => { c.rig.mode = 'tp'; }, server: (room) => at(room, 19.2), pos: [street.x0 + 120, 0, midZ], yaw: -Math.PI / 2, pitch: 0.05 },

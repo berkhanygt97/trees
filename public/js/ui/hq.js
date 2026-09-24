@@ -61,11 +61,14 @@ export function createHq(ctx) {
     return `
       <p class="shop-note">Your soldiers: <b>${soldiers.length} of ${cap}</b> (hire them at the Job Centre, south end of Main Street).
         Everyone you hire wears your colours. Raids only come while you are in the valley.</p>
+      ${warSection(w)}
       <div class="shop-head">UPGRADES</div>
       <div class="shop-list">${ups.join('')}</div>
       <div class="shop-head">BUILDINGS ${hurt.length ? `<span>${btn(`REPAIR ALL ${money(Math.ceil(total * 0.9 / 10) * 10)}`, 'repair', 'all', { disabled: w.money < total * 0.9 })}</span>` : ''}</div>
       <div class="shop-list">${blds.join('')}</div>`;
   }, (act, arg) => {
+    if (act === 'declare') ctx.send('war', { act: 'declare', target: arg });
+    if (act === 'surrender') ctx.send('war', { act: 'surrender' });
     if (act === 'upgrade') ctx.send('hood', { act: 'upgrade', key: arg });
     if (act === 'repair') ctx.send('hood', { act: 'repair', key: arg });
   });
@@ -81,4 +84,31 @@ export function createHq(ctx) {
     tick() {},
     destroy() {},
   };
+}
+
+/** Going to war: who you could take on (and why not), or the war you are in. */
+function warSection(w) {
+  const info = w.war;
+  if (!info) return '';
+  const cur = info.war;
+  if (cur && cur.phase !== 'over') {
+    const mine = cur.attacker === info.you || cur.defender === info.you;
+    const [a, d] = [cur.attacker, cur.defender];
+    return `<div class="shop-head">WAR</div>
+      <div class="shop-list">${row({
+        icon: '⚔️',
+        name: `${cur.gangs[a]} ${cur.score[a]} – ${cur.score[d]} ${cur.gangs[d]}`,
+        desc: `${cur.phase === 'warning' ? 'Starting any moment.' : 'Fighting over the defender\'s hood.'} Tag walls (+3, and +1 every 30 s they stay up), waste the other boss (+2) or their gang (+1), crack a till and get the bag home (+1 per $500), wreck a building (+2). A tie goes to the defender. The winner takes ${money(cur.pot)} and 20% of the loser's restaurant takings for a day.`,
+        buttons: mine ? btn('GIVE UP', 'surrender', '', { primary: false }) : '',
+      })}</div>`;
+  }
+  const rows = info.rivals.map((r) => row({
+    icon: '🏴',
+    name: `${r.gang} — ${r.name} (level ${r.level})`,
+    desc: r.why ? `<span style="color:#ff9e99">${r.why}</span>` : 'Ready for it.',
+    price: money(info.fee),
+    buttons: btn('DECLARE WAR', 'declare', r.slug, { disabled: !!r.why }),
+  }));
+  return `<div class="shop-head">GO TO WAR <span>costs ${money(info.fee)}, the winner takes it</span></div>
+    <div class="shop-list">${rows.length ? rows.join('') : '<p class="shop-note">Nobody else with a hood is in the valley right now.</p>'}</div>`;
 }

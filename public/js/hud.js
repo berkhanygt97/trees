@@ -287,6 +287,24 @@ export const hud = {
     el.innerHTML = `${'☠'.repeat(n)}<i>${'☠'.repeat(Math.max(0, 5 - n))}</i>`;
   },
 
+  /** The war scoreboard: attacker vs defender, points and time left (null hides it). */
+  setWar(w, serverNow) {
+    const el = document.getElementById('warbar');
+    if (!w || w.phase === 'over') { el.hidden = true; return; }
+    el.hidden = false;
+    el.classList.toggle('warning', w.phase === 'warning');
+    const [a, d] = [w.attacker, w.defender];
+    const q = (s) => el.querySelector(s);
+    q('.a').textContent = w.gangs[a];
+    q('.a').style.color = w.colors[a];
+    q('.d').textContent = w.gangs[d];
+    q('.d').style.color = w.colors[d];
+    q('.sa').textContent = w.score[a];
+    q('.sd').textContent = w.score[d];
+    const left = Math.max(0, Math.ceil(((w.phase === 'warning' ? w.startsAt : w.endsAt) - serverNow) / 1000));
+    q('.t').textContent = w.phase === 'warning' ? `in ${left}s` : `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  },
+
   /** The name of the place you just walked into, in the corner, for a few seconds. */
   zone(name) {
     if (name === this._zone) return;

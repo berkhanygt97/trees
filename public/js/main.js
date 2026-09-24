@@ -4,8 +4,8 @@ import {
   CROP_BY_ID, ITEMS, VEHICLE_BY_ID, IMPLEMENT_BY_ID, nextAction, cropProgress, isWatered,
   DISH_BY_ID, DAY_MS, HOUR_MS, RESTAURANTS,
 } from '/shared/catalog.js';
-import { ALL_STATIONS, PLOTS, TILE, tileAt, tileCenter, groundHeight, padStation, STATIC_BOXES, RAMPS, LOT_BY_ID } from '/shared/map.js';
-import { HQS, TAG_POINTS } from '/shared/hoods.js';
+import { ALL_STATIONS, PLOTS, TILE, tileAt, tileCenter, groundHeight, padStation, STATIC_BOXES, RAMPS, LOT_BY_ID, lotSpots, lotPoint } from '/shared/map.js';
+import { HQS, TAG_POINTS, HOODS, HOOD_T, hx, hz } from '/shared/hoods.js';
 import { terrainGrid } from '/shared/terrain.js';
 import { net } from './net.js';
 import { sfx } from './sfx.js';
@@ -339,6 +339,7 @@ net.on('welcome', (d) => {
   units.applySnap(d.units || []);
   raidView.setState(d.raids);
   tagsNow = d.tags || {};
+  war = d.war && d.war.phase !== 'over' ? d.war : null;
   workers.setList(d.workers || []);
   restaurantList = d.restaurants || [];
   restaurants.setList(restaurantList);
@@ -517,6 +518,16 @@ net.on('raid', (r) => {
   updateThreat();
 });
 net.on('raidcars', (rows) => { if (raidView) raidView.onCars(rows); });
+net.on('war', (w) => {
+  war = w && w.phase !== 'over' ? w : null;
+  updateThreat();
+  if (activePanel && activePanel.ui.onWallet) activePanel.ui.onWallet(hud.wallet);
+});
+net.on('warwork', (d) => {
+  if (d.error) { hud.toast(d.error, 'error'); holding = false; return; }
+  if (!d.done) hud.setPrompt(`${warWork ? warWork.doing : 'Working'}… ${Math.round(d.k * 100)}%`, 'E');
+});
+net.on('feed', (d) => hud.feed(d.text, d.kind));
 net.on('loot', (list) => { if (raidView) raidView.setLoot(list); });
 net.on('tags', (tags) => { tagsNow = tags || {}; if (world) world.hoods.setTags(tagsNow); });
 net.on('bigtext', (d) => hud.bigText(d.title, d.sub || '', d.color || '#f2c14e'));
@@ -742,6 +753,18 @@ function makeBeacon() {
 }
 
 function updateDelivery(dt) {
+  // Carrying a bag of stolen takings: home to the clubhouse with it.
+  const bag = hud.wallet && hud.wallet.bag;
+  selfAvatar.setBag(!!bag);
+  if (bag && me.plot >= 0) {
+    const d = HQS[me.plot].door;
+    beacon.visible = true;
+    beacon.position.set(d[0], 0, d[2]);
+    beacon.children[1].rotation.y += dt;
+    const dist = Math.round(Math.hypot(d[0] - controls.pos.x, d[2] - controls.pos.z));
+    hud.setDelivery(`💰 ${money(bag)} · get it home to your clubhouse · ${dist} m`, true);
+    return;
+  }
   const c = hud.wallet && hud.wallet.carrying;
   if (!c) {
     beacon.visible = false;
@@ -1075,6 +1098,9 @@ let units = null;
 let raidView = null;
 let tagsNow = {};                   // tag wall id -> { gang, name, color }
 let scrubTag = null;                // the tagged wall you are standing at, if any
+let war = null;                     // the war going on (server/wars.js publicWar), if any
+let warWork = null;                 // what you could do to the enemy's hood right here
+let lastWarWork = 0;
 let lastScrubSent = 0;
 let headlight = null;
 let lastRadarBlips = 0;
@@ -1279,13 +1305,18 @@ function loop(now) {
 
   // What can you do right now?
   scrubTag = activePanel ? null : findScrub();
-  nearest = activePanel || scrubTag ? null : findNearest();
+  warWork = activePanel || scrubTag ? null : findWarWork();
+  nearest = activePanel || scrubTag || warWork ? null : findNearest();
   aim = activePanel || nearest ? null : findAim();
   nearCar = activePanel || car ? null : fleet.nearestOwned(controls.pos, me.slug);
 
   if (activePanel || car) {
     hud.setPrompt(null);
     world.farms.hideMarker();
+  } else if (warWork) {
+    if (!holding) hud.setPrompt(warWork.label);
+    world.farms.hideMarker();
+    if (holding && now - lastWarWork > 250) { lastWarWork = now; net.send('war', { act: 'work', kind: warWork.kind, target: warWork.target }); }
   } else if (scrubTag) {
     if (!holding) hud.setPrompt(`Hold to scrub ${scrubTag.name}'s tag off your wall`);
     world.farms.hideMarker();
@@ -1305,6 +1336,7 @@ function loop(now) {
 
   if (activePanel && activePanel.ui.tick) activePanel.ui.tick(serverNow);
   hud.setClock(wt, clock.weather);
+  hud.setWar(war, serverNow);
 
   pipeline.render(scene, camera, {
     dusk: world.sky.dusk || 0,
@@ -1325,8 +1357,41 @@ const HALF_Y = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0
 
 /** Skulls in the corner while your hood is being raided. */
 function updateThreat() {
+  if (war && (war.attacker === me.slug || war.defender === me.slug)) { hud.setThreat(5, 'war'); return; }
   const raid = raidView && raidView.list().find((r) => r.hood === me.plot);
   hud.setThreat(raid ? raid.tier : 0, 'raid');
+}
+
+/**
+ * At war, attacking: something in the enemy's hood right in front of you
+ * that holding E does something to: a wall to tag, a till to crack, a
+ * building to smash up.
+ */
+function findWarWork() {
+  if (!war || war.phase !== 'active' || war.attacker !== me.slug || controls.car) return null;
+  const px = controls.pos.x;
+  const pz = controls.pos.z;
+  const near = (x, z, r) => Math.hypot(px - x, pz - z) < r;
+  for (const t of TAG_POINTS) {
+    if (t.hood !== war.hood || (tagsNow[t.id] && tagsNow[t.id].gang === me.slug)) continue;
+    if (near(t.pos[0], t.pos[2], 2.8)) return { kind: 'tag', target: t.id, label: 'Hold to tag their wall', doing: 'Spraying' };
+  }
+  for (const r of restaurantList) {
+    if (r.owner !== war.defender) continue;
+    const lot = LOT_BY_ID.get(r.lot);
+    const sp = lotSpots(lot);
+    const [cx, cz] = lotPoint(lot, sp.counter[0], sp.counter[1]);
+    if (!hud.wallet.bag && near(cx, cz, 2.6)) return { kind: 'crack', target: String(r.lot), label: 'Hold to crack their till', doing: 'Cracking the till' };
+    const [dx, dz] = lotPoint(lot, sp.door[0], sp.door[1] - 1);
+    if (near(dx, dz, 2.6)) return { kind: 'smash', target: `r${r.lot}`, label: 'Hold to smash the place up', doing: 'Smashing' };
+  }
+  const h = HOODS[war.hood];
+  const q = HQS[war.hood];
+  if (near(q.door[0], q.door[2], 2.6)) return { kind: 'smash', target: 'hq', label: 'Hold to smash up their clubhouse', doing: 'Smashing' };
+  for (const house of HOOD_T.houses) {
+    if (near(hx(h, house.door[0]), hz(h, house.door[1]), 2.4)) return { kind: 'smash', target: `h${house.k}`, label: 'Hold to smash up the house', doing: 'Smashing' };
+  }
+  return null;
 }
 
 /** A wall in your own hood with somebody else's name on it, near enough to scrub. */

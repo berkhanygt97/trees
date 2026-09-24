@@ -388,6 +388,7 @@ export class Combat {
     const brain = u.brain && this.brains[u.brain];
     if (brain && brain.onDown) brain.onDown(u, by);
     if (u.kind === 'gang') this._memberDown(u, by);
+    if (this.room.wars) this.room.wars.onUnitDown(u, by);
     if (by && by.slug !== undefined) {
       by.stats.kills = (by.stats.kills || 0) + 1;
       if (this.room.onUnitKilled) this.room.onUnitKilled(by, u);

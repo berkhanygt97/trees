@@ -19,6 +19,7 @@ import { Wildlife } from './boars.js';
 import { Combat } from './combat.js';
 import { Hoods } from './hoods.js';
 import { Raids } from './raids.js';
+import { Wars } from './wars.js';
 import { TAG_POINTS } from '../shared/hoods.js';
 import { Staff } from './workers.js';
 import { Restaurants } from './restaurants.js';
@@ -86,6 +87,7 @@ export class Room {
     this.combat = new Combat(this);
     this.hoods = new Hoods(this);
     this.raids = new Raids(this);
+    this.wars = new Wars(this, world && world.wars);
     // Graffiti on each hood's walls: tag id -> { gang, name, color }. Anyone's
     // but the hood's own gang puts customers off until it is scrubbed.
     this.tags = new Map(Object.entries((world && world.tags) || {}).filter(([id]) => TAG_POINTS.some((t) => t.id === id)));
@@ -199,6 +201,8 @@ export class Room {
       units: this.combat.snapshot(),
       raids: this.raids.publicState(),
       tags: this.publicTags(),
+      war: this.wars.publicWar(),
+      turf: this.wars.turf,
       workers: this.staff.publicWorkers(),
       restaurants: this.restaurants.publicRestaurants(),
       npcs: this.restaurants.snapshotNpcs(),
@@ -224,6 +228,7 @@ export class Room {
     const p = this.players.get(id);
     if (!p) return;
     this._detach(p);
+    this.wars.onLeave(p);
     this.saveProfile(p);
     this.broadcast('players', this.publicPlayers());
     this.broadcast('plot', this.publicPlot(p.plot));
@@ -294,6 +299,9 @@ export class Room {
       gang: owner.gang.name,
       up: owner.hood.up,
       hp: owner.hood.hp,
+      // Held by the winner of a war for a day.
+      holderColor: this.wars && this.wars.turf[index] ? this.wars.turf[index].color : null,
+      holder: this.wars && this.wars.turf[index] ? this.wars.turf[index].gang : null,
     };
   }
 
@@ -429,6 +437,8 @@ export class Room {
       armor: Math.round(p.armor),
       gang: p.gang,
       hood: p.plot >= 0 ? this.hoods.summary(p) : null,
+      war: this.wars.summary(p),
+      bag: p.bag ? p.bag.amount : 0,
     });
   }
 
@@ -584,6 +594,7 @@ export class Room {
       case 'resto': return this.onResto(p, msg.d);
       case 'hood': return this.onHood(p, msg.d);
       case 'scrub': return this.onScrub(p, msg.d);
+      case 'war': return this.onWar(p, msg.d);
       case 'drop': return this.onDrop(p);
       case 'spill': return this.restaurants.spill(p);
       case 'deliver': return this.onDeliver(p, msg.d);
@@ -1247,6 +1258,31 @@ export class Room {
     this.walletSoon(p);
   }
 
+  // ------------------------------------------------------------------ wars
+
+  /** Declare (at your clubhouse), give up, or do war work in the enemy hood. */
+  onWar(p, d) {
+    if (!d) return undefined;
+    let res;
+    if (d.act === 'declare') {
+      if (p.plot < 0 || !this.nearStation(p, `h${p.plot}-hq`)) return this.error(p, 'Declare war from your clubhouse');
+      res = this.wars.declare(p, this.profiles.get(String(d.target || '')));
+    } else if (d.act === 'surrender') {
+      res = this.wars.surrender(p);
+    } else if (d.act === 'work') {
+      res = this.wars.work(p, String(d.kind || ''), String(d.target || ''));
+      if (res.error) return this.send(p.id, 'warwork', { error: res.error });
+      return this.send(p.id, 'warwork', { k: res.k, done: !!res.done });
+    } else return undefined;
+    if (res.error) return this.error(p, res.error);
+    this.send(p.id, 'toast', { text: res.ok, kind: 'good' });
+    this.sendWallet(p);
+    return undefined;
+  }
+
+  onWasted(p, by) { this.wars.onWasted(p, by); }
+  turfCut(p, amount) { return this.wars.turfCut(p, amount); }
+
   // Restaurants ask these (restaurants.js).
   footfall(p, res) { return this.hoods.footfall(p, res); }
   closedFor(p, res) { return this.hoods.closedFor(p, res); }
@@ -1543,6 +1579,7 @@ export class Room {
     this.wildlife.tick();
     this.combat.tick(now);
     this.raids.tick(now);
+    this.wars.tick(now);
     this.staff.tick(now);
     this.restaurants.tick(now);
     if (now - (this.lastWalletFlush || 0) >= 250) {
@@ -1657,6 +1694,7 @@ export class Room {
         orders: this.orders.toSave(),
         staff: this.staff.toSave(),
         tags: Object.fromEntries(this.tags),
+        wars: this.wars.toSave(),
       });
     } catch (err) {
       console.error(`[save] could not save the world: ${err.message}`);

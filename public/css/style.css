@@ -786,3 +786,13 @@ tr.me td { background: rgba(242,193,78,.1); }
 .hq-name { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .hq-name label { font: 700 11px var(--font); letter-spacing: 2px; color: var(--gold-dim); }
 .hq-name input { flex: 1; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: rgba(0,0,0,.35); color: #f4eee4; font: 700 16px var(--font); }
+
+/* The war scoreboard, top middle. */
+#warbar {
+  position: absolute; left: 50%; top: 92px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px;
+  padding: 6px 16px; border-radius: 8px; background: rgba(12,6,10,.78); border: 2px solid #b3201a;
+  font: 700 14px var(--font); color: #f4eee4; white-space: nowrap; box-shadow: 0 0 22px rgba(179,32,26,.45);
+}
+#warbar b { font: 400 30px/1 var(--sa-font); -webkit-text-stroke: 1.5px #000; paint-order: stroke fill; }
+#warbar i { font: 400 20px/1 var(--sa-font); font-style: normal; color: #ffd0c8; min-width: 54px; text-align: center; }
+#warbar.warning { border-color: #f2c14e; }
