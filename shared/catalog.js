@@ -369,9 +369,9 @@ export const HOOD_UPGRADES = {
   walls:     { name: 'Walls & Gates',   icon: '🧱', start: 0, levels: [6000, 18000, 40000], level: 3, blurb: 'Your buildings take 20% less damage for each level.' },
   cctv:      { name: 'Lookouts & CCTV', icon: '📹', start: 0, levels: [5000, 20000], level: 4, blurb: 'Earlier warning of a raid, and raiders show on your radar.' },
   safes:     { name: 'Safes',           icon: '🔒', start: 0, levels: [4000, 12000, 30000], level: 4, blurb: 'Tills take longer to crack, and a cracked till gives up less.' },
-  street:    { name: 'Streetscape',     icon: '🌴', start: 0, levels: [7000, 22000, 55000], level: 4, blurb: 'Palm trees, lights and fresh paint: 15% more customers a level.' },
+  street:    { name: 'Streetscape',     icon: '🌴', start: 0, levels: [7000, 22000, 55000], level: 4, blurb: 'Palm trees, then strings of lights, then planters: 15% more customers a level.' },
   billboard: { name: 'Billboard',       icon: '📣', start: 0, levels: [10000], level: 6, blurb: 'A big sign on the avenue: 10% more customers.' },
-  houses:    { name: 'Do Up the Houses', icon: '🏠', start: 0, levels: [12000, 35000], level: 5, blurb: 'Rent from the six houses every morning, and more phone orders.' },
+  houses:    { name: 'Do Up the Houses', icon: '🏠', start: 0, levels: [12000, 35000], level: 5, blurb: 'Fences and awnings, and rent from the six houses every morning.' },
 };
 
 /** A hood's upgrade level (start level when it has never been bought). */

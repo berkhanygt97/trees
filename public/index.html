@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Harvest Royale — LAN</title>
+<title>Harvest Royale: Turf — LAN</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🌾</text></svg>" />
 <link rel="stylesheet" href="/css/style.css" />
 <script type="importmap">
@@ -26,7 +26,7 @@
       <h1>HARVEST ROYALE</h1>
       <span class="suit">♠</span><span class="suit">🚜</span>
     </div>
-    <p class="tagline">Grow it, sell it, bet it. Your farm is saved under your name.</p>
+    <p class="tagline">Grow it, cook it, bank it, defend it. Your hood is saved under your name.</p>
 
     <label for="name">WHAT DO THEY CALL YOU?</label>
     <input id="name" maxlength="14" autocomplete="off" spellcheck="false" placeholder="Farmer Joe" />
@@ -38,17 +38,18 @@
       <div><kbd>E</kbd><span>Use / farm the tile you look at</span></div>
       <div><kbd>1</kbd>–<kbd>7</kbd><span>Pick a seed</span></div>
       <div><kbd>F</kbd><span>Get in / out of your vehicle</span></div>
-      <div><kbd>V</kbd><span>Driver's seat / chase camera</span></div>
+      <div><kbd>V</kbd><span>Third person / first person</span></div>
       <div><kbd>G</kbd><span>Swap tractor implement</span></div>
-      <div><kbd>Q</kbd><span>Rifle out / away · <kbd>R</kbd> reload</span></div>
-      <div><kbd>LMB</kbd> <kbd>RMB</kbd><span>Shoot · aim down the sights</span></div>
+      <div><kbd>Q</kbd><span>Gun out / away · <kbd>R</kbd> reload</span></div>
+      <div><kbd>LMB</kbd> <kbd>RMB</kbd><span>Shoot · aim</span></div>
       <div><kbd>Tab</kbd><span>Rich list + your storage</span></div>
       <div><kbd>H</kbd><span>Help · <kbd>P</kbd> graphics</span></div>
     </div>
 
     <p class="fineprint">
-      Start with a small field and a bag of seeds. Plow, plant, water, harvest, then sell in town.
-      Save up for a tractor, animals, a real house and a ridiculous car — or double it all at the casino.
+      You get a neighbourhood: a farm, a street of restaurant lots and a clubhouse. Farm it, cook it in your
+      own restaurants, bank the takings. Hire a gang, build the hood up, and keep the rival gangs out —
+      or declare war on a neighbour. The casino is still in town.
     </p>
   </div>
 </div>
@@ -145,18 +146,29 @@
           <p>At your house, <b>Plan my farm</b>: drag buildings and the field around a blueprint of your plot; <kbd>R</kbd> turns a building. $100 per thing moved.</p></div>
         <div><h4>🧑‍🌾 HIRED HANDS</h4>
           <p>The <b>Job Centre</b> (south end of main street) has new faces every morning. Pick a job, give them a name, and they work whenever the host is running. Wages come out each morning.</p></div>
-        <div><h4>🍔 THE SUNSET STRIP</h4>
-          <p>East of the plaza. Buy a lot at the <b>Land Office</b> (farm level 4) and open a burger joint, pizzeria or bakery café. Stock the pantry from your farm, cook and serve at the counter or hire staff. From level 3, take phone orders and race them out on your scooter for a tip.</p></div>
+        <div><h4>🍔 RESTAURANTS &amp; TILLS</h4>
+          <p>From farm level 4 the <b>Land Office</b> sells the lots on your own hood street: open a burger joint, pizzeria or bakery café (more of them as you level up). Stock the pantry from your farm, cook and serve at the counter or hire staff. From restaurant level 3, take phone orders and race them out on your scooter.</p>
+          <p>Takings go into the <b>till</b>, banked every four in-game hours (or <b>BANK IT</b> at the counter). A full till is what raiders come for.</p></div>
+        <div><h4>🏚️ YOUR HOOD</h4>
+          <p>Your street has your farm, your restaurant lots, six houses, a park and your <b>clubhouse</b>. At the clubhouse door: rename your gang, buy upgrades (a bigger clubhouse, an armoury, walls, lookouts, safes, palm trees, a billboard, done-up houses), and pay for repairs.</p>
+          <p>Everyone you hire joins your gang. <b>Soldiers</b> (Job Centre) patrol your street with guns while you are in the valley.</p></div>
+        <div><h4>🚨 RIVAL GANGS</h4>
+          <p>Los Coyotes, the Dust Devils MC and the Neon Serpents raid hoods worth robbing — only while their boss is online. They crack tills, tag walls, smash buildings and trample crops. Drop a raider with a bag and it falls where they stood: pick it up to put the money back. If their car gets away, so does the money.</p>
+          <p>Rival tags cost you customers: hold <kbd>E</kbd> at the wall to scrub them off.</p></div>
+        <div><h4>⚔️ GANG WARS</h4>
+          <p>Declare war on another boss from your clubhouse. After a minute's warning you have six minutes in their hood: hold <kbd>E</kbd> to tag walls (+3, and more while they stay up), crack tills and get the bag home (+1 per $500), smash buildings (+2). Wasting the other boss is +2, downing their gang +1. Ties go to the defender. The winner takes the pot and 20% of the loser's takings for a day.</p></div>
+        <div><h4>🦺 GETTING HURT</h4>
+          <p>Rusty's sells a <b>vest</b> (the white bar) and city guns: a 9mm and a machine pistol (hold to fire). At zero health you are <b>wasted</b> and come round at your clubhouse a few seconds later, dropping any bag you carried.</p></div>
         <div><h4>🎰 THE CASINO</h4>
           <p>North of the plaza. Same money as everything else. A rotating event is always about to start.</p></div>
-        <div><h4>🏁 THE TRACK</h4>
-          <p>Past the casino, north. Buy a car at <b>Motors</b> and go jump the ramps. You drive from the seat; <kbd>V</kbd> swaps to a chase camera.</p></div>
+        <div><h4>🏁 DRIVING</h4>
+          <p>Cars have real suspension and grip: <kbd>Space</kbd> is the handbrake for drifting, ramps send you flying, walls hurt. Bins and hydrants go flying too. The speedway is past the casino, north. <kbd>V</kbd> swaps the chase camera for the driver's seat.</p></div>
         <div><h4>🐗 WILD BOARS</h4>
           <p>Every so often a herd charges out of the woods and starts eating your crops. <kbd>Q</kbd> gets Grandpa's rifle out, <kbd>RMB</kbd> aims, <kbd>LMB</kbd> fires, <kbd>R</kbd> reloads. Headshots count double.</p>
-          <p>Get close and a boar paws the ground and grunts — that is your warning. Then it charges in a straight line: <b>step sideways</b> and it runs past. Only one comes at you at a time. Get hit too often and you wake up at your gate (you lose nothing).</p>
+          <p>Get close and a boar paws the ground and grunts — that is your warning. Then it charges in a straight line: <b>step sideways</b> and it runs past. Only one comes at you at a time. Get hit too often and you are wasted (you lose nothing).</p>
           <p>Boars get bigger and meaner as your farm levels up; <b>Rusty's Guns</b> in town sells better guns. Or just run them over.</p></div>
         <div><h4>🖥️ GRAPHICS</h4>
-          <p><kbd>P</kbd> cycles PS2 (soft), Sharp, and Potato for slow laptops.</p></div>
+          <p><kbd>P</kbd> cycles PS2 (soft), Sharp (sharper shadows) and Potato (no shadows or bloom, for slow laptops). <kbd>F3</kbd> shows the frame rate.</p></div>
       </div>
       <p class="fineprint">Everything saves on the host's computer automatically. Come back with the same name to pick up where you left off.</p>
     </div>

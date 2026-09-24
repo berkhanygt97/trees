@@ -168,6 +168,24 @@ export const VIEWS = [
       const wall = TAG_POINTS.find((t) => t.hood === rival.plot && t.k === 1);
       await page.evaluate(([x, z]) => { window.casino.controls.pos.set(x, 0, z + 2.2); window.casino.controls.yaw = 0; }, [wall.pos[0], wall.pos[2]]);
     }, wait: 2500 },
+  { name: 'hoodup', server: (room, me) => {
+    at(room, 20.3);
+    me.hood.up = { hq: 4, armory: 3, walls: 3, cctv: 2, safes: 3, street: 3, billboard: 1, houses: 2 };
+    me.hood.hp = { hq: 25, h1: 15 };
+    room.broadcast('plot', room.publicPlot(me.plot));
+  }, client: (c) => { c.rig.mode = 'tp'; c.rig.fresh = true; },
+    pos: [HQS[0].spawn[0] - 55, 0, HQS[0].spawn[2] + 20], yaw: -Math.PI / 2 - 0.3, pitch: 0.06, wait: 4000 },
+  { name: 'cars', server: (room, me) => {
+    at(room, 16);
+    const s = HOOD_STREETS[me.plot];
+    const z = (s.z0 + s.z1) / 2;
+    const models = ['hatch', 'pickup', 'sedan', 'muscle', 'coupe', 'limo', 'hyper'];
+    const colors = ['#8a9a5b', '#c0392b', '#2e86de', '#f1c40f', '#8e44ad', '#111111', '#16a085'];
+    me.vehicles = me.vehicles.filter((v) => !v.id.includes('#show'));
+    models.forEach((m, i) => me.vehicles.push({ id: `${me.slug}#show${i}`, model: m, color: colors[i], pos: [s.x0 + 60 + i * 9, 0, z + 2], yaw: -0.6, implement: null }));
+    room.broadcast('vehicles', room.publicVehicles());
+  }, client: (c) => { c.rig.mode = 'tp'; c.rig.fresh = true; },
+    pos: [HOOD_STREETS[0].x0 + 85, 0, (HOOD_STREETS[0].z0 + HOOD_STREETS[0].z1) / 2 + 11], yaw: 0.1, pitch: -0.12, wait: 3000 },
   { name: 'afternoon', server: (room) => at(room, 16.5), pos: [street.x0 + 45, 0, midZ], yaw: Math.PI / 2 + 0.5, pitch: -0.1,
     client: (c) => { c.rig.mode = 'tp'; c.rig.fresh = true; } },
   { name: 'dusk', client: (c) => { c.rig.mode = 'tp'; }, server: (room) => at(room, 19.2), pos: [street.x0 + 120, 0, midZ], yaw: -Math.PI / 2, pitch: 0.05 },

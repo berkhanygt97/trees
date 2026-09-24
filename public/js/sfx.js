@@ -158,6 +158,15 @@ export const sfx = {
   /** `vol` falls off with distance for other people's shots. */
   gunshot(kind = 'rifle', vol = 1) {
     if (vol < 0.02) return;
+    if (kind === 'pistol' || kind === 'smg') {
+      // A short, sharp crack; the machine pistol's is snappier still (it fires a lot of them).
+      const smg = kind === 'smg';
+      noise({ dur: smg ? 0.09 : 0.16, gain: (smg ? 0.35 : 0.45) * vol, bandpass: smg ? 1600 : 1200 });
+      noise({ dur: 0.04, gain: 0.4 * vol, bandpass: 3800 });
+      tone({ freq: smg ? 180 : 140, type: 'square', dur: 0.07, gain: 0.12 * vol, slide: -60 });
+      if (!smg) noise({ dur: 0.35, gain: 0.05 * vol, bandpass: 500, delay: 0.18 });
+      return;
+    }
     const heavy = kind === 'shotgun' || kind === 'biggame';
     noise({ dur: heavy ? 0.5 : 0.35, gain: 0.55 * vol, bandpass: heavy ? 500 : 900 });
     noise({ dur: 0.08, gain: 0.5 * vol, bandpass: 3000 });

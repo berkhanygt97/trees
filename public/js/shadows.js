@@ -12,6 +12,8 @@ export function markShadows(root) {
   root.traverse((o) => {
     if (!o.isMesh || o.userData.shadowSet) return;
     o.userData.shadowSet = true;
+    // Whole areas the sun never reaches (the casino floor) stay out of it.
+    for (let q = o; q; q = q.parent) if (q.userData.noShadows) return;
     const m = Array.isArray(o.material) ? o.material[0] : o.material;
     if (!m || m.isMeshBasicMaterial || m.isShaderMaterial || m.isRawShaderMaterial) return;
     if (m.transparent && m.blending !== THREE.NormalBlending) return;

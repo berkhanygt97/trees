@@ -134,6 +134,7 @@ function initScene() {
   world = new World(scene);
   fleet = new Fleet(scene, world);
   smoke = new Smoke(scene);
+  wreckSmoke = new Smoke(scene, 360, 0x3a3634);
   controls = new Controls(camera, canvas, world);
   rig = new CameraRig(camera, world);
   controls.thirdPerson = !rig.firstPerson;
@@ -300,6 +301,7 @@ function syncPhysicsBoxes() {
   if (!physics) return;
   physics.setBoxes('farms', world.farms.boxes);
   physics.setBoxes('restaurants', restaurants.boxes);
+  physics.setBoxes('hoodwalls', world.hoods.boxes);
 }
 
 let lastCrash = 0;
@@ -514,7 +516,8 @@ net.on('unitlist', (list) => { if (units) units.setList(list, me.color); });
 net.on('raid', (r) => {
   if (!raidView) return;
   raidView.onRaid(r);
-  if (r.hood === me.plot && r.phase === 'on') sfx.alarm && sfx.alarm();
+  // Sirens when they are on the way, and again when they pile out.
+  if (r.hood === me.plot && (r.phase === 'ride' || r.phase === 'on')) sfx.alarm();
   updateThreat();
 });
 net.on('raidcars', (rows) => { if (raidView) raidView.onCars(rows); });
@@ -1094,6 +1097,8 @@ let last = performance.now();
 let lastMoveSent = 0;
 let lastShadowMark = 0;
 let radar = null;
+let wreckSmoke = null;              // dark smoke off smashed-up buildings
+let lastWreckPuff = 0;
 let units = null;
 let raidView = null;
 let tagsNow = {};                   // tag wall id -> { gang, name, color }
@@ -1301,6 +1306,15 @@ function loop(now) {
   restaurants.update(dt, world.sky.night);
   updateDelivery(dt);
   smoke.update(dt);
+  wreckSmoke.update(dt);
+  if (now - lastWreckPuff > 350) {
+    lastWreckPuff = now;
+    for (const s of world.hoods.smokeSpots()) {
+      if (Math.hypot(s.x - camera.position.x, s.z - camera.position.z) > 260) continue;
+      tmpVec.set(s.x, s.y, s.z);
+      wreckSmoke.billow(tmpVec, 1 + Math.round(s.k * 2), s.k);
+    }
+  }
   world.props.updateLoose(dt, physics);
 
   // What can you do right now?

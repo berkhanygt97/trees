@@ -1,4 +1,4 @@
-import { STATIC_BOXES, insideCasino } from '/shared/map.js';
+import { STATIC_BOXES, CASINO, insideCasino } from '/shared/map.js';
 import { Casino } from './casino.js';
 import { Outdoor } from './outdoor.js';
 import { FarmView } from './farmview.js';
@@ -53,6 +53,8 @@ export class World {
 
   boxesNear() {
     let out = this.farms.boxes.length ? this.boxes.concat(this.farms.boxes) : this.boxes;
+    // Compound walls round the clubhouses, once they are built.
+    if (this.hoods.boxes.length) out = out.concat(this.hoods.boxes);
     // Restaurants and cottages on the Sunset Strip (set up by main).
     if (this.extraBoxes && this.extraBoxes.length) out = out.concat(this.extraBoxes);
     return out;
@@ -74,7 +76,9 @@ export class World {
     const cx = ctx.camera.position.x;
     const cz = ctx.camera.position.z;
     const near = Math.abs(cx) < 140 && cz < 140 && cz > -120;
-    this.casino.interior.visible = near;
+    // Inside, or right at the doors looking in: draw the room.
+    const atDoor = Math.abs(cx) < 36 && cz > CASINO.MAX_Z - 3 && cz < CASINO.MAX_Z + 18;
+    this.casino.setInteriorShown(inside || atDoor);
     if (near) this.casino.update(dt, ctx);
   }
 }

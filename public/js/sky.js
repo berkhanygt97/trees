@@ -279,8 +279,8 @@ export class Sky {
     const centre = tmpD.copy(right).multiplyScalar(a).addScaledVector(up, b).addScaledVector(fwd, c);
     this.sun.target.position.copy(centre);
     this.sun.position.copy(centre).addScaledVector(sunDir, 200);
-    // Below the horizon there is nothing to cast: skip drawing the map.
-    this.sun.shadow.autoUpdate = sunDir.y > 0.02;
+    // Below the horizon, or indoors, there is nothing to cast: skip drawing the map.
+    this.sun.shadow.autoUpdate = sunDir.y > 0.02 && this.inside < 0.5;
   }
 
   _updateRain(dt, camera, k) {

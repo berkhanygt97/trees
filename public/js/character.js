@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { plaidTexture, denimTexture, strawTexture, faceTexture, labelSprite } from './textures.js';
 import { buildGun } from './guns.js';
+import { mergeGeometries } from './merge.js';
 
 // People with joints: hips, spine, chest, neck, head, shoulders, elbows,
 // wrists, hips, knees and ankles (17 bones). Every body part is modelled
@@ -397,7 +397,7 @@ function buildGeometry(look) {
     g.setAttribute('skinWeight', new THREE.Float32BufferAttribute(wgt, 4));
     return g;
   });
-  const merged = mergeGeometries(geos, false);
+  const merged = mergeGeometries(geos);
   for (const g of geos) g.dispose();
   return merged;
 }

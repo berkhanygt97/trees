@@ -6,9 +6,11 @@ import {
   pavingTexture, plasterTexture, roofTileTexture, boardTexture, neonSignTexture, brickTexture,
   decoWallTexture, glowTexture, plankTexture, graffitiTexture,
 } from '../textures.js';
+import { LOT_BY_ID } from '/shared/map.js';
 import { makeHalo } from '../neon.js';
 import { buildPalms } from '../palms.js';
 import { batchStatic, live, dynamic } from '../batcher.js';
+import { mergeByMaterial } from '../merge.js';
 
 // The six neighbourhoods: pavements along each street, the gang's clubhouse at
 // the end nearest downtown, a row of houses, a park, the walls the gangs tag,
@@ -40,6 +42,7 @@ function tiled(tex, w, h, size) {
 }
 
 const HOUSE_COLOURS = ['#f7c6e0', '#bde6f7', '#fff1b8', '#c8f2d0', '#ffd6b0', '#e2d4ff'];
+const HOUSE_AWNINGS = [0xc0392b, 0x2e86de, 0x27ae60, 0xe67e22, 0x8e44ad, 0x16a085];
 
 export class HoodView {
   constructor(scene) {
@@ -49,6 +52,9 @@ export class HoodView {
     this.lampMats = [];
     this.signs = new Map();       // hood -> { arch, hq, key }
     this.tagPlanes = new Map();   // tag id -> { mesh, key }
+    this.upgrades = new Map();    // hood -> { street: [groups by level], ... }
+    this.damage = new Map();      // hood -> { key: hp } (buildings knocked about)
+    this.boxes = [];              // compound walls, once built: they block like any wall
     this.owners = new Map();      // hood -> { gang, color } of whoever runs it
     this.tags = {};
     this.neon = [];
@@ -114,6 +120,8 @@ export class HoodView {
 
     // Houses.
     for (const house of HOOD_HOUSES.filter((q2) => q2.hood === h.index)) this._house(g, house);
+
+    this._upgradeProps(g, h);
 
     // The park: a patch of lawn, a court, benches and palms.
     const park = PARKS[h.index];
@@ -198,6 +206,177 @@ export class HoodView {
     this.group.add(poles, heads, pools);
   }
 
+  // ---------------------------------------------------------- upgrades
+
+  /**
+   * What the clubhouse upgrades look like, built once and hidden: palm trees,
+   * string lights and planters (streetscape), a billboard on the avenue,
+   * fences and awnings on the houses, compound walls, cameras, the armoury's
+   * crates. setOwners shows what has been bought.
+   */
+  _upgradeProps(g, h) {
+    const hide = (grp) => { grp.visible = false; g.add(dynamic(grp)); return grp; };
+    const zN = hz(h, HOOD_T.walk.n[0] + 1.2);
+    const zS = hz(h, HOOD_T.walk.s[1] - 1.2);
+    const along = [];
+    for (let lx = 30; lx <= 240; lx += 26) along.push(lx);
+
+    // Streetscape 1: palms down both pavements.
+    const palms = buildPalms(along.flatMap((lx, i) => [[hx(h, lx), zN], [hx(h, lx + 13), zS]]), 31 + h.index);
+    const s1 = hide(new THREE.Group());
+    s1.add(palms.group);
+    // 2: strings of lights across the street.
+    const s2 = hide(new THREE.Group());
+    const wire = phong(0x222222);
+    const bulb = live(basic(0xffe6a0));
+    this.lampMats.push(bulb);
+    for (let lx = 40; lx <= 230; lx += 38) {
+      const x = hx(h, lx);
+      box(s2, 0.06, 0.06, zS - zN, x, 5.4, (zN + zS) / 2, wire);
+      for (const z of [zN, zS]) box(s2, 0.12, 5.4, 0.12, x, 2.7, z, wire);
+      for (let k = 1; k < 9; k++) {
+        const b = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 4), bulb);
+        b.position.set(x, 5.25 - Math.sin((k / 9) * Math.PI) * 0.5, zN + (zS - zN) * (k / 9));
+        s2.add(b);
+      }
+    }
+    // 3: planters full of flowers.
+    const s3 = hide(new THREE.Group());
+    const planter = phong(0x8a7a66);
+    const flowers = [0xe84393, 0xf1c40f, 0xff7f50, 0x9b59b6].map((c) => phong(c));
+    const bloom = new THREE.SphereGeometry(0.2, 6, 4);
+    along.forEach((lx, i) => {
+      for (const [z, off] of [[zN, 6], [zS, 19]]) {
+        const x = hx(h, lx + off);
+        box(s3, 1.4, 0.6, 1.0, x, 0.3, z, planter);
+        for (let k = 0; k < 5; k++) {
+          const f = new THREE.Mesh(bloom, flowers[(i + k) % flowers.length]);
+          f.position.set(x - 0.5 + k * 0.25, 0.7 + (k % 2) * 0.08, z + (k % 2 ? 0.2 : -0.2));
+          s3.add(f);
+        }
+      }
+    });
+
+    // Billboard, out on the avenue by the arch.
+    const bb = hide(new THREE.Group());
+    const bx = hx(h, HOOD_T.arch.x + 3);
+    const bz = hz(h, HOOD_T.walk.n[0] - 8);
+    for (const dz of [-4, 4]) box(bb, 0.4, 8, 0.4, bx, 4, bz + dz, phong(0x3b3f45));
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(11, 4.6), basic(0xffffff));
+    board.rotation.y = h.mirror ? -Math.PI / 2 : Math.PI / 2;
+    board.position.set(bx + (h.mirror ? -0.25 : 0.25), 9.4, bz);
+    bb.add(board);
+    const boardBack = new THREE.Mesh(new THREE.PlaneGeometry(11, 4.6), phong(0x2b2e33));
+    boardBack.rotation.y = -board.rotation.y;
+    boardBack.position.set(bx + (h.mirror ? 0.25 : -0.25), 9.4, bz);
+    bb.add(boardBack);
+
+    // Houses 1: picket fences; 2: striped awnings.
+    const hs1 = hide(new THREE.Group());
+    const hs2 = hide(new THREE.Group());
+    const white = phong(0xf4f1ea);
+    const awnings = HOUSE_AWNINGS.map((c) => phong(c));
+    for (const house of HOOD_HOUSES.filter((q2) => q2.hood === h.index)) {
+      const y = house.yard;
+      box(hs1, (y.x1 - y.x0) - 5, 0.12, 0.08, (y.x0 + y.x1) / 2 - 2.5, 0.75, y.z0 + 0.4, white);
+      box(hs1, (y.x1 - y.x0) - 5, 0.12, 0.08, (y.x0 + y.x1) / 2 - 2.5, 0.35, y.z0 + 0.4, white);
+      for (let x = y.x0 + 0.3; x < y.x1 - 5; x += 0.55) box(hs1, 0.1, 0.95, 0.06, x, 0.48, y.z0 + 0.42, white);
+      const aw = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.1, 1.6), awnings[house.k % awnings.length]);
+      aw.position.set(house.door[0], 2.7, house.box.z0 - 0.7);
+      aw.rotation.x = -0.35;
+      hs2.add(aw);
+    }
+
+    // Walls round the clubhouse yard (the street side stays open).
+    const yard = HQS[h.index].yard;
+    const walls = [1.2, 2.2, 2.2].map((ht, i) => {
+      const grp = hide(new THREE.Group());
+      const mat = phong(0xffffff, { map: tiled(brickTexture(i ? '#6a4a3e' : '#9a8a7a'), 6, ht, 3) });
+      const t = 0.35;
+      const rects = [
+        { x0: yard.x0, x1: yard.x1, z0: yard.z0, z1: yard.z0 + t },
+        { x0: yard.x0, x1: yard.x0 + t, z0: yard.z0, z1: yard.z1 - 6 },
+        { x0: yard.x1 - t, x1: yard.x1, z0: yard.z0, z1: yard.z1 - 6 },
+      ];
+      for (const r of rects) box(grp, r.x1 - r.x0, ht, r.z1 - r.z0, (r.x0 + r.x1) / 2, ht / 2, (r.z0 + r.z1) / 2, mat);
+      if (i === 2) {
+        // Razor wire along the top.
+        for (const r of rects) {
+          const len = Math.max(r.x1 - r.x0, r.z1 - r.z0);
+          const coil = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, len, 8, 1, true), phong(0x9aa1ad, { wireframe: true }));
+          coil.rotation.set(r.x1 - r.x0 > r.z1 - r.z0 ? 0 : Math.PI / 2, 0, r.x1 - r.x0 > r.z1 - r.z0 ? Math.PI / 2 : 0);
+          coil.position.set((r.x0 + r.x1) / 2, ht + 0.2, (r.z0 + r.z1) / 2);
+          grp.add(coil);
+        }
+      }
+      grp.userData.rects = rects.map((r) => ({ ...r, h: ht }));
+      return grp;
+    });
+
+    // CCTV: cameras on the arch and the clubhouse corners, red lights blinking.
+    const cam = hide(new THREE.Group());
+    const led = live(basic(0xff2a2a));
+    this.leds = this.leds || [];
+    this.leds.push(led);
+    const b = HQS[h.index].building;
+    const housing = phong(0xdddddd);
+    for (const [x, z] of [[b.x0, b.z1], [b.x1, b.z1], [hx(h, HOOD_T.arch.x), hz(h, HOOD_T.street.z0 - 3)]]) {
+      box(cam, 0.3, 0.25, 0.5, x, 7.2, z + 0.3, housing);
+      box(cam, 0.08, 0.08, 0.08, x, 7.25, z + 0.58, led);
+    }
+    // Armoury: crates of kit stacked by the door.
+    const arm = hide(new THREE.Group());
+    const crate = phong(0x5a6b3a);
+    const d = HQS[h.index].door;
+    for (let k = 0; k < 4; k++) box(arm, 1.1, 0.7, 0.7, d[0] + (h.mirror ? -3 : 3) + (k % 2) * 1.2, 0.35 + Math.floor(k / 2) * 0.7, d[2] - 1.5, crate);
+
+    // Hundreds of little parts: one draw call per material per group. (The
+    // billboard face keeps its own mesh: its picture changes.)
+    for (const grp of [s2, s3, hs1, hs2, ...walls, cam, arm]) mergeByMaterial(grp);
+    this.upgrades.set(h.index, { street: [s1, s2, s3], billboard: [bb], houses: [hs1, hs2], walls, cctv: [cam], armory: [arm], board });
+  }
+
+  _showUpgrades(index, up, gang, color) {
+    const u = this.upgrades.get(index);
+    if (!u) return;
+    const lvl = (k) => (up && Number.isFinite(up[k]) ? up[k] : 0);
+    for (const k of ['street', 'billboard', 'houses', 'cctv', 'armory']) u[k].forEach((grp, i) => { grp.visible = lvl(k) > i; });
+    // Only the highest wall shows.
+    u.walls.forEach((grp, i) => { grp.visible = lvl('walls') === i + 1; });
+    if (lvl('billboard') > 0 && gang) {
+      u.board.material.map = boardTexture(gang.toUpperCase(), color || '#f2c14e', 'eat local · pay cash · no trouble');
+      u.board.material.needsUpdate = true;
+    }
+    this.boxes = [];
+    for (const [, v] of this.upgrades) {
+      const w = v.walls.find((grp) => grp.visible);
+      if (w) this.boxes.push(...w.userData.rects);
+    }
+  }
+
+  /** Buildings in any hood that are badly knocked about: where their smoke comes from. */
+  smokeSpots() {
+    const out = [];
+    for (const [hood, hp] of this.damage) {
+      for (const [key, v] of Object.entries(hp || {})) {
+        if (v >= 60) continue;
+        let x; let y; let z;
+        if (key === 'hq') { const b = HQS[hood].building; x = (b.x0 + b.x1) / 2; z = (b.z0 + b.z1) / 2; y = 8.5; }
+        else if (key[0] === 'h') {
+          const house = HOOD_HOUSES.find((q) => q.hood === hood && q.k === Number(key.slice(1)));
+          if (!house) continue;
+          x = (house.box.x0 + house.box.x1) / 2; z = (house.box.z0 + house.box.z1) / 2; y = 3.6;
+        } else if (key[0] === 'r') {
+          const c = this.lotCentre(Number(key.slice(1)));
+          if (!c) continue;
+          [x, z] = c; y = 5;
+        } else continue;
+        out.push({ x, y, z, k: 1 - v / 60 });
+      }
+    }
+    return out;
+  }
+
   /** Graffiti on every tag wall, from the server's map of tags. */
   setTags(tags) {
     this.tags = tags || {};
@@ -226,6 +405,8 @@ export class HoodView {
     for (const p of plots || []) {
       if (!p) continue;
       const next = p.owner ? { gang: p.gang || `${p.owner}'s crew`, color: p.color } : null;
+      this._showUpgrades(p.index, p.owner ? p.up : null, next && next.gang, p.color);
+      this.damage.set(p.index, p.owner ? p.hp || {} : {});
       if (JSON.stringify(next) !== JSON.stringify(this.owners.get(p.index) || null)) { this.owners.set(p.index, next); tagsChanged = true; }
       const s = this.signs.get(p.index);
       if (!s) continue;
@@ -247,5 +428,14 @@ export class HoodView {
     const glow = 0.35 + night * 0.65;
     for (const mat of this.lampMats) mat.color.setRGB(glow, glow * 0.94, glow * 0.75);
     this.poolMat.opacity = night * 0.55;
+    // Camera lights blink.
+    const on = Math.floor(performance.now() / 700) % 2 === 0;
+    for (const led of this.leds || []) led.color.setHex(on ? 0xff2a2a : 0x3a0808);
+  }
+
+  /** Where a restaurant lot's middle is (for its smoke). */
+  lotCentre(id) {
+    const l = LOT_BY_ID.get(id);
+    return l ? [(l.x0 + l.x1) / 2, (l.z0 + l.z1) / 2] : null;
   }
 }

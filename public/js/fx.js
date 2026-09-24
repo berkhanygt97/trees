@@ -22,7 +22,7 @@ function puffTexture() {
  * no matter how many people are smoking.
  */
 export class Smoke {
-  constructor(scene, max = 220) {
+  constructor(scene, max = 220, tint = 0xffffff) {
     this.max = max;
     this.next = 0;
     this.positions = new Float32Array(max * 3);
@@ -39,7 +39,7 @@ export class Smoke {
 
     // A tiny shader so each puff can fade and swell on its own.
     const mat = new THREE.ShaderMaterial({
-      uniforms: { map: { value: puffTexture() } },
+      uniforms: { map: { value: puffTexture() }, tint: { value: new THREE.Color(tint) } },
       transparent: true,
       depthWrite: false,
       vertexShader: `
@@ -56,10 +56,11 @@ export class Smoke {
         }`,
       fragmentShader: `
         uniform sampler2D map;
+        uniform vec3 tint;
         varying float vAlpha;
         void main() {
           vec4 c = texture2D(map, gl_PointCoord);
-          gl_FragColor = vec4(c.rgb, c.a * vAlpha);
+          gl_FragColor = vec4(c.rgb * tint, c.a * vAlpha);
         }`,
     });
 
@@ -84,6 +85,24 @@ export class Smoke {
       this.maxLife[i] = 1.4 + Math.random() * 1.2;
       this.life[i] = this.maxLife[i];
       this.sizes[i] = 4 + Math.random() * 4;
+      this.alphas[i] = 0.34;
+    }
+  }
+
+  /** Thick smoke pouring off something that is burning or smashed up. */
+  billow(pos, count = 2, strength = 1) {
+    for (let k = 0; k < count; k++) {
+      const i = this.next;
+      this.next = (this.next + 1) % this.max;
+      this.positions[i * 3] = pos.x + (Math.random() - 0.5) * 2;
+      this.positions[i * 3 + 1] = pos.y + Math.random() * 0.5;
+      this.positions[i * 3 + 2] = pos.z + (Math.random() - 0.5) * 2;
+      this.vel[i * 3] = (Math.random() - 0.5) * 0.6 + 0.4;
+      this.vel[i * 3 + 1] = 1.4 + Math.random() * 1.2;
+      this.vel[i * 3 + 2] = (Math.random() - 0.5) * 0.6;
+      this.maxLife[i] = 3 + Math.random() * 2.5;
+      this.life[i] = this.maxLife[i];
+      this.sizes[i] = 16 + Math.random() * 10 * strength;
       this.alphas[i] = 0.34;
     }
   }

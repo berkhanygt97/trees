@@ -128,7 +128,7 @@ export class Weapons {
     this.net.send('shoot', { o: [o.x, o.y, o.z].map(r3), d: [d.x, d.y, d.z].map(r3), lag });
 
     this.viewModel.fire(gun.action === 'semi' ? 0.15 : gun.rate);
-    this.sfx.gunshot(gun.id === 'shotgun' ? 'shotgun' : gun.id === 'biggame' ? 'biggame' : 'rifle', 1);
+    this.sfx.gunshot(soundOf(gun.id), 1);
     if (gun.action === 'bolt') this.sfx.bolt();
     if (gun.action === 'pump' || gun.action === 'lever') this.sfx.pump();
     // The camera kicks up; most of it settles back.
@@ -184,7 +184,7 @@ export class Weapons {
     const from = new THREE.Vector3(...d.o);
     const to = new THREE.Vector3(...d.e);
     const dist = listener.distanceTo(from);
-    this.sfx.gunshot(d.gun === 'shotgun' ? 'shotgun' : 'rifle', Math.max(0, 1 - dist / 220) ** 1.5);
+    this.sfx.gunshot(soundOf(d.gun), Math.max(0, 1 - dist / 220) ** 1.5);
     if (dist < 200) this.tracer(from.add(new THREE.Vector3(0, -0.2, 0)), to);
   }
 
@@ -217,3 +217,8 @@ export class Weapons {
 }
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
+
+/** Which gunshot a gun makes. */
+function soundOf(id) {
+  return { shotgun: 'shotgun', biggame: 'biggame', pistol: 'pistol', smg: 'smg' }[id] || 'rifle';
+}

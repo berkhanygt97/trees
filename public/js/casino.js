@@ -23,6 +23,8 @@ export class Casino {
     this.exterior = new THREE.Group();
     this.interior = new THREE.Group();
     scene.add(this.exterior, this.interior);
+    // Lit by its chandeliers only: no sun, so nothing in here casts or catches its shadows.
+    this.interior.userData.noShadows = true;
     this.scene = this.interior;
     this.obstacles = [];
     this.t = 0;
@@ -149,6 +151,23 @@ export class Casino {
     }
 
     this._exterior(DOOR_H);
+
+    // Seen from out in the plaza the room is not drawn at all (hundreds of
+    // draw calls); the doorways show warm dark glass instead, like every
+    // interior in a 2004 open world.
+    this.doorways = CASINO.DOORS.map(([a, b]) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(b - a, DOOR_H), new THREE.MeshBasicMaterial({ color: 0x1a0c14 }));
+      m.position.set((a + b) / 2, DOOR_H / 2, ROOM.MAX_Z + 0.02);
+      m.visible = false;
+      this.exterior.add(m);
+      return m;
+    });
+  }
+
+  /** Draw the inside, or just the dark doorways. */
+  setInteriorShown(on) {
+    this.interior.visible = on;
+    for (const d of this.doorways) d.visible = !on;
   }
 
   /** The outside of the building: walls, roof, marquee and the big sign. */

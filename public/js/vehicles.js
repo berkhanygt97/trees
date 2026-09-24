@@ -2,14 +2,45 @@ import * as THREE from 'three';
 import { VEHICLE_BY_ID } from '/shared/catalog.js';
 import { labelSprite, shadowTexture } from './textures.js';
 
-// Every vehicle is built from boxes and cylinders, like the rest of the world.
+// Cars have shaped bodies: a side profile (sloping bonnet, raked windscreen,
+// boot, wheel arches) extruded to the car's width with rounded edges, a glass
+// cabin on top with pillars and a roof, chrome bumpers, a grille and mirrors.
+// Paint, glass and chrome reflect a little painted sky, the way cars shone on
+// a PS2. Machines (tractor, combine, scooter) are built from parts.
 // Local frame: forward is -Z (the same as a player's yaw), up is +Y.
 
+/** A tiny sky, ground and horizon for things to reflect: one cube map for every car. */
+function reflections() {
+  const face = (top, mid, bottom) => {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 32;
+    const g = cv.getContext('2d');
+    const gr = g.createLinearGradient(0, 0, 0, 32);
+    gr.addColorStop(0, top);
+    gr.addColorStop(0.5, mid);
+    gr.addColorStop(0.56, '#6a6258');
+    gr.addColorStop(1, bottom);
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 32, 32);
+    return cv;
+  };
+  const side = face('#9cc4e8', '#f4e2c4', '#4a4238');
+  const up = face('#8ab8e6', '#a8cdee', '#a8cdee');
+  const down = face('#3a342e', '#3a342e', '#3a342e');
+  const cube = new THREE.CubeTexture([side, side, up, down, side, side]);
+  cube.colorSpace = THREE.SRGBColorSpace;
+  cube.needsUpdate = true;
+  return cube;
+}
+const ENV = reflections();
+
 const phong = (color, o = {}) => new THREE.MeshPhongMaterial({ color, shininess: 40, specular: 0x333333, ...o });
-const GLASS = phong(0x1c2530, { shininess: 90, specular: 0x8899aa });
+const shiny = (color, reflectivity, o = {}) => phong(color, { envMap: ENV, reflectivity, combine: THREE.MixOperation, ...o });
+const GLASS = shiny(0x141c26, 0.55, { shininess: 90, specular: 0x8899aa });
 const TYRE = phong(0x151515, { shininess: 5 });
-const RIM = phong(0xc8c8c8, { shininess: 80 });
-const CHROME = phong(0xdadada, { shininess: 100, specular: 0xffffff });
+const RIM = shiny(0xc8c8c8, 0.6, { shininess: 80 });
+const CHROME = shiny(0xffffff, 0.85, { shininess: 100, specular: 0xffffff });
+const GRILLE = phong(0x1a1a1c, { shininess: 30 });
 const HEAD = new THREE.MeshBasicMaterial({ color: 0xfff6d0 });
 const TAIL = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
 const DARK = phong(0x222226, { shininess: 10 });
@@ -54,31 +85,108 @@ function wheel(parent, r, w, x, y, z, wheels) {
   return g;
 }
 
-function lights(parent, w, y, front, back) {
-  for (const s of [-1, 1]) {
-    box(parent, 0.34, 0.16, 0.05, s * (w / 2 - 0.3), y, front - 0.02, HEAD);
-    box(parent, 0.34, 0.14, 0.05, s * (w / 2 - 0.3), y, back + 0.02, TAIL);
-  }
+/** Extrudes a side profile (u forward, v up) to `width`, centred, facing -Z. */
+function profileMesh(shape, width, mat, bevel = 0.06) {
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: Math.max(0.01, width - bevel * 2), bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 6,
+  });
+  // Extruded along +Z with u along +X: turn it so u runs to -Z (forward) and the width runs along X.
+  geo.rotateY(Math.PI / 2);
+  geo.translate(-width / 2 + bevel, 0, 0);
+  return new THREE.Mesh(geo, mat);
 }
 
-/** A generic car: lower body + cabin + four wheels, tuned per model. */
+/**
+ * A car: a shaped body with wheel arches, a cabin on top, four wheels.
+ * o: len, wid, bodyH (sill to beltline), lift (ground clearance), cabLen
+ * (roof length), cabH, cabZ (cabin centre, +Z is the back), wheelR, and the
+ * shape: nose (how far the bonnet drops), tail (how far the boot drops),
+ * rake / rakeBack (how far the screens lean, per metre of cabin height).
+ */
 function car(g, wheels, paint, o) {
   const { len, wid, bodyH, lift, cabLen, cabH, cabZ, wheelR, roof = true } = o;
-  const body = box(g, wid, bodyH, len, 0, lift + bodyH / 2, 0, paint);
-  if (roof) {
-    const cab = box(g, wid - 0.18, cabH, cabLen, 0, lift + bodyH + cabH / 2, cabZ, GLASS);
-    box(g, wid - 0.14, 0.08, cabLen - 0.1, 0, lift + bodyH + cabH, cabZ, paint);
-    // Pillars, so it reads as a car cabin rather than a black brick.
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      box(g, 0.08, cabH, 0.1, sx * (wid / 2 - 0.12), lift + bodyH + cabH / 2, cabZ + sz * (cabLen / 2 - 0.05), paint);
-    }
-    cab.userData.cab = true;
-  }
-  box(g, wid + 0.04, 0.12, 0.22, 0, lift + 0.12, -len / 2 - 0.05, CHROME);
-  box(g, wid + 0.04, 0.12, 0.22, 0, lift + 0.12, len / 2 + 0.05, CHROME);
-  lights(g, wid, lift + bodyH * 0.6, -len / 2, len / 2);
-  const wx = wid / 2 - 0.05;
+  const nose = o.nose ?? 0.12;
+  const tail = o.tail ?? 0.06;
+  const rake = o.rake ?? 0.9;
+  const rakeBack = o.rakeBack ?? 0.7;
+  const L = len / 2;
+  const belt = lift + bodyH;
   const wz = len / 2 - wheelR - 0.25;
+  const ar = wheelR + 0.1;
+  const du = Math.sqrt(Math.max(0, ar * ar - (lift - wheelR) ** 2));
+  const a = Math.asin(Math.max(-1, Math.min(1, (lift - wheelR) / ar)));
+  // Cabin, in forward coordinates (u = -z).
+  const cu = -cabZ;
+  const roofF = cu + cabLen / 2;
+  const roofB = cu - cabLen / 2;
+  const baseF = Math.min(L - 0.5, roofF + rake * cabH);
+  const baseB = Math.max(-L + 0.4, roofB - rakeBack * cabH);
+
+  // The lower body: bumpers, bonnet, beltline, boot, and arches over the wheels.
+  const s = new THREE.Shape();
+  s.moveTo(-L + 0.18, lift);
+  s.lineTo(-wz - du, lift);
+  s.absarc(-wz, wheelR, ar, Math.PI - a, a, true);
+  s.lineTo(wz - du, lift);
+  s.absarc(wz, wheelR, ar, Math.PI - a, a, true);
+  s.lineTo(L - 0.18, lift);
+  s.quadraticCurveTo(L, lift, L, lift + 0.18);
+  s.lineTo(L, belt - nose - 0.12);
+  s.quadraticCurveTo(L, belt - nose, L - 0.2, belt - nose + 0.02);
+  s.lineTo(baseF, belt);
+  s.lineTo(baseB, belt);
+  s.lineTo(-L + 0.2, belt - tail);
+  s.quadraticCurveTo(-L, belt - tail, -L, belt - tail - 0.14);
+  s.lineTo(-L, lift + 0.18);
+  s.quadraticCurveTo(-L, lift, -L + 0.18, lift);
+  const body = profileMesh(s, wid, paint, 0.07);
+  g.add(body);
+
+  if (roof) {
+    // The glasshouse: tinted glass all round, leaning in a touch at the top.
+    const c = new THREE.Shape();
+    c.moveTo(baseB, belt - 0.02);
+    c.lineTo(baseF, belt - 0.02);
+    c.lineTo(roofF, belt + cabH);
+    c.lineTo(roofB, belt + cabH);
+    c.closePath();
+    const cab = profileMesh(c, wid - 0.22, GLASS, 0.05);
+    cab.userData.cab = true;
+    g.add(cab);
+    // Roof panel and pillars in the body colour.
+    const roofLen = roofF - roofB;
+    box(g, wid - 0.18, 0.07, roofLen + 0.08, 0, belt + cabH + 0.02, -(roofF + roofB) / 2, paint);
+    const pillar = (u0, u1, x) => {
+      const dz = -(u1 - u0);
+      const len2 = Math.hypot(dz, cabH);
+      const m = box(g, 0.09, len2, 0.12, x, belt + cabH / 2, -(u0 + u1) / 2, paint);
+      m.rotation.x = Math.atan2(dz, cabH);
+    };
+    for (const x of [-(wid / 2 - 0.12), wid / 2 - 0.12]) {
+      pillar(baseF, roofF, x);                 // A pillars, along the windscreen
+      pillar(baseB, roofB, x);                 // C pillars, along the rear screen
+      if (cabLen > 1.4) box(g, 0.09, cabH, 0.12, x, belt + cabH / 2, -cu, paint);   // B pillar
+    }
+    // Wing mirrors.
+    for (const sx of [-1, 1]) box(g, 0.16, 0.1, 0.12, sx * (wid / 2 + 0.06), belt + 0.08, -(baseF - 0.2), paint);
+  }
+
+  // Chrome bumpers, a grille, lights, a number plate, exhaust.
+  box(g, wid + 0.04, 0.14, 0.2, 0, lift + 0.16, -L - 0.03, CHROME);
+  box(g, wid + 0.04, 0.14, 0.2, 0, lift + 0.16, L + 0.03, CHROME);
+  box(g, wid * 0.46, (bodyH - nose) * 0.36, 0.05, 0, lift + (bodyH - nose) * 0.55, -L - 0.01, GRILLE);
+  box(g, 0.44, 0.12, 0.02, 0, lift + 0.36, L + 0.12, phong(0xf2efe6));
+  for (const sx of [-1, 1]) {
+    box(g, 0.32, 0.14, 0.05, sx * (wid / 2 - 0.28), lift + (bodyH - nose) * 0.62, -L - 0.02, HEAD);
+    box(g, 0.34, 0.13, 0.05, sx * (wid / 2 - 0.28), lift + (bodyH - tail) * 0.7, L + 0.02, TAIL);
+  }
+  const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.3, 8), CHROME);
+  pipe.rotation.x = Math.PI / 2;
+  pipe.position.set(wid / 2 - 0.35, lift + 0.08, L + 0.08);
+  g.add(pipe);
+  // Under the car, dark, so the arches read as holes.
+  box(g, wid - 0.2, 0.08, len - 0.6, 0, lift + 0.04, 0, TYRE);
+  const wx = wid / 2 - 0.05;
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) wheel(g, wheelR, 0.3, sx * wx, wheelR, sz * wz, wheels);
   return body;
 }
@@ -113,7 +221,7 @@ const BUILDERS = {
     wheel(g, 0.24, 0.12, 0, 0.24, 0.6, wheels);
   },
   hatch(g, wheels, paint) {
-    car(g, wheels, paint, { len: 3.6, wid: 1.7, bodyH: 0.72, lift: 0.3, cabLen: 2.0, cabH: 0.66, cabZ: 0.25, wheelR: 0.34 });
+    car(g, wheels, paint, { len: 3.6, wid: 1.7, bodyH: 0.72, lift: 0.3, cabLen: 1.6, cabH: 0.66, cabZ: 0.35, wheelR: 0.34, nose: 0.14, tail: 0.02, rake: 0.8, rakeBack: 0.25 });
     // Rust patches and a mismatched door: it has been through things.
     const rust = phong(0x8a4a22, { shininess: 4 });
     box(g, 0.02, 0.3, 0.5, 0.86, 0.6, 1.2, rust);
@@ -121,7 +229,7 @@ const BUILDERS = {
     box(g, 0.03, 0.6, 1.0, -0.86, 0.66, 0.1, phong(0x8a8f7a));
   },
   pickup(g, wheels, paint) {
-    car(g, wheels, paint, { len: 5.0, wid: 1.95, bodyH: 0.8, lift: 0.45, cabLen: 1.7, cabH: 0.8, cabZ: -0.5, wheelR: 0.45 });
+    car(g, wheels, paint, { len: 5.0, wid: 1.95, bodyH: 0.8, lift: 0.45, cabLen: 1.4, cabH: 0.8, cabZ: -0.45, wheelR: 0.45, nose: 0.08, tail: 0, rake: 0.55, rakeBack: 0.08 });
     // Open load bed at the back.
     box(g, 1.9, 0.5, 0.08, 0, 1.5, 0.4, paint);
     box(g, 0.08, 0.5, 2.1, 0.92, 1.5, 1.45, paint);
@@ -130,32 +238,32 @@ const BUILDERS = {
     box(g, 1.9, 0.12, 0.2, 0, 1.0, -2.6, CHROME);
   },
   sedan(g, wheels, paint) {
-    car(g, wheels, paint, { len: 4.6, wid: 1.85, bodyH: 0.66, lift: 0.3, cabLen: 2.3, cabH: 0.62, cabZ: 0.1, wheelR: 0.36 });
+    car(g, wheels, paint, { len: 4.6, wid: 1.85, bodyH: 0.66, lift: 0.3, cabLen: 1.8, cabH: 0.62, cabZ: 0.1, wheelR: 0.36, nose: 0.12, tail: 0.05, rake: 0.95, rakeBack: 0.8 });
   },
   muscle(g, wheels, paint) {
-    car(g, wheels, paint, { len: 4.8, wid: 1.95, bodyH: 0.68, lift: 0.28, cabLen: 1.8, cabH: 0.52, cabZ: 0.5, wheelR: 0.4 });
+    car(g, wheels, paint, { len: 4.8, wid: 1.95, bodyH: 0.68, lift: 0.28, cabLen: 1.3, cabH: 0.52, cabZ: 0.5, wheelR: 0.4, nose: 0.04, tail: 0.02, rake: 1.2, rakeBack: 1.5 });
     box(g, 0.7, 0.2, 0.9, 0, 1.06, -1.4, DARK);   // hood scoop
     const stripe = phong(0xf5f5f5);
+    // Racing stripes over the bonnet, roof and boot (the body's rounded top is 7 cm up).
     for (const s of [-0.22, 0.22]) {
-      box(g, 0.16, 0.02, 4.8, s, 0.97, 0, stripe);
+      box(g, 0.16, 0.02, 1.7, s, 1.035, -1.5, stripe);
+      box(g, 0.16, 0.02, 1.15, s, 1.035, 1.75, stripe);
     }
     for (const s of [-0.5, 0.5]) box(g, 0.12, 0.12, 0.6, s, 0.3, 2.5, CHROME);   // exhausts
   },
   coupe(g, wheels, paint) {
-    car(g, wheels, paint, { len: 4.4, wid: 1.9, bodyH: 0.56, lift: 0.26, cabLen: 1.7, cabH: 0.48, cabZ: 0.45, wheelR: 0.36 });
+    car(g, wheels, paint, { len: 4.4, wid: 1.9, bodyH: 0.56, lift: 0.26, cabLen: 1.1, cabH: 0.48, cabZ: 0.35, wheelR: 0.36, nose: 0.16, tail: 0.04, rake: 1.5, rakeBack: 1.6 });
     box(g, 1.8, 0.08, 0.4, 0, 1.25, 2.0, paint);   // spoiler
     for (const s of [-0.7, 0.7]) box(g, 0.08, 0.35, 0.1, s, 1.05, 2.0, DARK);
   },
   limo(g, wheels, paint) {
-    car(g, wheels, paint, { len: 7.6, wid: 1.95, bodyH: 0.68, lift: 0.3, cabLen: 5.2, cabH: 0.6, cabZ: 0.4, wheelR: 0.38 });
+    car(g, wheels, paint, { len: 7.6, wid: 1.95, bodyH: 0.68, lift: 0.3, cabLen: 4.6, cabH: 0.6, cabZ: 0.35, wheelR: 0.38, nose: 0.1, tail: 0.04, rake: 0.95, rakeBack: 0.8 });
     box(g, 1.96, 0.05, 7.4, 0, 0.62, 0, CHROME);
     // Middle axle, because nobody believes a car this long only has four wheels.
     for (const sx of [-1, 1]) wheel(g, 0.38, 0.3, sx * 0.93, 0.38, 0.2, wheels);
   },
   hyper(g, wheels, paint) {
-    car(g, wheels, paint, { len: 4.5, wid: 2.0, bodyH: 0.46, lift: 0.22, cabLen: 1.6, cabH: 0.42, cabZ: 0.3, wheelR: 0.36 });
-    const nose = box(g, 1.9, 0.18, 1.2, 0, 0.45, -2.5, paint);
-    nose.rotation.x = 0.12;
+    car(g, wheels, paint, { len: 4.5, wid: 2.0, bodyH: 0.46, lift: 0.22, cabLen: 0.9, cabH: 0.42, cabZ: 0.25, wheelR: 0.36, nose: 0.2, tail: 0, rake: 2.2, rakeBack: 2.0 });
     box(g, 2.1, 0.08, 0.5, 0, 1.3, 2.05, DARK);   // rear wing
     for (const s of [-0.85, 0.85]) box(g, 0.08, 0.5, 0.12, s, 1.05, 2.05, DARK);
     const glow = new THREE.MeshBasicMaterial({ color: 0x4df0ff });
@@ -247,7 +355,7 @@ export function buildVehicle(modelId, color = '#d93a3a', { implement = null, lab
   const body = new THREE.Group();
   group.add(body);
   const wheels = [];
-  const paint = phong(color);
+  const paint = shiny(color, 0.12, { shininess: 70, specular: 0x5a5a5a });
   BUILDERS[model.body](body, wheels, paint);
 
   const spec = SPECS[model.body];
