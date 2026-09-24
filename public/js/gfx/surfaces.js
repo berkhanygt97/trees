@@ -159,7 +159,7 @@ const PATTERNS = {
       const r = n * (0.02 + rnd() * 0.03);
       blob(n, rnd() * n, rnd() * n, r, r * (0.5 + rnd() * 0.6), (i, f) => {
         const k = Math.min(1, f * 1.8);
-        P.tone[i] *= 1 - k * 0.35; P.rough[i] = P.rough[i] * (1 - k) + 0.6 * k;
+        P.tone[i] *= 1 - k * 0.3;
       });
     }
     return P;
@@ -396,6 +396,66 @@ const PATTERNS = {
     return P;
   },
 
+  grass(n, rnd) {
+    // Short turf: dense light and dark blades, clumps, a little bare earth.
+    const P = base(n, 0.9, 1);
+    const clump = fbm(n, rnd, { period: 6, octaves: 4 });
+    const fine = fbm(n, rnd, { period: 128, octaves: 2 });
+    for (let i = 0; i < n * n; i++) {
+      P.height[i] = clump[i] * 0.5 + fine[i] * 0.3;
+      P.tone[i] = 0.8 + (clump[i] - 0.5) * 0.35 + (fine[i] - 0.5) * 0.3;
+    }
+    for (let s = 0; s < n * n * 0.05; s++) {
+      const x = rnd() * n;
+      const y = rnd() * n;
+      const t = 0.65 + rnd() * 0.65;
+      const len = 3 + rnd() * 6;
+      const lean = (rnd() - 0.5) * 0.8;
+      for (let k = 0; k < len; k++) {
+        const i = wrap(Math.floor(y - k), n) * n + wrap(Math.floor(x + lean * k), n);
+        const f = 1 - k / len;
+        P.tone[i] = t * (0.85 + f * 0.3);
+        P.height[i] = Math.max(P.height[i], 0.5 + f * 0.5);
+        P.rough[i] = 0.8;
+      }
+    }
+    return P;
+  },
+
+  rock(n, rnd) {
+    // Weathered stone: big planes and cracks, lichen-dark patches.
+    const P = base(n, 0.85, 1);
+    const big = fbm(n, rnd, { period: 3, octaves: 6, gain: 0.55 });
+    const mid = fbm(n, rnd, { period: 12, octaves: 4 });
+    for (let i = 0; i < n * n; i++) {
+      // Ridged: sharp creases between smooth faces.
+      const r = 1 - Math.abs(big[i] * 2 - 1);
+      P.height[i] = r * 0.7 + mid[i] * 0.3;
+      P.tone[i] = 0.72 + big[i] * 0.4 + (mid[i] - 0.5) * 0.25;
+      P.rough[i] = 0.78 + (mid[i] - 0.5) * 0.2;
+    }
+    for (let c = 0; c < 10; c++) {
+      crack(n, rnd, rnd() * n, rnd() * n, 10, n * 0.02, 1.8, (i, f) => { P.height[i] -= f * 0.4; P.tone[i] *= 1 - f * 0.5; });
+    }
+    return P;
+  },
+
+  sand(n, rnd) {
+    // Dry, fine, with wind ripples.
+    const P = base(n, 0.97, 1);
+    const big = fbm(n, rnd, { period: 4, octaves: 3 });
+    const grain = fbm(n, rnd, { period: 128, octaves: 2 });
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        const i = y * n + x;
+        const ripple = Math.sin((y / n) * Math.PI * 2 * 14 + big[i] * 6);
+        P.height[i] = 0.5 + ripple * 0.12 + grain[i] * 0.3;
+        P.tone[i] = 0.9 + (big[i] - 0.5) * 0.2 + (grain[i] - 0.5) * 0.25 + ripple * 0.03;
+      }
+    }
+    return P;
+  },
+
   soil(n, rnd) {
     // Plowed furrows across the tile.
     const P = base(n, 0.96, 1);
@@ -440,7 +500,34 @@ const SPEC = {
   dirt: { size: 512, bump: 2.5 },
   terrain: { size: 512, bump: 1.6 },
   soil: { size: 256, bump: 3 },
+  grass: { size: 512, bump: 2 },
+  rock: { size: 512, bump: 3.5 },
+  sand: { size: 512, bump: 1.6 },
 };
+
+// Photo textures (gfx/photo.js) cover some real size; the game tiles each
+// kind of surface over this many metres, so a photo is repeated to fit.
+// `tint`: recolour the photo to the colour asked for (brick, plaster...).
+export const PHOTO_KINDS = {
+  asphalt: { metres: 6, tint: false },
+  paving: { metres: 4, tint: false },
+  brick: { metres: 3.5, tint: true },
+  plank: { metres: 2, tint: true },
+  plaster: { metres: 3, tint: true },
+  rooftile: { metres: 3, tint: true },
+  metal: { metres: 2, tint: true },
+  gravel: { metres: 4, tint: false },
+  dirt: { metres: 6, tint: false },
+  soil: { metres: 2, tint: false },
+  grass: { metres: 6, tint: false },
+  rock: { metres: 6, tint: false },
+  sand: { metres: 6, tint: false },
+};
+const photos = new Map();          // kind -> { color, normal, rough, metres } (images)
+
+/** Photo textures to use instead of the generated ones (from gfx/photo.js). */
+export function usePhotos(kind, set) { if (PHOTO_KINDS[kind]) photos.set(kind, set); }
+export function hasPhotos(kind) { return photos.has(kind); }
 
 // The colours painted over the base by a pattern's masks.
 const MASK_COLORS = { mortar: [0.72, 0.68, 0.6], rust: [0.42, 0.2, 0.08] };
@@ -512,6 +599,12 @@ export function surface(kind, baseHex = '#808080') {
   const key = `${kind}|${baseHex}`;
   let s = surfaces.get(key);
   if (s) return s;
+  if (photos.has(kind)) {
+    s = photoSurface(kind, baseHex);
+    surfaces.set(key, s);
+    bySource.set(s.map.source, s);
+    return s;
+  }
   const pat = patternFor(kind);
   const { P } = pat;
   const n = P.n;
@@ -520,6 +613,7 @@ export function surface(kind, baseHex = '#808080') {
   const lin = [srgbToLinear(c.r), srgbToLinear(c.g), srgbToLinear(c.b)];
   const masks = Object.entries(P.masks).map(([name, m]) => [m, MASK_COLORS[name].map(srgbToLinear)]);
   const out = new Uint8Array(n * n * 4);
+  const avg = [0, 0, 0];
   for (let y = 0; y < n; y++) {
     const ty = n - 1 - y;
     for (let x = 0; x < n; x++) {
@@ -537,6 +631,7 @@ export function surface(kind, baseHex = '#808080') {
       out[o + 1] = Math.min(1, linearToSrgb(g)) * 255;
       out[o + 2] = Math.min(1, linearToSrgb(b)) * 255;
       out[o + 3] = 255;
+      avg[0] += r; avg[1] += g; avg[2] += b;
     }
   }
   const map = dataTexture(out, n, true);
@@ -546,10 +641,86 @@ export function surface(kind, baseHex = '#808080') {
     roughnessMap: pat.roughnessMap,
     metal: !!P.metal,
     normalScale: 1,
+    // Average colour in linear light (the terrain tints grass by it).
+    avg: new THREE.Color(avg[0] / (n * n), avg[1] / (n * n), avg[2] / (n * n)),
   };
   surfaces.set(key, s);
   bySource.set(map.source, s);
   return s;
+}
+
+// ------------------------------------------------------------ photos
+
+const photoMaps = new Map();       // kind -> { normalMap, roughnessMap } shared by every colour
+
+/** The photo repeated to cover the game's tile for this kind of surface, as a canvas. */
+function tiledCanvas(img, kind, metres) {
+  const reps = Math.max(1, Math.round(PHOTO_KINDS[kind].metres / Math.max(0.1, metres || 2)));
+  const size = Math.min(2048, img.width * reps);
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  const g = cv.getContext('2d');
+  const step = size / reps;
+  for (let y = 0; y < reps; y++) for (let x = 0; x < reps; x++) g.drawImage(img, x * step, y * step, step, step);
+  return cv;
+}
+
+function canvasTexture(cv, srgb) {
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function photoSurface(kind, baseHex) {
+  const set = photos.get(kind);
+  let shared = photoMaps.get(kind);
+  if (!shared) {
+    const rough = tiledCanvas(set.rough, kind, set.metres);
+    // Roughness is read from green; for metal, blue says "this is metal".
+    if (kind === 'metal') {
+      const g = rough.getContext('2d');
+      const d = g.getImageData(0, 0, rough.width, rough.height);
+      for (let i = 0; i < d.data.length; i += 4) d.data[i + 2] = 215;
+      g.putImageData(d, 0, 0);
+    }
+    shared = {
+      normalMap: canvasTexture(tiledCanvas(set.normal, kind, set.metres), false),
+      roughnessMap: canvasTexture(rough, false),
+    };
+    photoMaps.set(kind, shared);
+  }
+  const cv = tiledCanvas(set.color, kind, set.metres);
+  const g = cv.getContext('2d');
+  const d = g.getImageData(0, 0, cv.width, cv.height);
+  const px = d.data;
+  const avg = [0, 0, 0];
+  for (let i = 0; i < px.length; i += 4) {
+    avg[0] += srgbToLinear(px[i] / 255); avg[1] += srgbToLinear(px[i + 1] / 255); avg[2] += srgbToLinear(px[i + 2] / 255);
+  }
+  const count = px.length / 4;
+  for (let k = 0; k < 3; k++) avg[k] /= count;
+  if (PHOTO_KINDS[kind].tint) {
+    // Recolour: keep the photo's detail, move its average to the colour asked for.
+    const c = new THREE.Color(baseHex);
+    const want = [srgbToLinear(c.r), srgbToLinear(c.g), srgbToLinear(c.b)];
+    const k = want.map((w, i) => w / Math.max(1e-4, avg[i]));
+    for (let i = 0; i < px.length; i += 4) {
+      for (let ch = 0; ch < 3; ch++) px[i + ch] = Math.min(1, linearToSrgb(srgbToLinear(px[i + ch] / 255) * k[ch])) * 255;
+    }
+    g.putImageData(d, 0, 0);
+    for (let ch = 0; ch < 3; ch++) avg[ch] = want[ch];
+  }
+  return {
+    map: canvasTexture(cv, true),
+    normalMap: shared.normalMap,
+    roughnessMap: shared.roughnessMap,
+    metal: kind === 'metal',
+    normalScale: 1,
+    avg: new THREE.Color(avg[0], avg[1], avg[2]),
+    photo: true,
+  };
 }
 
 /** The normal and roughness maps that go with a colour map (or a clone of it), if any. */

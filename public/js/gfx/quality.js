@@ -13,22 +13,22 @@ export const PRESETS = {
   ultra: {
     id: 'ultra', name: 'Ultra', pixelRatio: 1.5, maxScale: 1, minScale: 0.7,
     shadows: 4096, shadowSpan: 160, ao: true, aoSamples: 16, bloom: true, aa: 'smaa', shafts: true,
-    lights: 8, clouds: true, envSize: 128,
+    lights: 8, clouds: true, envSize: 128, grass: 60000, grassR: 38,
   },
   high: {
     id: 'high', name: 'High', pixelRatio: 1, maxScale: 1, minScale: 0.65,
     shadows: 2048, shadowSpan: 110, ao: true, aoSamples: 12, bloom: true, aa: 'smaa', shafts: false,
-    lights: 4, clouds: true, envSize: 64,
+    lights: 4, clouds: true, envSize: 64, grass: 30000, grassR: 30,
   },
   medium: {
     id: 'medium', name: 'Medium', pixelRatio: 1, maxScale: 0.9, minScale: 0.6,
     shadows: 1024, shadowSpan: 70, ao: false, aoSamples: 0, bloom: true, aa: 'fxaa', shafts: false,
-    lights: 2, clouds: true, envSize: 32,
+    lights: 2, clouds: true, envSize: 32, grass: 12000, grassR: 22,
   },
   low: {
     id: 'low', name: 'Low', pixelRatio: 1, maxScale: 0.8, minScale: 0.55,
     shadows: 0, shadowSpan: 0, ao: false, aoSamples: 0, bloom: false, aa: 'none', shafts: false,
-    lights: 0, clouds: false, envSize: 16,
+    lights: 0, clouds: false, envSize: 16, grass: 0, grassR: 0,
   },
 };
 const ORDER = ['ultra', 'high', 'medium', 'low'];

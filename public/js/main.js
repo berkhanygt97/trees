@@ -20,6 +20,7 @@ import { Pipeline } from './post.js';
 import { Quality } from './gfx/quality.js';
 import { installFog } from './gfx/atmosphere.js';
 import { Environment } from './gfx/env.js';
+import { loadPhotoTextures } from './gfx/photo.js';
 import { BoarView } from './boarsview.js';
 import { Weapons } from './weapons.js';
 import { buildCockpit } from './cockpit.js';
@@ -80,6 +81,10 @@ nameInput.focus();
 nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') enterBtn.click(); });
 
 let autoJoin = false;
+// Photo textures (if the host downloaded them) start loading straight away,
+// while you type your name; the valley is only built once they are in.
+const photosReady = loadPhotoTextures().catch(() => 0);
+
 enterBtn.addEventListener('click', async () => {
   const name = nameInput.value.trim();
   if (!name) { joinStatus.textContent = 'Type a name — your farm is saved under it.'; return; }
@@ -88,6 +93,7 @@ enterBtn.addEventListener('click', async () => {
   localStorage.setItem('valley.name', name);
   try {
     sfx.unlock();
+    await Promise.race([photosReady, new Promise((r) => setTimeout(r, 15000))]);
     await net.connect(name);
   } catch (err) {
     enterBtn.disabled = false;
@@ -220,6 +226,7 @@ function applyPreset(p) {
   world.sky.setView({ far: VIEW_FAR[p.id] || 900, clouds: p.clouds });
   world.lights.resize(p.lights);
   env.setSize(p.envSize);
+  if (world.outdoor.grassField) world.outdoor.grassField.setDensity(p.grass, p.grassR);
   pipeline.resize();
 }
 

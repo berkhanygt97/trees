@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { pbr } from './gfx/materials.js';
+import { plantTrees, WIND } from './gfx/trees.js';
+import { GrassField } from './gfx/grass.js';
 import { noCast } from './shadows.js';
 import {
   BOUNDS, PLAZA, ROADS, SHOPS, ORDERS_BOARD, PLOTS, PLOT_SIZE, GATE, TRACK, RAMPS, CASINO, COTTAGES, STRIP,
@@ -9,9 +11,8 @@ import { RING } from '/shared/roads.js';
 import { BUILDINGS, LOTS_OPEN } from '/shared/downtown.js';
 import { VEHICLES } from '/shared/catalog.js';
 import {
-  grassTexture, asphaltTexture, pavingTexture, dirtTexture, plankTexture, brickTexture,
-  boardTexture, kerbTexture, checkerTexture, glowTexture,
-  leafTexture, pineTexture, grassTuftTexture, roofTileTexture,
+  asphaltTexture, pavingTexture, dirtTexture, plankTexture, brickTexture,
+  boardTexture, kerbTexture, checkerTexture, glowTexture, roofTileTexture,
 } from './textures.js';
 import { buildPalms } from './palms.js';
 import { buildVehicle } from './vehicles.js';
@@ -89,36 +90,6 @@ function valueNoise(seed) {
     const b = at(i, j + 1) + (at(i + 1, j + 1) - at(i, j + 1)) * sx;
     return a + (b - a) * sy;
   };
-}
-
-/** Three crossed quads: the classic cheap tree crown. */
-function crossCards(w, h, cards = 3) {
-  const geos = [];
-  for (let k = 0; k < cards; k++) {
-    const g = new THREE.PlaneGeometry(w, h);
-    g.rotateY((k / cards) * Math.PI);
-    geos.push(g);
-  }
-  const pos = [];
-  const uv = [];
-  const nor = [];
-  const idx = [];
-  let base = 0;
-  for (const g of geos) {
-    pos.push(...g.attributes.position.array);
-    uv.push(...g.attributes.uv.array);
-    // Normals point up-ish so the cards light like a round canopy, not flat sheets.
-    for (let i = 0; i < g.attributes.position.count; i++) nor.push(0, 1, 0);
-    idx.push(...g.index.array.map((i) => i + base));
-    base += g.attributes.position.count;
-    g.dispose();
-  }
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  out.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  out.setIndex(idx);
-  return out;
 }
 
 export class Outdoor {
@@ -698,79 +669,45 @@ export class Outdoor {
     for (let x = BOUNDS.minX - 40; x <= BOUNDS.maxX + 40; x += 11) { edge(x, BOUNDS.minZ - 20 - rnd() * 60); edge(x, BOUNDS.maxZ + 20 + rnd() * 60); }
     for (let z = BOUNDS.minZ - 40; z <= BOUNDS.maxZ + 40; z += 11) { edge(BOUNDS.minX - 20 - rnd() * 60, z); edge(BOUNDS.maxX + 20 + rnd() * 60, z); }
 
-    const trunkGeo = new THREE.CylinderGeometry(0.2, 0.32, 2.6, 6);
-    const leafMat = phong(0xffffff, { map: leafTexture(), alphaTest: 0.45, side: THREE.DoubleSide });
-    const pineMat = phong(0xffffff, { map: pineTexture(), alphaTest: 0.45, side: THREE.DoubleSide });
-    const trunks = new THREE.InstancedMesh(trunkGeo, phong(0xffffff, { map: plankTexture('#5a4030') }), spots.length);
-    const pines = new THREE.InstancedMesh(crossCards(3.6, 7.2), pineMat, spots.length);
-    const rounds = new THREE.InstancedMesh(crossCards(5.2, 4.6), leafMat, spots.length * 2);
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const s = new THREE.Vector3();
-    const c = new THREE.Color();
-    const up = new THREE.Vector3(0, 1, 0);
-    let np = 0;
-    let nr = 0;
-    spots.forEach(([x, z, k, v], i) => {
-      const y = terrainHeight(x, z) - 0.2;
-      s.set(k, k, k);
-      q.setFromAxisAngle(up, v * 6.28);
-      m.compose(new THREE.Vector3(x, y + 1.3 * k, z), q, s);
-      trunks.setMatrixAt(i, m);
-      if (v < 0.5) {
-        m.compose(new THREE.Vector3(x, y + 5.0 * k, z), q, s);
-        pines.setMatrixAt(np, m);
-        pines.setColorAt(np++, c.setHSL(0.3, 0.2, 0.75 + v * 0.3));
-      } else {
-        // Two crowns stacked, so broadleaf trees have some depth.
-        m.compose(new THREE.Vector3(x, y + 4.2 * k, z), q, s);
-        rounds.setMatrixAt(nr, m);
-        rounds.setColorAt(nr++, c.setHSL(0.2 + (v - 0.5) * 0.1, 0.25, 0.75 + (v - 0.5) * 0.3));
-        q.setFromAxisAngle(up, v * 6.28 + 0.8);
-        m.compose(new THREE.Vector3(x + 0.4, y + 5.6 * k, z - 0.3), q, s.clone().multiplyScalar(0.75));
-        rounds.setMatrixAt(nr, m);
-        rounds.setColorAt(nr++, c.setHSL(0.22, 0.25, 0.85));
-      }
+    // Pines on the valley edge and up the mountains, cypresses and broadleaf
+    // trees in between (gfx/trees.js builds and instances them).
+    const trees = spots.map(([x, z, k, v]) => {
+      const species = v < 0.42 ? 'pine' : v < 0.55 ? 'cypress' : 'oak';
       if (Math.abs(x) < BOUNDS.maxX + 5 && Math.abs(z) < BOUNDS.maxZ + 5) this.obstacles.push({ x, z, r: 0.45 * k });
+      return { x, y: terrainHeight(x, z), z, species, scale: k * (species === 'oak' ? 0.95 : 0.85), turn: v * 40, tint: 0.82 + (v * 7 % 1) * 0.3 };
     });
-    pines.count = np;
-    rounds.count = nr;
-    this.group.add(trunks, pines, rounds);
-    this._grass(blocked, rnd);
+    this.trees = plantTrees(trees);
+    this.group.add(this.trees);
+    this._grass(blocked);
   }
 
-  /** Tufts of long grass across the open ground: one draw call for thousands. */
-  _grass(blocked, rnd) {
-    const geo = crossCards(1.1, 0.7, 2);
-    geo.translate(0, 0.33, 0);
-    const mat = noCast(phong(0xffffff, { map: grassTuftTexture(), alphaTest: 0.4, side: THREE.DoubleSide }));
-    const N = 14000;
-    const tufts = new THREE.InstancedMesh(geo, mat, N);
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const up = new THREE.Vector3(0, 1, 0);
+  /**
+   * Grass blades round the camera (gfx/grass.js), growing wherever the
+   * ground is grassy and nothing is built: not on roads, yards or fields.
+   */
+  _grass(blocked) {
     const c = new THREE.Color();
-    let n = 0;
-    let guard = 0;
-    while (n < N && guard++ < 120000) {
-      const x = BOUNDS.minX + rnd() * (BOUNDS.maxX - BOUNDS.minX);
-      const z = BOUNDS.minZ + rnd() * (BOUNDS.maxZ - BOUNDS.minZ);
-      if (blocked(x, z)) continue;
-      const k = 0.7 + rnd() * 0.8;
-      q.setFromAxisAngle(up, rnd() * 6.28);
-      m.compose(new THREE.Vector3(x, terrainHeight(x, z) - 0.05, z), q, new THREE.Vector3(k, k * (0.8 + rnd() * 0.5), k));
-      tufts.setMatrixAt(n, m);
-      tufts.setColorAt(n, c.setHSL(0.2 + rnd() * 0.06, 0.2, 0.7 + rnd() * 0.25));
-      n++;
-    }
-    tufts.count = n;
-    this.group.add(tufts);
+    const w = [0, 0, 0, 0];
+    const t = this.terrain;
+    const sample = (x, z) => {
+      const height = terrainHeight(x, z);
+      const up = 2 / Math.hypot(terrainHeight(x - 1, z) - terrainHeight(x + 1, z), 2, terrainHeight(x, z - 1) - terrainHeight(x, z + 1));
+      t._colour(x, height, z, up, c, w);
+      const grow = blocked(x, z) ? 0 : Math.max(0, w[0] - 0.15) / 0.85;
+      return { height, r: c.r, g: c.g, b: c.b, grow };
+    };
+    this.grassField = new GrassField(BOUNDS, sample, { cell: 4, max: 15000 });
+    noCast(this.grassField.mesh.material);
+    this.group.add(this.grassField.mesh);
   }
 
   // ------------------------------------------------------------- animation
 
   update(dt, night, wet = 0) {
     this.t += dt;
+    // Trees sway, harder in the rain.
+    WIND.uTime.value = this.t;
+    WIND.uWind.value = 1 + wet * 1.8;
     // Rain makes the tarmac dark and shiny, and the lights glint off it.
     if (Math.abs((this._wet || 0) - wet) > 0.01) {
       this._wet = wet;

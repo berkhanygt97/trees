@@ -66,6 +66,8 @@ export class World {
     const inside = insideCasino(ctx.camera.position.x, ctx.camera.position.z);
     this.sky.update(dt, ctx.worldTime, ctx.camera, inside);
     this.outdoor.update(dt, this.sky.night, this.sky.wetness || 0);
+    if (this.outdoor.grassField) this.outdoor.grassField.update(ctx.camera.position);
+    if (this.outdoor.trees) this.outdoor.trees.userData.update(ctx.camera.position);
     this.farms.update(dt, ctx.worldTime, this.sky.night);
     this.hoods.update(dt, this.sky.night);
     this.downtown.update(dt, this.sky.night);
