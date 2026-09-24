@@ -297,7 +297,7 @@ const SAVED_KEYS = Object.keys(newProfile({}));
 export function toSave(profile) {
   const out = {};
   for (const k of SAVED_KEYS) out[k] = profile[k];
-  // Vehicles carry a runtime driver reference that must not be written out.
-  out.vehicles = profile.vehicles.map(({ driver, ...v }) => v);
+  // Vehicles carry runtime fields (who is driving, how fast) that must not be written out.
+  out.vehicles = profile.vehicles.map(({ driver, speed, movedAt, ...v }) => v);
   return out;
 }

@@ -56,13 +56,14 @@ for (const version of fs.readdirSync(path.join(here, 'fixtures'))) {
       `$${p.money} xp ${p.xp} house ${p.house}`);
     check(`${tag}: inventory`, same(p.inv, Object.fromEntries(Object.entries(r.inv).filter(([, n]) => n > 0))));
     check(`${tag}: field`, p.field.size === r.field.size && same(p.field.tiles.slice(0, 400), r.field.tiles.slice(0, 400)));
-    check(`${tag}: buildings`, Object.entries(r.buildings).every(([k, v]) => same(p.buildings[k], v)) && p.buildings.pen === null,
+    check(`${tag}: buildings`, Object.entries(r.buildings).every(([k, v]) => same(p.buildings[k], v)) && ('pen' in r.buildings || p.buildings.pen === null),
       'every old building unchanged; the new cattle pen slot is empty');
     check(`${tag}: vehicles and implements`, same(strip(p.vehicles), strip(r.vehicles)) && same(p.implements, r.implements));
     check(`${tag}: guns (Grandpa's rifle for everyone)`, p.guns.includes('boltrifle') && (r.guns || []).every((g) => p.guns.includes(g)));
     check(`${tag}: stats kept`, Object.entries(r.stats || {}).every(([k, v]) => p.stats[k] === v || k === 'playSeconds'));
-    check(`${tag}: farm layout is the original one`, same(p.layout, defaultLayout()));
-    check(`${tag}: no workers or restaurant yet`, Array.isArray(p.workers) && p.workers.length === 0 && p.restaurant === null);
+    check(`${tag}: farm layout kept (the original one before 2.2)`, same(p.layout, r.layout || defaultLayout()));
+    check(`${tag}: hired hands kept`, same(p.workers, r.workers || []));
+    check(`${tag}: restaurant kept`, same(p.restaurant, r.restaurant || null));
     const file = JSON.parse(fs.readFileSync(path.join(dir, 'players', `${slug}.json`), 'utf8'));
     check(`${tag}: written as save version ${SAVE_VERSION}`, file.version === SAVE_VERSION);
   }

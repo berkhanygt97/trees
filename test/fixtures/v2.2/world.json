@@ -1,0 +1,97 @@
+{
+ "version": 2,
+ "clock": {
+  "time": 13900000,
+  "weather": "clear",
+  "weatherUntil": 14000000
+ },
+ "market": {
+  "drift": {
+   "wheat": 1,
+   "carrot": 1,
+   "potato": 1,
+   "corn": 1,
+   "tomato": 1,
+   "pumpkin": 1,
+   "strawberry": 1,
+   "egg": 1,
+   "milk": 1,
+   "flour": 1,
+   "cheese": 1,
+   "bread": 1,
+   "cake": 1,
+   "boar": 1,
+   "beef": 1
+  },
+  "sat": {
+   "wheat": 0,
+   "carrot": 0,
+   "potato": 0,
+   "corn": 0,
+   "tomato": 0,
+   "pumpkin": 0,
+   "strawberry": 0,
+   "egg": 0,
+   "milk": 0,
+   "flour": 0,
+   "cheese": 0,
+   "bread": 0,
+   "cake": 0,
+   "boar": 0,
+   "beef": 0
+  },
+  "yesterday": {
+   "wheat": 1,
+   "carrot": 1,
+   "potato": 1,
+   "corn": 1,
+   "tomato": 1,
+   "pumpkin": 1,
+   "strawberry": 1,
+   "egg": 1,
+   "milk": 1,
+   "flour": 1,
+   "cheese": 1,
+   "bread": 1,
+   "cake": 1,
+   "boar": 1,
+   "beef": 1
+  }
+ },
+ "orders": {
+  "list": [
+   {
+    "id": 1,
+    "item": "carrot",
+    "qty": 190,
+    "reward": 2740,
+    "xp": 228,
+    "due": 2
+   },
+   {
+    "id": 2,
+    "item": "potato",
+    "qty": 200,
+    "reward": 2520,
+    "xp": 270,
+    "due": 2
+   },
+   {
+    "id": 3,
+    "item": "wheat",
+    "qty": 135,
+    "reward": 1010,
+    "xp": 101,
+    "due": 3
+   }
+  ],
+  "nextId": 4
+ },
+ "staff": {
+  "board": {
+   "day": 0,
+   "list": []
+  },
+  "nextCid": 1
+ }
+}
