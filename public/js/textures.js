@@ -309,9 +309,9 @@ export function glowTexture() {
   }, { repeat: [1, 1] });
 }
 
-// ======================================================= PS2-era detail
-// Small, busy, hand-painted-looking textures: the trick that made low-poly
-// games look good was always the texture work, not the triangle count.
+// ======================================================= painted detail
+// Small, busy, hand-painted-looking textures for clothes, faces, signs and
+// props (the ground and the walls come from gfx/surfaces.js).
 
 function noiseFill(g, w, h, base, amount = 0.12, n = 2400, size = 2) {
   g.fillStyle = base;
@@ -451,7 +451,7 @@ export function skinTexture(tone = '#d9a27a') {
   }, { repeat: [1, 1] });
 }
 
-/** A weathered old face: painted on, PS2-style, rather than modelled. */
+/** A weathered old face, painted over a character's sculpted head. */
 export function faceTexture(tone = '#d9a27a') {
   return make(`face:${tone}`, 256, 256, (g, w, h) => {
     noiseFill(g, w, h, tone, 0.05, 900, 2);
@@ -466,12 +466,9 @@ export function faceTexture(tone = '#d9a27a') {
     blush(80, 150, 30, 0.25); blush(176, 150, 30, 0.25); blush(128, 150, 18, 0.3);
     // The face occupies the middle of the texture (the front of the head).
     const eye = (x) => {
-      g.fillStyle = '#f4efe6';
+      // The opening between the lids (the eyeball itself is modelled).
+      g.fillStyle = 'rgba(55,28,20,0.8)';
       g.beginPath(); g.ellipse(x, 118, 13, 7, 0, 0, 7); g.fill();
-      g.fillStyle = '#4a6a8a';
-      g.beginPath(); g.arc(x, 118, 6, 0, 7); g.fill();
-      g.fillStyle = '#111';
-      g.beginPath(); g.arc(x, 118, 3, 0, 7); g.fill();
       g.strokeStyle = 'rgba(80,40,30,0.8)';
       g.lineWidth = 2.5;
       g.beginPath(); g.ellipse(x, 118, 14, 8, 0, Math.PI * 1.05, Math.PI * 1.95); g.stroke();
@@ -537,7 +534,7 @@ function leafCard(g, w, h, pine) {
   }
 }
 
-/** Alpha-tested foliage cards, the way every PS2 tree was drawn. */
+/** Alpha-tested leaf cards. */
 export function leafTexture() {
   const t = make('leaves', 256, 256, (g, w, h) => leafCard(g, w, h, false));
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;

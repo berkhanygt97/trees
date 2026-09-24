@@ -89,7 +89,8 @@ export class WorkerView {
       // Far-away workers skip their animation to save a little time.
       const far = camPos ? Math.hypot(x - camPos.x, z - camPos.z) : 0;
       e.person.group.visible = far < 220;
-      if (far < 90) e.person.update(dt, moving);
+      e.person.setDistance(far);
+      if (far < 90) e.person.update(dt, moving, moving ? Math.hypot(ev.to[0] - ev.from[0], ev.to[1] - ev.from[1]) / Math.max(0.1, ev.walk / 1000) : 0);
       e.person.scaleTag(far);
     }
   }

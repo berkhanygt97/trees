@@ -68,6 +68,7 @@ let turn = 0;
 let pick = 0;
 let spinning = true;
 let yaw0 = null;
+let close = false;                 // #look=<id>&close: the head and shoulders
 const tags = [];
 
 function setTags(list) {
@@ -95,6 +96,7 @@ function readHash() {
     if (i >= 0) pick = i;
   }
   spinning = mode === 'look' && !h.includes('still');
+  close = opts.includes('close');
   for (const a of document.querySelectorAll('#tabs a')) a.classList.toggle('on', a.getAttribute('href') === `#${mode}`);
   const all = [...people, ...cars];
   setTags(mode === 'cast' || mode === 'faces' ? people.map((s) => s.name) : mode === 'cars' ? cars.map((s) => s.name) : [all[pick].name]);
@@ -165,7 +167,7 @@ function loop(now) {
     const s = [...people, ...cars][pick];
     if (spinning) turn += dt * 0.6;
     s.obj.rotation.y = (yaw0 ?? (s.car ? -2.4 : 0.35)) + turn;
-    tile(s, 0, 40, window.innerWidth, window.innerHeight - 40, s.car ? [0.6, 9, 2.4] : [1.0, 4.2, 1.3], tags[0]);
+    tile(s, 0, 40, window.innerWidth, window.innerHeight - 40, s.car ? [0.6, close ? 5 : 9, 2.4] : close ? [1.68, 0.8, 1.72] : [1.0, 4.2, 1.3], tags[0]);
   }
   requestAnimationFrame(loop);
 }

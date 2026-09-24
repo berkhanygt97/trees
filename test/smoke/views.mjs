@@ -112,6 +112,37 @@ async function castLineup(near = false) {
   tick();
 }
 
+/** The crowd (people.js): every outfit, some of them busy, in a row. */
+async function crowdLineup() {
+  const { createPerson, randomLook, OUTFITS } = await import('/js/people.js');
+  const c = window.casino;
+  const eye = c.controls.pos;
+  let seed = 5;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const poses = [['stand'], ['work', 'hoe'], ['carry', 'tray'], ['cook', 'pan'], ['stand', 'drink'], ['cheer'], ['eat'], ['play', 'chips'], ['sit']];
+  const people = OUTFITS.map((outfit, i) => {
+    const look = { ...randomLook(rnd, outfit), hat: ['none', 'cap', 'visor', 'straw', 'tophat'][i % 5] };
+    if (i === 4) look.long = true;
+    const p = createPerson(look, { name: outfit });
+    p.group.position.set(eye.x + 3.4, 0, eye.z - 4 + i * 1.0);
+    p.group.rotation.y = -Math.PI / 2 + 0.3;
+    p.setPose(poses[i][0]);
+    p.setProp(poses[i][1] || null);
+    c.scene.add(p.group);
+    for (let k = 0; k < 20; k++) p.update(0.1, false);
+    return p;
+  });
+  let last = performance.now();
+  const tick = () => {
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    for (const p of people) { p.setDistance(3); p.update(dt, false); }
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
+
 export const VIEWS = [
   { name: 'spawn', server: (room) => at(room, 11) },
   { name: 'farm', pos: [plotSpawn(PLOTS[0]).pos[0] + 16, 0, PLOTS[0].z0 + 40], yaw: 0.6, pitch: -0.15 },
@@ -139,6 +170,8 @@ export const VIEWS = [
     client: (c) => { c.rig.mode = 'fp'; c.rig.fresh = true; }, steps: async (page) => { await page.evaluate(lineup, true); }, wait: 2500 },
   { name: 'cast', server: (room) => at(room, 11), pos: [street.x0 + 90, 0, midZ], yaw: -Math.PI / 2, pitch: -0.08,
     client: (c) => { c.rig.mode = 'fp'; c.rig.fresh = true; }, steps: async (page) => { await page.evaluate(castLineup); }, wait: 2500 },
+  { name: 'crowd-near', server: (room) => at(room, 11), pos: [street.x0 + 190, 0, midZ + 2.6], yaw: -Math.PI / 2, pitch: -0.16,
+    client: (c) => { c.rig.mode = 'fp'; c.rig.fresh = true; }, steps: async (page) => { await page.evaluate(crowdLineup); }, wait: 2500 },
   { name: 'cast-near', pos: [street.x0 + 170, 0, midZ + 2.6], yaw: -Math.PI / 2, pitch: -0.16,
     client: (c) => { c.rig.mode = 'fp'; c.rig.fresh = true; }, steps: async (page) => { await page.evaluate(castLineup, true); }, wait: 2500 },
   { name: 'gangfight', server: (room, me) => {

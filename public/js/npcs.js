@@ -1,7 +1,5 @@
-import { castLook } from '/shared/looks.js';
 import { labelSprite } from './textures.js';
 import { createPerson } from './people.js';
-import { createCharacter } from './character.js';
 
 // Townsfolk: restaurant customers (sent by the server as path events) and the
 // casino regulars and passers-by (made up on each client from a shared seed).
@@ -10,24 +8,6 @@ import { createCharacter } from './character.js';
 
 const HIDE_BEYOND = 160;
 const ANIMATE_WITHIN = 70;
-
-/**
- * One of the town's cast (look = { cast: id }, see shared/looks.js): a jointed
- * character behind the same little interface as a crowd person. They only
- * walk and stand, and carry nothing.
- */
-function castPerson(id) {
-  const c = createCharacter(castLook(id));
-  let pose = 'stand';
-  return {
-    group: c.group,
-    get pose() { return pose; },
-    setPose(p) { pose = p; },
-    setProp() {},
-    update(dt, moving) { c.update(dt, moving, false, moving ? 1.3 : 0); },
-    dispose() { c.dispose(); },
-  };
-}
 
 export class NpcView {
   constructor(scene) {
@@ -44,7 +24,7 @@ export class NpcView {
     let e = this.items.get(ev.id);
     if (!e) {
       if (!ev.look || this.items.size >= this.cap) return;
-      const person = ev.look.cast ? castPerson(ev.look.cast) : createPerson(ev.look);
+      const person = createPerson(ev.look);
       this.scene.add(person.group);
       e = { id: ev.id, person, bubble: null, sayText: '' };
       this.items.set(ev.id, e);
@@ -127,7 +107,8 @@ export class NpcView {
       e.person.setPose(moving ? 'walk' : ev.pose || 'stand');
       const far = camPos ? Math.hypot(x - camPos.x, z - camPos.z) : 0;
       g.visible = far < HIDE_BEYOND;
-      if (far < ANIMATE_WITHIN) e.person.update(dt, moving);
+      e.person.setDistance(far);
+      if (far < ANIMATE_WITHIN) e.person.update(dt, moving, ev.speed || 1.3);
       if (e.bubble) e.bubble.visible = far < 30;
     }
   }

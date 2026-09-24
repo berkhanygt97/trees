@@ -8,12 +8,12 @@ import { createCharacter } from './character.js';
 import { GUN_BY_ID } from '/shared/catalog.js';
 
 // Old farmers: flannel shirt in the player's colour, denim overalls, boots,
-// a grey beard and a hat that has seen things. Low-poly, texture-painted —
-// the way people looked in a 2004 open-world game.
+// a grey beard and a hat that has seen things (a character.js character),
+// and the hands you see of yourself in first person.
 
 const SKIN_TONE = '#d59a72';
 const phong = (color, o = {}) => pbr(color, { shininess: 10, ...o });
-const skinMat = () => phong(0xffffff, { map: skinTexture(SKIN_TONE), roughness: 0.6 });
+const skinMat = () => phong(0xffffff, { map: skinTexture(SKIN_TONE), roughness: 0.55 });
 
 function mesh(parent, geo, mat, x = 0, y = 0, z = 0) {
   const m = new THREE.Mesh(geo, mat);
@@ -41,6 +41,23 @@ export function createAvatar({ name, color, hat, showLabel = true }) {
 
 // ================================================================== hands
 
+/** A box with its edges and corners rounded off to radius `r`. */
+function roundedBox(w, h, d, r, seg = 6) {
+  const g = new THREE.BoxGeometry(w, h, d, seg, seg, seg);
+  const p = g.attributes.position;
+  const inner = new THREE.Vector3(w / 2 - r, h / 2 - r, d / 2 - r);
+  const v = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    c.set(Math.max(-inner.x, Math.min(inner.x, v.x)), Math.max(-inner.y, Math.min(inner.y, v.y)), Math.max(-inner.z, Math.min(inner.z, v.z)));
+    v.sub(c).setLength(r).add(c);
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
 const FINGERS = [
   // [knuckle x (towards the little finger), segment lengths]
   [-0.028, [0.043, 0.026, 0.02]],   // index
@@ -59,9 +76,9 @@ export function makeHand(side, sleeveColor) {
   const nail = phong(0xe8c4b4, { shininess: 60 });
   const knuckleMat = phong(0xffffff, { map: skinTexture('#c98c66') });
 
-  mesh(g, new THREE.BoxGeometry(0.078, 0.028, 0.092), skin, 0, 0, -0.05);
+  mesh(g, roundedBox(0.078, 0.028, 0.094, 0.012), skin, 0, 0, -0.05);
   // Soft edges on the palm so it does not read as a brick.
-  const heel = mesh(g, new THREE.SphereGeometry(0.04, 10, 8), skin, 0, -0.004, -0.015);
+  const heel = mesh(g, new THREE.SphereGeometry(0.04, 16, 12), skin, 0, -0.004, -0.015);
   heel.scale.set(1.0, 0.45, 0.9);
 
   const joints = [];
@@ -76,9 +93,9 @@ export function makeHand(side, sleeveColor) {
       const seg = new THREE.Group();
       if (k > 0) seg.position.z = -lens[k - 1];
       parent.add(seg);
-      const bone = mesh(seg, new THREE.CylinderGeometry(r * 0.92, r, len, 7), skin, 0, 0, -len / 2);
+      const bone = mesh(seg, new THREE.CylinderGeometry(r * 0.92, r, len, 12), skin, 0, 0, -len / 2);
       bone.rotation.x = Math.PI / 2;
-      mesh(seg, new THREE.SphereGeometry(r * 0.95, 7, 5), skin, 0, 0, -len);
+      mesh(seg, new THREE.SphereGeometry(r * 0.95, 12, 8), skin, 0, 0, -len);
       if (k === lens.length - 1) {
         const n = mesh(seg, new THREE.BoxGeometry(r * 1.5, 0.003, len * 0.55), nail, 0, r * 0.75, -len * 0.62);
         n.rotation.x = 0.05;
@@ -101,22 +118,22 @@ export function makeHand(side, sleeveColor) {
     const seg = new THREE.Group();
     if (k > 0) seg.position.z = -0.038;
     tp.add(seg);
-    const bone = mesh(seg, new THREE.CylinderGeometry(0.0115, 0.0125, len, 7), skin, 0, 0, -len / 2);
+    const bone = mesh(seg, new THREE.CylinderGeometry(0.0115, 0.0125, len, 12), skin, 0, 0, -len / 2);
     bone.rotation.x = Math.PI / 2;
-    mesh(seg, new THREE.SphereGeometry(0.0118, 7, 5), skin, 0, 0, -len);
+    mesh(seg, new THREE.SphereGeometry(0.0118, 12, 8), skin, 0, 0, -len);
     if (k === 1) mesh(seg, new THREE.BoxGeometry(0.015, 0.003, 0.014), nail, 0, 0.009, -len * 0.7);
     thumb.push(seg);
     tp = seg;
   });
 
   // Wrist, forearm and a rolled flannel sleeve.
-  const forearm = mesh(g, new THREE.CylinderGeometry(0.03, 0.036, 0.24, 9), skin, 0, -0.002, 0.11);
+  const forearm = mesh(g, new THREE.CylinderGeometry(0.03, 0.036, 0.24, 18), skin, 0, -0.002, 0.11);
   forearm.rotation.x = Math.PI / 2;
   forearm.scale.set(1.15, 1, 0.85);
   const sleeveMat = phong(0xffffff, { map: plaidTexture(sleeveColor) });
-  const roll = mesh(g, new THREE.CylinderGeometry(0.05, 0.05, 0.06, 10), sleeveMat, 0, 0, 0.25);
+  const roll = mesh(g, new THREE.CylinderGeometry(0.05, 0.05, 0.06, 18), sleeveMat, 0, 0, 0.25);
   roll.rotation.x = Math.PI / 2;
-  const sleeve = mesh(g, new THREE.CylinderGeometry(0.046, 0.05, 0.3, 10), sleeveMat, 0, 0, 0.42);
+  const sleeve = mesh(g, new THREE.CylinderGeometry(0.046, 0.05, 0.3, 18), sleeveMat, 0, 0, 0.42);
   sleeve.rotation.x = Math.PI / 2;
 
   /** 0 = flat, 1 = a fist. The thumb curls separately. */

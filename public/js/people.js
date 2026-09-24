@@ -1,30 +1,16 @@
 import * as THREE from 'three';
+import { castLook } from '/shared/looks.js';
 import { pbr } from './gfx/materials.js';
 import { mergeParts } from './geo.js';
-import { labelSprite } from './textures.js';
+import { createCharacter, CHARACTER_BONES as B } from './character.js';
 
 // Everybody who is not a player: hired hands, restaurant customers, casino
-// regulars, people on the pavement. PS2 crowd style: flat vertex colours,
-// low poly, five draw calls a person (torso, two arms, two legs), so forty of
-// them cost about as much as two players.
-
-const MAT = pbr(0xffffff, { vertexColors: true, roughness: 0.85 });
-
-// Shared primitive shapes (copied into each person's merged mesh).
-const G = {
-  box: new THREE.BoxGeometry(1, 1, 1),
-  cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 8),
-  ball: new THREE.SphereGeometry(0.5, 8, 6),
-  cone: new THREE.ConeGeometry(0.5, 1, 8),
-};
+// regulars, people on the pavement. They are the same jointed characters as
+// the players and the town's cast (character.js), dressed from a crowd look:
+// the looks the server sends and saves (randomLook) are turned into
+// character looks here, so old saves and old servers still work.
 
 export const OUTFITS = ['work', 'tee', 'hawaii', 'suit', 'dress', 'chef', 'waiter', 'tourist', 'vest'];
-
-const shade = (hex, k) => {
-  const c = new THREE.Color(hex);
-  c.multiplyScalar(k);
-  return c.getHex();
-};
 
 /** A random look, for crowds; `rnd` is a 0..1 generator so crowds can be seeded. */
 export function randomLook(rnd = Math.random, outfit) {
@@ -42,70 +28,69 @@ export function randomLook(rnd = Math.random, outfit) {
   };
 }
 
-function torsoParts(look) {
-  const shirt = look.shirt || '#2e86de';
-  const pants = look.pants || '#34495e';
-  const skin = look.skin || '#e0ac80';
-  const hair = look.hair || '#2b1d14';
+function hashOf(obj) {
+  const str = JSON.stringify(obj);
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+const BEARDS = ['full', 'goatee', 'stache', 'chin'];
+const HAIRDOS = ['hair', 'hair', 'hair', 'slick', 'slick', 'bald'];
+const EYES = ['#3a2a1a', '#4a6a8a', '#5a4030', '#35502f', '#2a1d14'];
+
+/** A crowd look (randomLook, a worker's saved look) as a character look (character.js normalizeLook). */
+export function characterLook(look = {}) {
   const o = look.outfit || 'work';
-  const parts = [
-    { geo: G.box, color: pants, y: 0.93, s: [0.36, 0.2, 0.22] },                        // hips
-    { geo: G.cyl, color: shirt, y: 1.22, s: [0.4, 0.5, 0.27] },                         // chest
-    { geo: G.cyl, color: skin, y: 1.51, s: [0.12, 0.1, 0.12] },                         // neck
-    { geo: G.ball, color: skin, y: 1.68, s: [0.25, 0.29, 0.26] },                       // head
-    { geo: G.box, color: '#1b1410', x: -0.05, y: 1.7, z: 0.125, s: [0.035, 0.03, 0.01] },   // eyes
-    { geo: G.box, color: '#1b1410', x: 0.05, y: 1.7, z: 0.125, s: [0.035, 0.03, 0.01] },
-    { geo: G.box, color: shade(skin, 0.85), y: 1.66, z: 0.13, s: [0.04, 0.06, 0.04] },    // nose
-    { geo: G.ball, color: hair, y: 1.77, z: -0.02, s: [0.27, 0.16, 0.27] },               // hair cap
-  ];
-  if (look.long) parts.push({ geo: G.box, color: hair, y: 1.6, z: -0.1, s: [0.26, 0.3, 0.1] });
-  if (look.beard) parts.push({ geo: G.ball, color: hair, y: 1.6, z: 0.05, s: [0.22, 0.14, 0.2] });
-  // Outfits: a few extra boxes over the basic shape.
-  if (o === 'work' || o === 'vest') {
-    parts.push({ geo: G.box, color: o === 'vest' ? '#f39c12' : '#3d6aa8', y: 1.22, z: 0.02, s: [0.41, 0.46, 0.26] });   // overalls / hi-vis
-    if (o === 'vest') parts.push({ geo: G.box, color: '#dfe6e9', y: 1.15, z: 0.02, s: [0.42, 0.04, 0.27] });           // reflective band
-  }
-  if (o === 'hawaii') {
-    for (const [x, y] of [[-0.1, 1.3], [0.08, 1.16], [0.12, 1.36], [-0.12, 1.08]]) parts.push({ geo: G.box, color: '#fff27a', x, y, z: 0.13, s: [0.07, 0.07, 0.02] });
-  }
-  if (o === 'suit' || o === 'waiter') {
-    parts.push({ geo: G.box, color: '#f5f6fa', y: 1.3, z: 0.12, s: [0.12, 0.3, 0.04] });                                // shirt front
-    parts.push({ geo: G.box, color: o === 'waiter' ? '#111' : '#c0392b', y: 1.4, z: 0.14, s: [0.1, 0.05, 0.02] });      // bow tie / tie knot
-    if (o === 'suit') parts.push({ geo: G.box, color: '#c0392b', y: 1.28, z: 0.14, s: [0.04, 0.2, 0.02] });
-  }
-  if (o === 'dress') parts.push({ geo: G.cone, color: shirt, y: 0.9, s: [0.5, 0.55, 0.42] });
-  if (o === 'chef' || o === 'waiter') parts.push({ geo: G.box, color: '#f5f6fa', y: 1.02, z: 0.1, s: [0.36, 0.42, 0.08] });   // apron
-  if (o === 'tourist') parts.push({ geo: G.box, color: '#2d3436', x: 0.1, y: 1.25, z: 0.14, s: [0.1, 0.08, 0.05] });          // camera
-  // Hats.
+  const h = hashOf(look);
+  const female = look.female ?? (o === 'dress' || (!!look.long && !look.beard && o !== 'chef'));
+  const c = {
+    outfit: 'street',
+    skin: look.skin || '#e0ac80',
+    hair: look.hair || '#2b1d14',
+    color: look.shirt || '#2e86de',
+    accent: '#1d1d1d',
+    pants: look.pants,
+    eyes: EYES[(h >>> 4) % EYES.length],
+    face: 'young',
+    beard: look.beard && !female ? BEARDS[h % BEARDS.length] : null,
+    build: female ? 'female' : (look.build || 1) > 1.07 ? 'heavy' : undefined,
+    long: female || !!look.long,
+    shades: false,
+  };
+  const dress = {
+    tee: { top: 'tee', legs: 'jeans', shoes: 'sneakers', pants: look.pants },
+    hawaii: { top: 'hawaii', legs: 'shorts', shoes: 'sneakers', accent: '#fff27a' },
+    suit: { top: 'suit', legs: 'slacks', shoes: 'dress', color: '#2d3436', pants: '#2d3436', accent: '#c0392b' },
+    dress: { top: 'dress', legs: 'dress', shoes: 'dress', build: 'female', long: true, beard: null },
+    tourist: { top: 'polo', legs: 'shorts', shoes: 'sneakers', camera: true, accent: '#f5f6fa' },
+    work: { top: 'tee', legs: 'overalls', shoes: 'boots', pants: undefined },
+    vest: { top: 'hivis', legs: 'jeans', shoes: 'boots', pants: undefined },
+    chef: { top: 'chef', legs: 'slacks', shoes: 'dress', color: '#f4f2ee', pants: '#2d3436', apron: true },
+    waiter: { top: 'waiter', legs: 'slacks', shoes: 'dress', color: '#f4f2ee', pants: '#1c1c21', apron: true },
+  }[o] || { top: 'tee', legs: 'jeans', shoes: 'sneakers' };
+  Object.assign(c, dress);
   const hat = o === 'chef' ? 'chef' : look.hat;
-  if (hat === 'cap') {
-    parts.push({ geo: G.ball, color: look.hatColor || shirt, y: 1.8, s: [0.28, 0.14, 0.28] });
-    parts.push({ geo: G.box, color: look.hatColor || shirt, y: 1.79, z: 0.15, s: [0.2, 0.02, 0.14] });
-  } else if (hat === 'straw') {
-    parts.push({ geo: G.cyl, color: '#e3c27a', y: 1.8, s: [0.5, 0.02, 0.5] });
-    parts.push({ geo: G.cyl, color: '#d4ae62', y: 1.87, s: [0.26, 0.13, 0.26] });
-  } else if (hat === 'visor') {
-    parts.push({ geo: G.box, color: '#ff6b81', y: 1.8, z: 0.14, s: [0.26, 0.03, 0.16] });
-  } else if (hat === 'tophat') {
-    parts.push({ geo: G.cyl, color: '#111', y: 1.83, s: [0.38, 0.02, 0.38] });
-    parts.push({ geo: G.cyl, color: '#111', y: 1.97, s: [0.24, 0.28, 0.24] });
-  } else if (hat === 'bandana') {
-    parts.push({ geo: G.ball, color: look.hatColor || '#c0392b', y: 1.79, s: [0.28, 0.14, 0.28] });
-  } else if (hat === 'chef') {
-    parts.push({ geo: G.cyl, color: '#ffffff', y: 1.92, s: [0.26, 0.26, 0.26] });
-    parts.push({ geo: G.ball, color: '#ffffff', y: 2.06, s: [0.32, 0.16, 0.32] });
+  const heads = { cap: 'cap', straw: 'straw', visor: 'visor', tophat: 'tophat', bandana: 'bandana', chef: 'chefhat' };
+  if (heads[hat]) {
+    c.head = heads[hat];
+    if (look.hatColor) c.hatColor = look.hatColor;
+  } else {
+    c.head = c.long ? 'long' : HAIRDOS[(h >>> 8) % HAIRDOS.length];
+    if (c.head === 'bald' && c.hair !== '#d9d6cf') c.head = 'hair';
   }
-  return parts;
+  if (c.build === 'female') c.beard = null;
+  return c;
 }
 
-function limb(parts) {
-  const mesh = new THREE.Mesh(mergeParts(parts), MAT);
-  const pivot = new THREE.Group();
-  pivot.add(mesh);
-  return pivot;
-}
-
-// Props held for different jobs.
+// Props held for different jobs, in the right hand (or level in front, for trays and pans).
+const MAT = pbr(0xffffff, { vertexColors: true, roughness: 0.7 });
+const G = {
+  box: new THREE.BoxGeometry(1, 1, 1),
+  cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 14),
+  ball: new THREE.SphereGeometry(0.5, 14, 10),
+};
+const LEVEL = { tray: [-0.16, -0.03, 0.42], pan: [0.14, -0.12, 0.42] };
 function prop(kind) {
   const P = {
     hoe: [{ geo: G.cyl, color: '#8a5a2b', y: -0.15, rx: 0.3, s: [0.03, 1.1, 0.03] }, { geo: G.box, color: '#888', y: -0.68, z: 0.2, s: [0.18, 0.03, 0.1] }],
@@ -123,142 +108,65 @@ function prop(kind) {
   return new THREE.Mesh(mergeParts(parts), MAT);
 }
 
+// A soft round shadow under their feet, where they touch the ground.
+const SHADOW_GEO = new THREE.CircleGeometry(0.34, 16).rotateX(-Math.PI / 2);
+const SHADOW_MAT = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.22, depthWrite: false });
+
 /**
- * Builds a person. `look` from randomLook() (or a worker's saved look).
- * Returns { group, update(dt, moving), setPose(pose), setProp(kind), dispose }.
+ * Builds a person. `look` from randomLook() (or a worker's saved look), or
+ * { cast: id } for one of the town's cast (shared/looks.js).
+ * Returns { group, update(dt, moving, speed?), setPose(pose), setProp(kind),
+ * setName, scaleTag, setDistance, dispose }.
  * Poses: 'stand', 'walk', 'work', 'sit', 'eat', 'cheer', 'play', 'cook', 'carry'.
  */
 export function createPerson(look = {}, { name = null, tagColor = '#ffffff', tagScale = 0.36 } = {}) {
-  const group = new THREE.Group();
-  const body = new THREE.Group();
-  group.add(body);
-  const k = look.build || 1;
-  body.scale.set(k, 1, k);
-
-  const torso = new THREE.Mesh(mergeParts(torsoParts(look)), MAT);
-  body.add(torso);
-
-  const sleeve = look.outfit === 'tee' || look.outfit === 'hawaii' || look.outfit === 'vest' ? 'skin' : 'shirt';
-  const skin = look.skin || '#e0ac80';
-  const armColor = sleeve === 'skin' ? skin : (look.outfit === 'suit' ? '#2d3436' : look.shirt || '#2e86de');
-  const arms = [-1, 1].map((side) => {
-    const a = limb([
-      { geo: G.cyl, color: look.outfit === 'suit' ? '#2d3436' : look.shirt || '#2e86de', y: -0.1, s: [0.11, 0.22, 0.11] },
-      { geo: G.cyl, color: armColor, y: -0.33, s: [0.09, 0.26, 0.09] },
-      { geo: G.ball, color: skin, y: -0.5, s: [0.1, 0.12, 0.1] },
-    ]);
-    a.position.set(side * 0.25, 1.43, 0);
-    body.add(a);
-    return a;
-  });
-  const legColor = look.outfit === 'suit' ? '#2d3436' : look.pants || '#34495e';
-  const legs = [-1, 1].map((side) => {
-    const l = limb([
-      { geo: G.cyl, color: look.outfit === 'dress' ? skin : legColor, y: -0.4, s: [0.14, 0.8, 0.14] },
-      { geo: G.box, color: look.outfit === 'dress' ? '#c0392b' : '#2b1d14', y: -0.82, z: 0.04, s: [0.13, 0.08, 0.24] },
-    ]);
-    l.position.set(side * 0.1, 0.87, 0);
-    body.add(l);
-    return l;
-  });
-
-  const hand = new THREE.Group();
-  hand.position.set(0, -0.5, 0.05);
-  arms[1].add(hand);
-  let held = null;
-  let heldKind = null;
-
-  let tag = null;
-  if (name) {
-    tag = labelSprite(name, tagColor, tagScale);
-    tag.position.y = 2.25;
-    tag.material.depthTest = true;
-    group.add(tag);
-  }
-
-  // A soft round shadow, like the players have.
-  const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.34, 12).rotateX(-Math.PI / 2),
-    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }));
+  const c = createCharacter(look.cast ? castLook(look.cast) : characterLook(look), { name, tagColor, tagScale });
+  const group = c.group;
+  // Some taller, some shorter.
+  group.scale.setScalar((0.95 + ((look.build || 1) - 0.9) * 0.35) * (c.look.build === 'female' ? 0.95 : 1));
+  if (c.label) { c.label.material.depthTest = true; c.label.visible = true; }
+  const shadow = new THREE.Mesh(SHADOW_GEO, SHADOW_MAT);
   shadow.position.y = 0.02;
+  shadow.renderOrder = -1;
   group.add(shadow);
 
+  let held = null;
+  let heldKind = null;
   let pose = 'stand';
-  let t = Math.random() * 10;
 
   function setProp(kind) {
-    if (kind === heldKind) return;
-    if (held) { hand.remove(held); held.geometry.dispose(); held = null; }
+    if ((kind || null) === heldKind) return;
+    if (held) { held.parent.remove(held); held.geometry.dispose(); held = null; }
     heldKind = kind || null;
-    if (kind) { held = prop(kind); if (held) hand.add(held); }
+    if (!kind) return;
+    held = prop(kind);
+    if (!held) return;
+    if (LEVEL[kind]) {
+      held.position.set(...LEVEL[kind]);
+      c.bones[B.chest].add(held);
+    } else {
+      held.position.set(0, -0.07, 0.02);
+      c.bones[B.wristR].add(held);
+    }
   }
 
   return {
     group,
+    character: c,
     get pose() { return pose; },
-    setPose(p) { pose = p; },
+    setPose(p) { pose = p; c.setPose(p); },
     setProp,
-    setName(n) {
-      if (!tag) return;
-      group.remove(tag);
-      tag.material.map.dispose();
-      tag.material.dispose();
-      tag = labelSprite(n, tagColor, tagScale);
-      tag.position.y = 2.25;
-      tag.material.depthTest = true;
-      group.add(tag);
-    },
-    update(dt, moving) {
-      t += dt;
-      const p = moving ? 'walk' : pose;
-      // Reset, then pose.
-      body.position.y = 0;
-      body.rotation.x = 0;
-      arms[0].rotation.set(0, 0, 0.06);
-      arms[1].rotation.set(0, 0, -0.06);
-      legs[0].rotation.set(0, 0, 0);
-      legs[1].rotation.set(0, 0, 0);
-      if (p === 'walk') {
-        const s = Math.sin(t * 8);
-        legs[0].rotation.x = s * 0.55;
-        legs[1].rotation.x = -s * 0.55;
-        arms[0].rotation.x = -s * 0.45;
-        arms[1].rotation.x = held ? -0.6 : s * 0.45;
-        body.position.y = Math.abs(Math.sin(t * 8)) * 0.03;
-      } else if (p === 'work') {
-        // Bent over the soil, working a tool.
-        body.rotation.x = 0.35 + Math.sin(t * 4) * 0.08;
-        arms[0].rotation.x = -0.9 + Math.sin(t * 4) * 0.35;
-        arms[1].rotation.x = -0.9 + Math.sin(t * 4 + 0.6) * 0.35;
-      } else if (p === 'cook') {
-        arms[0].rotation.x = -1.1 + Math.sin(t * 6) * 0.15;
-        arms[1].rotation.x = -1.2 + Math.sin(t * 9) * 0.3;
-      } else if (p === 'carry') {
-        arms[1].rotation.x = -1.35;
-        arms[0].rotation.x = Math.sin(t * 2) * 0.05;
-      } else if (p === 'sit' || p === 'eat' || p === 'play') {
-        legs[0].rotation.x = legs[1].rotation.x = -1.45;
-        body.position.y = -0.42;
-        if (p === 'eat') arms[1].rotation.x = -1.3 - Math.max(0, Math.sin(t * 2.4)) * 0.8;
-        if (p === 'play') {
-          arms[0].rotation.x = -1.2;
-          arms[1].rotation.x = -1.2 - Math.max(0, Math.sin(t * 1.7)) * 0.9;
-        }
-      } else if (p === 'cheer') {
-        arms[0].rotation.x = arms[1].rotation.x = -2.9 + Math.sin(t * 10) * 0.2;
-        body.position.y = Math.abs(Math.sin(t * 10)) * 0.08;
-      } else {
-        body.rotation.x = Math.sin(t * 1.3) * 0.01;
-      }
-    },
+    setName(n) { c.setName(n); c.label.material.depthTest = true; },
+    setDistance(d) { c.setDistance(d); },
+    update(dt, moving, speed = 1.3) { c.update(dt, moving, false, moving ? speed : 0); },
     scaleTag(distance) {
-      if (!tag) return;
-      tag.visible = distance < 45;
+      if (!c.label) return;
+      c.scaleLabel(distance);
+      c.label.visible = c.label.visible && distance < 45;
     },
     dispose() {
-      group.traverse((o) => {
-        if (o.geometry && o.geometry !== G.box) o.geometry.dispose();
-      });
-      if (tag) { tag.material.map.dispose(); tag.material.dispose(); }
+      if (held) { held.geometry.dispose(); held = null; }
+      c.dispose();
     },
   };
 }
