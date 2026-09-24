@@ -4,7 +4,8 @@ import {
   CROP_BY_ID, ITEMS, VEHICLE_BY_ID, IMPLEMENT_BY_ID, nextAction, cropProgress, isWatered,
   DISH_BY_ID, DAY_MS, HOUR_MS, RESTAURANTS,
 } from '/shared/catalog.js';
-import { ALL_STATIONS, PLOTS, TILE, tileAt, tileCenter, groundHeight, padStation, STATIC_BOXES, RAMPS } from '/shared/map.js';
+import { ALL_STATIONS, PLOTS, TILE, tileAt, tileCenter, groundHeight, padStation, STATIC_BOXES, RAMPS, LOT_BY_ID } from '/shared/map.js';
+import { HQS } from '/shared/hoods.js';
 import { terrainGrid } from '/shared/terrain.js';
 import { net } from './net.js';
 import { sfx } from './sfx.js';
@@ -26,6 +27,8 @@ import { Crowd } from './crowd.js';
 import { shadowTexture } from './textures.js';
 import { PerfMeter } from './perf.js';
 import { CameraRig } from './camera.js';
+import { markShadows } from './shadows.js';
+import { Radar, zoneName } from './radar.js';
 import { PhysicsWorld } from './physics/world.js';
 
 const canvas = document.getElementById('scene');
@@ -117,6 +120,8 @@ function initScene() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setSize(innerWidth, innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0b0714);
@@ -132,6 +137,10 @@ function initScene() {
   controls.thirdPerson = !rig.firstPerson;
   controls.chase = controls.thirdPerson;
   pipeline = new Pipeline(renderer);
+  // Quality presets also switch the sun's shadows.
+  pipeline.onQuality = (q) => world.sky.setShadows(q.shadows);
+  pipeline.onQuality(pipeline.quality);
+  world.sky.focus = controls.pos;
   perf = new PerfMeter(renderer);
   boars = new BoarView(scene);
   workers = new WorkerView(scene);
@@ -215,7 +224,8 @@ function thirdPersonAim() {
   const target = o.clone().addScaledVector(d, t);
   const dir = target.sub(eye).normalize();
   const right = new THREE.Vector3(Math.cos(controls.facing), 0, -Math.sin(controls.facing));
-  const muzzle = eye.clone().addScaledVector(dir, 0.9).addScaledVector(right, 0.18).add(new THREE.Vector3(0, -0.22, 0));
+  const muzzle = selfAvatar.muzzleWorld(new THREE.Vector3())
+    || eye.clone().addScaledVector(dir, 0.9).addScaledVector(right, 0.18).add(new THREE.Vector3(0, -0.22, 0));
   return { o: eye, d: dir, muzzle };
 }
 
@@ -335,6 +345,10 @@ net.on('welcome', (d) => {
   hud.showSeeds(me.plot >= 0);
   world.farms.setPlots(d.plots);
   world.hoods.setOwners(d.plots);
+  radar = new Radar(document.getElementById('radar'));
+  radar.setHoods(d.plots);
+  hud.setHealth(hp);
+  hud.setWeapon(null);
   fleet.set(d.vehicles, me.id);
 
   controls.pos.set(d.spawn.pos[0], d.spawn.pos[1] || 0, d.spawn.pos[2]);
@@ -364,7 +378,7 @@ net.on('players', (list) => {
 });
 
 net.on('snap', (rows) => {
-  for (const [id, x, y, z, yaw, , vid, , gun, , , ap] of rows) {
+  for (const [id, x, y, z, yaw, anim, vid, , gun, , , ap] of rows) {
     if (id === me.id) continue;
     const a = avatars.get(id);
     if (!a) continue;
@@ -373,6 +387,7 @@ net.on('snap', (rows) => {
     a.target.set(x, y, z);
     a.targetYaw = yaw;
     a.aimPitch = ap || 0;
+    a.aiming = !!(anim & 4);
     a.vehicle = vid || null;
     a.lastUpdate = performance.now();
   }
@@ -404,6 +419,7 @@ net.on('plot', (p) => {
   if (!world || !p) return;
   world.farms.setPlot(p);
   world.hoods.setOwners([p]);
+  if (radar) radar.setHoods([p]);
   syncPhysicsBoxes();
   if (activePanel && activePanel.ui.onPlot && p.index === hud.wallet.plot) activePanel.ui.onPlot(p);
 });
@@ -468,6 +484,8 @@ net.on('ammo', (d) => { if (weapons) weapons.onAmmo(d); });
 net.on('shot', (d) => {
   if (!weapons) return;
   weapons.onRemoteShot(d, camera.position);
+  const a = avatars.get(d.pid);
+  if (a) a.avatar.fire();
 });
 
 net.on('hurt', (d) => {
@@ -554,7 +572,7 @@ function addAvatar(p) {
   shadow.position.y = 0.02;
   scene.add(shadow);
   avatars.set(p.id, {
-    avatar, shadow,
+    avatar, shadow, color: p.color,
     prev: new THREE.Vector3(0, 0, 60),
     target: new THREE.Vector3(0, 0, 60),
     render: new THREE.Vector3(0, 0, 60),
@@ -989,7 +1007,7 @@ addEventListener('mousedown', (e) => {
   if (!me || activePanel || !controls.locked || controls.frozen) return;
   if (e.button === 2) { weapons.setAiming(true); return; }
   if (e.button !== 0) return;
-  if (weapons.out && !controls.car) { weapons.fire(); return; }
+  if (weapons.out && !controls.car) { if (weapons.fire()) selfAvatar.fire(); return; }
   holding = true;
   lastWorkSent = 0;
   workAim();
@@ -1008,6 +1026,11 @@ addEventListener('wheel', (e) => {
 
 let last = performance.now();
 let lastMoveSent = 0;
+let lastShadowMark = 0;
+let radar = null;
+let headlight = null;
+let lastRadarBlips = 0;
+let lastZone = 0;
 function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, (now - last) / 1000);
@@ -1076,9 +1099,10 @@ function loop(now) {
     const e = a.vehicle ? fleet.get(a.vehicle) : null;
     if (e) {
       a.avatar.setSeated(true);
+      a.avatar.setSteer(0);
       fleet.seatOf(e, a.avatar.group.position);
       a.avatar.group.rotation.y = e.yaw + Math.PI;
-      a.avatar.update(dt, false, false);
+      a.avatar.update(dt, false, false, 0);
       a.shadow.visible = false;
     } else {
       a.avatar.setSeated(false);
@@ -1087,8 +1111,15 @@ function loop(now) {
       a.yaw += shortestAngle(a.yaw, a.targetYaw) * Math.min(1, dt * 12);
       // Avatars are modelled facing +Z; a player's yaw is measured from -Z.
       a.avatar.group.rotation.y = a.yaw + Math.PI;
-      a.avatar.update(dt, wasMoving, false);
-      a.avatar.scaleLabel(camera.position.distanceTo(a.render));
+      // How fast they really go, from the snapshots, sets their gait.
+      const speed = wasMoving ? Math.hypot(a.target.x - a.prev.x, a.target.z - a.prev.z) * CONFIG.SNAPSHOT_HZ : 0;
+      a.speed = (a.speed || 0) + (speed - (a.speed || 0)) * Math.min(1, dt * 8);
+      a.avatar.setAiming(a.aiming);
+      a.avatar.setAimPitch(a.aimPitch);
+      const dist = camera.position.distanceTo(a.render);
+      a.avatar.setDistance(dist);
+      a.avatar.update(dt, wasMoving, false, a.speed);
+      a.avatar.scaleLabel(dist);
       a.shadow.visible = true;
       a.shadow.position.set(a.render.x, a.render.y + 0.02, a.render.z);
     }
@@ -1104,8 +1135,9 @@ function loop(now) {
       selfAvatar.group.position.copy(controls.pos);
       selfAvatar.group.rotation.set(0, controls.facing + Math.PI, 0);
       selfAvatar.setGun(weapons.held || null);
-      selfAvatar.setAiming && selfAvatar.setAiming(weapons.aiming);
-      selfAvatar.update(dt, moving, sprinting);
+      selfAvatar.setAiming(weapons.aiming);
+      selfAvatar.setAimPitch(controls.pitch);
+      selfAvatar.update(dt, moving, sprinting, selfSpeed(dt));
     }
   }
   if (car) {
@@ -1116,7 +1148,8 @@ function loop(now) {
       const [sx, sy, sz] = car.spec.seat;
       selfAvatar.group.position.set(sx, sy, sz).applyQuaternion(controls.quat).add(controls.pos);
       selfAvatar.group.quaternion.copy(controls.quat).multiply(HALF_Y);
-      selfAvatar.update(dt, false, false);
+      selfAvatar.setSteer(-car.steer);
+      selfAvatar.update(dt, false, false, 0);
     }
     hud.setSpeedo({
       speed: car.speed, top: car.model.top, body: car.model.body, night: world.sky.night,
@@ -1137,7 +1170,7 @@ function loop(now) {
       // Which way your body faces, and where you are aiming up or down.
       y: round2(controls.facing),
       ap: round2(controls.pitch),
-      a: moving ? (sprinting ? 2 : 1) : 0,
+      a: (moving ? (sprinting ? 2 : 1) : 0) | (weapons.out && weapons.aiming ? 4 : 0),
       vy: car ? round2(car.yaw) : undefined,
       vp: car ? round2(car.pitch || 0) : undefined,
       vr: car ? round2(car.roll || 0) : undefined,
@@ -1150,6 +1183,21 @@ function loop(now) {
     camera.far = world.sky.drawFar;
     camera.updateProjectionMatrix();
   }
+
+  updateRadar(dt, now, car);
+
+  // Your headlights light the road ahead after dark (a light from the pool).
+  if (!headlight) headlight = world.lights.add([{ x: 0, y: -50, z: 0, color: 0xfff0d0, intensity: 0, range: 26, night: true, priority: 60 }])[0];
+  if (car) {
+    const r = car.spec.radius + 4;
+    headlight.x = controls.pos.x - Math.sin(car.yaw) * r;
+    headlight.z = controls.pos.z - Math.cos(car.yaw) * r;
+    headlight.y = controls.pos.y + 1.2;
+    headlight.intensity = 90;
+  } else headlight.intensity = 0;
+
+  // Shadow flags for whatever was added since last time (cars, people, farms).
+  if (now - lastShadowMark > 1500) { lastShadowMark = now; markShadows(scene); }
 
   world.update(dt, {
     serverNow,
@@ -1201,6 +1249,7 @@ function loop(now) {
     night: world.sky.inside > 0.5 ? 0 : world.sky.night,
     inside: world.sky.inside,
     fade,
+    wasted: koUntil ? 1 : 0,
     flash: world.sky.flash * 0.25 * (1 - world.sky.inside),
     dt,
     overlayFov: 58 * (0.86 + 0.14 * camera.fov / 78),
@@ -1211,6 +1260,51 @@ function loop(now) {
 
 const round2 = (v) => Math.round(v * 100) / 100;
 const HALF_Y = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+
+/** The radar, the zone caption and the weapon icon. */
+const camDir = new THREE.Vector3();
+function updateRadar(dt, now, car) {
+  if (!radar) return;
+  camera.getWorldDirection(camDir);
+  const yaw = Math.atan2(-camDir.x, -camDir.z);
+  if (now - lastRadarBlips > 200) {
+    lastRadarBlips = now;
+    const players = [];
+    for (const [id, a] of avatars) {
+      const p = a.render;
+      const e = a.vehicle ? fleet.get(a.vehicle) : null;
+      players.push({ x: p.x, z: p.z, color: a.color || '#fff', shape: 'arrow', yaw: e ? e.yaw : a.yaw, size: 5, edge: true, id });
+    }
+    radar.setBlips('players', players);
+    radar.setBlips('restaurants', restaurantList.filter((r) => r.owner === me.slug).map((r) => {
+      const lot = LOT_BY_ID.get(r.lot);
+      return lot ? { x: (lot.x0 + lot.x1) / 2, z: (lot.z0 + lot.z1) / 2, color: '#f2c14e', shape: 'icon', label: 'R', size: 5, edge: false } : null;
+    }).filter(Boolean));
+    radar.setBlips('beacon', beacon.visible ? [{ x: beacon.position.x, z: beacon.position.z, color: '#e0302a', shape: 'marker', size: 6, edge: true }] : []);
+    radar.setBlips('boars', boars.aliveList().map((b) => ({ x: b.pos.x, z: b.pos.z, color: '#c0392b', size: 3, edge: false })));
+    if (me.plot >= 0 && HQS[me.plot]) {
+      const d = HQS[me.plot].door;
+      radar.setBlips('home', [{ x: d[0], z: d[2], color: me.color, shape: 'icon', label: 'H', size: 6, edge: true }]);
+    }
+  }
+  radar.update(dt, { yaw, pos: controls.pos, facing: car ? car.yaw : controls.facing, speed: car ? car.speed : 0 });
+  if (now - lastZone > 500) {
+    lastZone = now;
+    hud.zone(zoneName(controls.pos.x, controls.pos.z));
+  }
+  hud.setWeapon(weapons.out ? weapons.gun.id : null, weapons.out ? (weapons.reloading ? '...' : `${weapons.mag}-${weapons.gun.mag}`) : '');
+}
+
+/** How fast you are really going on foot (for your own walk cycle), smoothed. */
+const lastSelfPos = new THREE.Vector3();
+let selfSpeedNow = 0;
+function selfSpeed(dt) {
+  const d = Math.hypot(controls.pos.x - lastSelfPos.x, controls.pos.z - lastSelfPos.z);
+  lastSelfPos.copy(controls.pos);
+  const v = dt > 0 && d < 5 ? d / dt : 0;
+  selfSpeedNow += (v - selfSpeedNow) * Math.min(1, dt * 10);
+  return selfSpeedNow;
+}
 
 function shortestAngle(from, to) {
   let d = (to - from) % (Math.PI * 2);

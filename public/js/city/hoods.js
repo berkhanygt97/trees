@@ -166,6 +166,7 @@ export class HoodView {
     for (const s of HOOD_STREETS) {
       for (let x = s.x0 + 10; x < s.x1; x += 32) spots.push([x, s.z0 - 1.5], [x + 16, s.z1 + 1.5]);
     }
+    this.lampSpots = spots;
     const poleMat = phong(0x2b2b30, { shininess: 40 });
     const poles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.1, 0.14, 5.2, 8), poleMat, spots.length);
     const headMat = live(basic(0x6a6a6a));

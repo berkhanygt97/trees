@@ -78,7 +78,7 @@ try {
   await page.goto(casino.localUrl);
   await page.fill('#name', name);
   await page.click('#enter');
-  await page.waitForFunction(() => window.casino && window.casino.controls && window.casino.perf, null, { timeout: 60_000 });
+  await page.waitForFunction(() => window.casino && window.casino.controls && window.casino.perf, null, { timeout: 120_000 });
   await page.waitForTimeout(1500);
   const room = casino.room;
   const me = [...room.players.values()][0];

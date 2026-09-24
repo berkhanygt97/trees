@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import {
-  labelSprite, plaidTexture, denimTexture, strawTexture, skinTexture, faceTexture,
+  plaidTexture, skinTexture,
 } from './textures.js';
 import { buildGun } from './guns.js';
+import { createCharacter } from './character.js';
 
 // Old farmers: flannel shirt in the player's colour, denim overalls, boots,
 // a grey beard and a hat that has seen things. Low-poly, texture-painted —
@@ -20,206 +21,20 @@ function mesh(parent, geo, mat, x = 0, y = 0, z = 0) {
 }
 
 // Map the old silly hats onto three farmer hats.
-const HAT_STYLE = { tophat: 'cap', crown: 'cowboy', party: 'straw', visor: 'cap', cowboy: 'cowboy', traffic: 'straw', none: 'straw' };
+const HAT_STYLE = { tophat: 'flatcap', crown: 'cowboy', party: 'straw', visor: 'flatcap', cowboy: 'cowboy', traffic: 'straw', none: 'straw' };
 
-function buildHat(kind, color) {
-  const g = new THREE.Group();
-  const style = HAT_STYLE[kind] || 'straw';
-  if (style === 'straw') {
-    const straw = phong(0xffffff, { map: strawTexture() });
-    const brim = mesh(g, new THREE.CylinderGeometry(0.3, 0.32, 0.02, 18), straw);
-    brim.rotation.x = 0.04;
-    mesh(g, new THREE.CylinderGeometry(0.13, 0.15, 0.13, 14), straw, 0, 0.07, 0);
-    mesh(g, new THREE.CylinderGeometry(0.152, 0.152, 0.035, 14), phong(color), 0, 0.03, 0);
-  } else if (style === 'cap') {
-    // Flat tweed cap with a short peak.
-    const tweed = phong(0xffffff, { map: plaidTexture('#6a5a48') });
-    const top = mesh(g, new THREE.SphereGeometry(0.145, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), tweed, 0, -0.01, 0.01);
-    top.scale.set(1.05, 0.5, 1.15);
-    const peak = mesh(g, new THREE.BoxGeometry(0.2, 0.015, 0.09), tweed, 0, -0.005, 0.16);
-    peak.rotation.x = 0.15;
-  } else {
-    const felt = phong(0x7a5230, { shininess: 4 });
-    const brim = mesh(g, new THREE.CylinderGeometry(0.28, 0.28, 0.018, 18), felt);
-    brim.scale.z = 0.8;
-    mesh(g, new THREE.CylinderGeometry(0.11, 0.14, 0.14, 12), felt, 0, 0.075, 0);
-    mesh(g, new THREE.CylinderGeometry(0.142, 0.142, 0.03, 12), phong(color), 0, 0.02, 0);
-  }
-  g.position.y = 0.12;
-  return g;
+/** What a player's farmer looks like: their colour on the flannel, their hat. */
+export function farmerLook(color, hat) {
+  return { outfit: 'farmer', color, head: HAT_STYLE[hat] || 'straw', skin: SKIN_TONE };
 }
 
 /**
- * A farmer for other players to look at. Same interface as the old avatar:
- * update() drives the walk cycle; setSeated() for driving.
+ * A farmer for other players to look at: a jointed, animated character
+ * (character.js). update(dt, moving, fast, speed) drives the gait;
+ * setSeated() for driving; setGun()/setAiming() for the stance.
  */
 export function createAvatar({ name, color, hat, showLabel = true }) {
-  const group = new THREE.Group();
-  const shirt = phong(0xffffff, { map: plaidTexture(color) });
-  const denim = phong(0xffffff, { map: denimTexture() });
-  const skin = skinMat();
-  const boot = phong(0x3a2616, { shininess: 25 });
-
-  // Legs pivot at the hip.
-  const legs = [];
-  for (const side of [-1, 1]) {
-    const hip = new THREE.Group();
-    hip.position.set(side * 0.11, 0.88, 0);
-    group.add(hip);
-    mesh(hip, new THREE.CylinderGeometry(0.085, 0.075, 0.8, 8), denim, 0, -0.4, 0);
-    mesh(hip, new THREE.BoxGeometry(0.13, 0.11, 0.26), boot, 0, -0.83, 0.04);
-    legs.push(hip);
-  }
-
-  // Torso: flannel, with the overall bib and straps over it and a bit of a belly.
-  const torso = new THREE.Group();
-  torso.position.y = 0.88;
-  group.add(torso);
-  const chest = mesh(torso, new THREE.CylinderGeometry(0.2, 0.19, 0.58, 10), shirt, 0, 0.3, 0);
-  chest.scale.z = 0.72;
-  const belly = mesh(torso, new THREE.SphereGeometry(0.2, 10, 8), denim, 0, 0.1, 0.02);
-  belly.scale.set(1, 0.8, 0.85);
-  mesh(torso, new THREE.CylinderGeometry(0.19, 0.2, 0.14, 10), denim, 0, 0.02, 0).scale.z = 0.8;
-  mesh(torso, new THREE.BoxGeometry(0.24, 0.22, 0.03), denim, 0, 0.32, 0.135);           // bib
-  for (const side of [-1, 1]) {
-    const strap = mesh(torso, new THREE.BoxGeometry(0.045, 0.34, 0.03), denim, side * 0.1, 0.44, 0.03);
-    strap.rotation.x = -0.35;
-    mesh(torso, new THREE.CylinderGeometry(0.014, 0.014, 0.012, 8), phong(0xc9a24a, { shininess: 80 }), side * 0.1, 0.38, 0.152).rotation.x = Math.PI / 2;
-  }
-  mesh(torso, new THREE.CylinderGeometry(0.075, 0.08, 0.08, 8), skin, 0, 0.62, 0);        // neck
-
-  // Arms pivot at the shoulder; rolled-up sleeves show the forearm.
-  const arms = [];
-  for (const side of [-1, 1]) {
-    const shoulder = new THREE.Group();
-    shoulder.position.set(side * 0.25, 0.55, 0);
-    torso.add(shoulder);
-    mesh(shoulder, new THREE.CylinderGeometry(0.07, 0.065, 0.32, 8), shirt, 0, -0.15, 0);
-    mesh(shoulder, new THREE.CylinderGeometry(0.075, 0.075, 0.05, 8), shirt, 0, -0.3, 0);   // cuff roll
-    mesh(shoulder, new THREE.CylinderGeometry(0.052, 0.045, 0.22, 8), skin, 0, -0.42, 0);
-    mesh(shoulder, new THREE.BoxGeometry(0.07, 0.1, 0.044), skin, 0, -0.57, 0.01);
-    arms.push(shoulder);
-  }
-
-  // Head: a painted face on a slightly long skull, grey beard and moustache.
-  const head = new THREE.Group();
-  head.position.y = 1.62;
-  group.add(head);
-  const skull = mesh(head, new THREE.SphereGeometry(0.13, 14, 12), phong(0xffffff, { map: faceTexture(SKIN_TONE) }));
-  skull.scale.set(1, 1.15, 1.05);
-  skull.rotation.y = -Math.PI / 2;   // put the painted face on the front
-  const nose = mesh(head, new THREE.ConeGeometry(0.025, 0.06, 6), skin, 0, -0.005, 0.135);
-  nose.rotation.x = Math.PI / 2;
-  for (const side of [-1, 1]) mesh(head, new THREE.SphereGeometry(0.03, 8, 6), skin, side * 0.13, 0, 0).scale.set(0.5, 1, 0.8);   // ears
-  const grey = phong(0xd9d6cf, { shininess: 2 });
-  const beard = mesh(head, new THREE.SphereGeometry(0.11, 10, 8, 0, Math.PI * 2, Math.PI * 0.35, Math.PI * 0.55), grey, 0, -0.05, 0.035);
-  beard.scale.set(1.05, 1.1, 1);
-  mesh(head, new THREE.BoxGeometry(0.1, 0.022, 0.03), grey, 0, -0.045, 0.13);              // moustache
-  head.add(buildHat(hat, color));
-
-  // Cigar in the corner of the mouth; hidden until one is bought.
-  const cigar = new THREE.Group();
-  const stick = mesh(cigar, new THREE.CylinderGeometry(0.012, 0.014, 0.14, 8), phong(0x5b3a1e));
-  stick.rotation.z = Math.PI / 2;
-  stick.rotation.y = -0.4;
-  mesh(cigar, new THREE.SphereGeometry(0.014, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff7a2a }), 0.065, 0, 0.03);
-  cigar.position.set(0.04, -0.07, 0.13);
-  cigar.visible = false;
-  head.add(cigar);
-  const cigarTip = new THREE.Object3D();
-  cigarTip.position.set(0.075, 0, 0.035);
-  cigar.add(cigarTip);
-
-  // A rifle slung on the back, so everyone can see you came armed.
-  let slung = null;
-
-  let label = null;
-  if (showLabel) {
-    label = labelSprite(name, color, 0.5);
-    label.position.y = 2.35;
-    label.userData.base = { x: label.scale.x, y: label.scale.y };
-    group.add(label);
-  }
-
-  let t = Math.random() * 10;
-  let seated = false;
-  let aiming = false;
-
-  return {
-    group,
-    head,
-    label,
-    setCigar(on) { cigar.visible = !!on; },
-    hasCigar() { return cigar.visible; },
-    tipWorld(target) { return cigarTip.getWorldPosition(target); },
-    /** Shows the gun this player is holding, or nothing. */
-    setGun(id) {
-      if (slung && slung.userData.id === id) return;
-      if (slung) { torso.remove(slung); slung = null; }
-      if (!id) return;
-      slung = buildGun(id).group;
-      slung.userData.id = id;
-      slung.scale.setScalar(1.25);
-      torso.add(slung);
-    },
-    setAiming(v) { aiming = v; },
-    scaleLabel(distance) {
-      if (!label) return;
-      label.visible = distance > 2.0;
-      const k = Math.min(1, Math.max(0.3, distance / 7));
-      label.scale.set(label.userData.base.x * k, label.userData.base.y * k, 1);
-    },
-    setVisible(v) { group.visible = v; },
-    /** Behind the wheel: a little smaller to fit the cabin, legs out, hands on the wheel. */
-    setSeated(on) {
-      if (on === seated) return;
-      seated = on;
-      group.scale.setScalar(on ? 0.85 : 1);
-      if (label) label.visible = !on;
-    },
-    get seated() { return seated; },
-    update(dt, moving, fast) {
-      t += dt;
-      if (slung) {
-        // Held in both hands in front, pointing where the player looks.
-        slung.visible = !seated;
-        slung.position.set(0.1, 0.42, 0.28);
-        slung.rotation.set(0, Math.PI, 0);
-      }
-      if (seated) {
-        legs[0].rotation.x = legs[1].rotation.x = -1.4;
-        arms[0].rotation.x = arms[1].rotation.x = -1.2;
-        arms[0].rotation.z = 0.25;
-        arms[1].rotation.z = -0.25;
-        torso.rotation.x = 0;
-        return;
-      }
-      const speed = moving ? (fast ? 11 : 7.5) : 1.5;
-      const swing = moving ? Math.sin(t * speed) : 0;
-      legs[0].rotation.x = swing * 0.6;
-      legs[1].rotation.x = -swing * 0.6;
-      if (slung) {
-        // Both arms forward to hold the gun.
-        arms[0].rotation.set(-1.25, 0, -0.35);
-        arms[1].rotation.set(aiming ? -1.45 : -1.05, 0, 0.45);
-      } else {
-        arms[0].rotation.set(-swing * 0.5, 0, 0.08);
-        arms[1].rotation.set(swing * 0.5, 0, -0.08);
-      }
-      // A slight old-man stoop, and a breathing bob when standing.
-      torso.rotation.x = moving ? 0.08 : 0.04 + Math.sin(t * 1.4) * 0.01;
-      const bob = moving ? Math.abs(Math.sin(t * speed)) * 0.03 : 0;
-      torso.position.y = 0.88 + bob;
-      head.position.y = 1.62 + bob;
-    },
-    dispose() {
-      group.traverse((o) => {
-        if (o.geometry) o.geometry.dispose();
-        if (o.material) o.material.dispose();
-      });
-      if (label) label.material.map.dispose();
-    },
-  };
+  return createCharacter(farmerLook(color, hat), { name: showLabel ? name : null, tagColor: color, tagScale: 0.5 });
 }
 
 // ================================================================== hands

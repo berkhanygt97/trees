@@ -54,7 +54,10 @@ export class Casino {
     this.hemi = new THREE.HemisphereLight(0xffd9a0, 0x30121f, 0.5);
     this.world.add(this.ambient, this.hemi);
 
+    // The chandeliers' light comes from the shared light pool (city/lights.js),
+    // so the casino never changes how many lights the shaders see.
     this.chandelierLights = [];
+    this.lightSources = [];
     const spots = [
       [-24, 32], [24, 32], [0, 30],
       [-26, 14], [26, 14], [0, 16],
@@ -64,10 +67,9 @@ export class Casino {
     for (const [x, z] of spots) {
       // Physically-based units: a room-filling pool needs a big candela value.
       // Short range, so the chandeliers do not light up the car park outside.
-      const light = new THREE.PointLight(0xffc98a, 260, 34, 2);
-      light.position.set(x, 9.2, z);
-      this.scene.add(light);
+      const light = { x, y: 9.2, z, color: 0xffc98a, intensity: 260, range: 34, inside: true };
       this.chandelierLights.push(light);
+      this.lightSources.push(light);
       this._chandelier(x, z);
     }
     this.key = new THREE.DirectionalLight(0xfff0d8, 0.5);
@@ -889,9 +891,7 @@ export class Casino {
     rig.position.set(0, 8.2, 0);
     g.add(rig);
 
-    const spot = new THREE.PointLight(0xdfe8ff, 120, 22, 2);
-    spot.position.set(0, 7.5, 0);
-    g.add(spot);
+    this.arenaSpot = { x: 0, y: 7.5, z: 0, color: 0xdfe8ff, intensity: 120, range: 22, inside: true };
 
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(9, 2.25),
       basic(0xffffff, { map: signTexture('SCRAPYARD', '#9fd4e8'), transparent: true }));
@@ -931,6 +931,9 @@ export class Casino {
 
     g.position.set(st.pos[0], 0, st.pos[2]);
     this.scene.add(g);
+    this.arenaSpot.x += st.pos[0];
+    this.arenaSpot.z += st.pos[2];
+    this.lightSources.push(this.arenaSpot);
     this.arenaGroup = g;
     this.arenaR = R;
     this._paintArena(null);

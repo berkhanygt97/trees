@@ -7,6 +7,8 @@
   --panel: rgba(14, 10, 20, 0.92);
   --line: rgba(242, 193, 78, 0.28);
   --font: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  --sa-font: Impact, Haettenschweiler, 'Arial Narrow Bold', 'Franklin Gothic Heavy', 'Arial Black', sans-serif;
+  --sa-title: 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
   color-scheme: dark;
 }
 
@@ -100,10 +102,11 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow
   background: rgba(255,255,255,.75); box-shadow: 0 0 0 2px rgba(0,0,0,.55);
 }
 
-#wallet { position: absolute; left: 22px; top: 18px; }
+/* The San Andreas corner: chunky outlined figures, green money. */
+#wallet { position: absolute; right: 26px; top: 16px; text-align: right; }
 #wallet .money {
-  font: 800 38px/1 var(--font); letter-spacing: 1px; color: var(--gold);
-  text-shadow: 0 2px 10px rgba(0,0,0,.9);
+  margin-top: 4px; font: 400 44px/1 var(--sa-font); letter-spacing: 1px; color: #36803a;
+  -webkit-text-stroke: 2px #000; paint-order: stroke fill; text-shadow: 0 3px 0 #000;
 }
 #wallet .profit { margin-top: 4px; font: 700 16px var(--font); text-shadow: 0 2px 8px #000; }
 #wallet .profit.up { color: var(--green); }
@@ -161,7 +164,7 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow
 .toast.fade { opacity: 0; transform: translateY(-6px); transition: .4s ease; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } }
 
-#feed { position: absolute; left: 22px; bottom: 22px; width: 320px; }
+#feed { position: absolute; left: 22px; bottom: 262px; width: 320px; }
 .feed-line { margin-top: 4px; font: 600 12px var(--font); color: #cbbfae; text-shadow: 0 1px 4px #000; }
 .feed-line.win { color: #9df5b4; } .feed-line.loss { color: #ff9e99; }
 
@@ -710,3 +713,71 @@ tr.me td { background: rgba(242,193,78,.1); }
 /* Vice City toasts: pink and teal edges. */
 .toast { border-left: 4px solid #ff3d9a; box-shadow: inset -4px 0 0 #35e0ff, 0 6px 20px rgba(0,0,0,.5); }
 .toast.big { border-left-color: #5cbf4a; }
+
+/* ================================================================ SA HUD */
+
+#wallet .sa-top { display: flex; align-items: flex-start; justify-content: flex-end; gap: 12px; }
+#wallet .sa-col { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+#wallet .clock {
+  font: 400 46px/1 var(--sa-font); letter-spacing: 2px; color: #fff;
+  -webkit-text-stroke: 2px #000; paint-order: stroke fill; text-shadow: 0 3px 0 #000;
+}
+#wallet .clock.urgent { color: #ff6a5a; }
+.sa-bar { position: relative; width: 150px; height: 13px; background: #000; border: 2px solid #000; }
+.sa-bar i { position: absolute; inset: 0 auto 0 0; width: 100%; transition: width .25s; }
+.sa-bar.hp { background: #4a0c0c; }
+.sa-bar.hp i { background: linear-gradient(#e03a32, #a11a15); }
+.sa-bar.ar { background: #3a3a3a; }
+.sa-bar.ar i { background: linear-gradient(#f0f0f0, #b4b4b4); }
+.sa-bar.hp.low i { animation: pulse .6s ease-in-out infinite; }
+#sa-weapon { position: relative; width: 78px; height: 78px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #5a5a5a, #1a1a1a 70%); border: 3px solid #000; box-shadow: 0 3px 0 #000; }
+#sa-weapon canvas { width: 78px; height: 78px; display: block; border-radius: 50%; }
+#sa-weapon b {
+  position: absolute; left: 0; right: 0; bottom: -6px; text-align: center; font: 400 16px/1 var(--sa-font);
+  color: #9fd4ff; -webkit-text-stroke: 1.5px #000; paint-order: stroke fill;
+}
+#wallet .profit { margin-top: 2px; font: 700 13px var(--font); }
+#wallet .level { justify-content: flex-end; }
+#threat { margin-top: 6px; font: 400 26px/1 var(--sa-font); letter-spacing: 3px; color: #f2c14e; -webkit-text-stroke: 1.5px #000; paint-order: stroke fill; }
+#threat i { font-style: normal; color: #444; }
+#threat.war { color: #ff4a3a; }
+
+#roundbar .rnum { font: 700 11px var(--font); letter-spacing: 3px; color: #e8dcc0; text-shadow: 0 2px 6px #000; }
+
+#radar {
+  position: absolute; left: 22px; bottom: 22px; width: 232px; height: 232px;
+  filter: drop-shadow(0 4px 10px rgba(0,0,0,.6));
+}
+
+/* Where you are, in the corner, as you cross into it. */
+#zone {
+  position: absolute; right: 36px; bottom: 150px; font: italic 700 40px var(--sa-title); color: #d7ccf0;
+  -webkit-text-stroke: 2px #000; paint-order: stroke fill; text-shadow: 0 3px 0 #000;
+  opacity: 0; transition: opacity .8s ease;
+}
+#zone.show { opacity: 1; }
+
+/* Big mission-style captions: RAID REPELLED, WAR DECLARED. */
+#bigtext { position: absolute; left: 0; right: 0; top: 22%; text-align: center; pointer-events: none; }
+#bigtext b {
+  display: block; font: 400 64px/1 var(--sa-font); letter-spacing: 3px; color: #f2c14e;
+  -webkit-text-stroke: 3px #000; paint-order: stroke fill; text-shadow: 0 4px 0 #000;
+  animation: bigIn .35s ease-out;
+}
+#bigtext i { display: block; margin-top: 8px; font: 700 20px var(--font); font-style: normal; color: #fff; text-shadow: 0 2px 6px #000; }
+@keyframes bigIn { from { transform: scale(1.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+#wasted { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
+#wasted b {
+  font: 400 110px/1 var(--sa-font); letter-spacing: 4px; color: #b3201a;
+  -webkit-text-stroke: 4px #000; paint-order: stroke fill; text-shadow: 0 6px 0 #000;
+  animation: bigIn 1.2s ease-out;
+}
+#wasted i { margin-top: 12px; font: 700 18px var(--font); font-style: normal; color: #e8dcc0; text-shadow: 0 2px 6px #000; }
+
+@media (max-width: 720px) {
+  #radar { width: 150px; height: 150px; }
+  #wallet .clock { font-size: 32px; }
+  #sa-weapon, #sa-weapon canvas { width: 56px; height: 56px; }
+  #feed { bottom: 180px; }
+}

@@ -44,6 +44,46 @@ async function drive(page, room, me, model = 'muscle', secs = 3, keys = ['KeyW']
 }
 const release = async (page, keys = ['KeyW', 'KeyA', 'KeyD', 'Space']) => { for (const k of keys) await page.keyboard.up(k); };
 
+/** Everyone who can walk the valley, posed in a row in front of the camera. */
+async function lineup(near = false) {
+  const { createCharacter } = await import('/js/character.js');
+  const c = window.casino;
+  const eye = c.controls.pos;
+  const cast = [
+    [{ outfit: 'farmer', color: '#c0392b', head: 'straw' }, { speed: 0 }],
+    [{ outfit: 'farmer', color: '#2e86de', head: 'flatcap' }, { speed: 7.2 }],
+    [{ outfit: 'street', color: '#27ae60', accent: '#1e8449', head: 'bandana', top: 'tank' }, { speed: 12.5 }],
+    [{ outfit: 'street', color: '#e67e22', accent: '#e67e22', head: 'bandana', mask: true, legs: 'khaki' }, { gun: 'semiauto', aim: true, pitch: 0.15 }],
+    [{ outfit: 'biker', color: '#333', accent: '#8e1b1b' }, { gun: 'shotgun' }],
+    [{ outfit: 'track', color: '#16a085', accent: '#ffffff' }, { gun: 'pistol', aim: true }],
+    [{ outfit: 'street', color: '#8e44ad', accent: '#8e44ad', head: 'capback', top: 'hoodie', skin: '#8d5a3b' }, { seated: true }],
+    [{ outfit: 'street', color: '#f1c40f', accent: '#111', head: 'beanie', skin: '#6b4430' }, { dead: true }],
+  ];
+  const people = cast.map(([look, how], i) => {
+    const p = createCharacter(look, { name: look.outfit });
+    p.group.position.set(eye.x + (near ? 3.2 : 6.5), 0, eye.z - 4.4 + i * 1.25);
+    p.group.rotation.y = -Math.PI / 2 + 0.35;
+    if (how.gun) p.setGun(how.gun);
+    if (how.aim) p.setAiming(true);
+    if (how.pitch) p.setAimPitch(how.pitch);
+    if (how.seated) { p.setSeated(true); p.group.position.y = 0.45; }
+    if (how.dead) p.die();
+    c.scene.add(p.group);
+    // Two seconds in already, however slowly the page is drawing.
+    for (let k = 0; k < 20; k++) p.update(0.1, false, false, how.speed || 0);
+    return { p, how };
+  });
+  let last = performance.now();
+  const tick = () => {
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    for (const { p, how } of people) p.update(dt, false, false, how.speed || 0);
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
+
 export const VIEWS = [
   { name: 'spawn', server: (room) => at(room, 11) },
   { name: 'farm', pos: [plotSpawn(PLOTS[0]).pos[0] + 16, 0, PLOTS[0].z0 + 40], yaw: 0.6, pitch: -0.15 },
@@ -65,6 +105,12 @@ export const VIEWS = [
   { name: 'drift', steps: async (page) => { await page.keyboard.down('KeyD'); await page.keyboard.down('Space'); await page.waitForTimeout(900); await release(page); }, wait: 100 },
   { name: 'cockpit', steps: async (page) => { await page.keyboard.press('KeyV'); await page.keyboard.down('KeyW'); await page.waitForTimeout(1500); }, wait: 100 },
   { name: 'getout', steps: async (page) => { await release(page); await page.keyboard.press('KeyV'); await page.waitForTimeout(2500); await page.keyboard.press('KeyF'); }, wait: 1200 },
-  { name: 'dusk', server: (room) => at(room, 19.2), pos: [street.x0 + 120, 0, midZ], yaw: -Math.PI / 2, pitch: 0.05 },
+  { name: 'people', server: (room) => at(room, 11), pos: [street.x0 + 90, 0, midZ], yaw: -Math.PI / 2, pitch: -0.1,
+    client: (c) => { c.rig.mode = 'fp'; c.rig.fresh = true; }, steps: async (page) => { await page.evaluate(lineup); }, wait: 2500 },
+  { name: 'people-near', pos: [street.x0 + 150, 0, midZ + 2.6], yaw: -Math.PI / 2, pitch: -0.12,
+    client: (c) => { c.rig.mode = 'fp'; c.rig.fresh = true; }, steps: async (page) => { await page.evaluate(lineup, true); }, wait: 2500 },
+  { name: 'afternoon', server: (room) => at(room, 16.5), pos: [street.x0 + 45, 0, midZ], yaw: Math.PI / 2 + 0.5, pitch: -0.1,
+    client: (c) => { c.rig.mode = 'tp'; c.rig.fresh = true; } },
+  { name: 'dusk', client: (c) => { c.rig.mode = 'tp'; }, server: (room) => at(room, 19.2), pos: [street.x0 + 120, 0, midZ], yaw: -Math.PI / 2, pitch: 0.05 },
   { name: 'night', server: (room) => at(room, 23), pos: [street.x0 + 200, 0, midZ], yaw: -Math.PI / 2, pitch: 0.05 },
 ];

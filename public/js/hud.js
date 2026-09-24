@@ -254,8 +254,70 @@ export const hud = {
   // ----------------------------------------------------------- guns, health
 
   setHealth(hp) {
-    this.el.health.hidden = hp >= 100;
     this.el.hpFill.style.width = `${Math.max(0, Math.min(100, hp))}%`;
+    this.el.hpFill.parentElement.classList.toggle('low', hp < 25);
+  },
+
+  /** Body armour, 0..100: the white bar under health, only when you wear some. */
+  setArmor(ar) {
+    const bar = document.getElementById('ar-bar');
+    bar.hidden = !(ar > 0);
+    document.getElementById('ar-fill').style.width = `${Math.max(0, Math.min(100, ar))}%`;
+  },
+
+  /** The weapon in the round icon, and the rounds left under it. */
+  setWeapon(id, text = '') {
+    if (id !== this._weaponShown) {
+      this._weaponShown = id;
+      drawWeaponIcon(document.getElementById('sa-icon'), id);
+    }
+    const ammo = document.getElementById('sa-ammo');
+    if (ammo.textContent !== text) ammo.textContent = text;
+  },
+
+  /** Skulls for how much trouble you are in: a raid, a war. 0 hides them. */
+  setThreat(n, kind = 'raid') {
+    const el = document.getElementById('threat');
+    el.hidden = !n;
+    if (!n) return;
+    el.classList.toggle('war', kind === 'war');
+    const key = `${n}${kind}`;
+    if (this._threat === key) return;
+    this._threat = key;
+    el.innerHTML = `${'☠'.repeat(n)}<i>${'☠'.repeat(Math.max(0, 5 - n))}</i>`;
+  },
+
+  /** The name of the place you just walked into, in the corner, for a few seconds. */
+  zone(name) {
+    if (name === this._zone) return;
+    this._zone = name;
+    const el = document.getElementById('zone');
+    el.textContent = name;
+    el.classList.add('show');
+    clearTimeout(this._zoneTimer);
+    this._zoneTimer = setTimeout(() => el.classList.remove('show'), 3500);
+  },
+
+  /** A big caption in the middle of the screen (RAID REPELLED!). */
+  bigText(title, sub = '', color = '#f2c14e', ms = 3800) {
+    const el = document.getElementById('bigtext');
+    el.hidden = false;
+    const b = el.querySelector('b');
+    b.textContent = title;
+    b.style.color = color;
+    b.style.animation = 'none';
+    void b.offsetWidth;                 // restart the entrance
+    b.style.animation = '';
+    el.querySelector('i').textContent = sub;
+    clearTimeout(this._bigTimer);
+    this._bigTimer = setTimeout(() => { el.hidden = true; }, ms);
+  },
+
+  /** Wasted: you went down. `sub` says where you will come round. */
+  wasted(on, sub = '') {
+    const el = document.getElementById('wasted');
+    el.hidden = !on;
+    el.querySelector('i').textContent = sub;
   },
 
   /** The delivery you are carrying: where to, and how long is left. */
@@ -293,7 +355,7 @@ export const hud = {
     this._hitTimer = setTimeout(() => { el.hidden = true; }, kill ? 420 : 180);
   },
 
-  showKo(v) { this.el.ko.hidden = !v; },
+  showKo(v, sub = 'You come round at your gate…') { this.wasted(v, v ? sub : ''); },
 
   // --------------------------------------------------------------- prompt
 
@@ -371,3 +433,55 @@ export const hud = {
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const short = (v) => (v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e4 ? `$${Math.round(v / 1000)}K` : money(v));
 
+
+// ------------------------------------------------------------ weapon icons
+
+/** A little painted picture of the gun (or a fist) for the round weapon icon. */
+function drawWeaponIcon(cv, id) {
+  const g = cv.getContext('2d');
+  const S = cv.width;
+  g.clearRect(0, 0, S, S);
+  g.save();
+  g.translate(S / 2, S / 2);
+  const steel = '#2b2e33';
+  const wood = '#7a4a22';
+  const hi = 'rgba(255,255,255,0.25)';
+  const rect = (x, y, w, h, c, r = 0) => { g.fillStyle = c; g.beginPath(); g.roundRect(x, y, w, h, r); g.fill(); };
+  if (!id) {
+    // A fist.
+    rect(-20, -16, 40, 34, '#d59a72', 9);
+    for (let i = 0; i < 4; i++) rect(-19 + i * 10, -22, 9, 16, '#e0a882', 4);
+    rect(-26, -4, 12, 18, '#c98a62', 5);
+    g.strokeStyle = 'rgba(80,40,20,0.5)';
+    g.lineWidth = 1.5;
+    for (let i = 1; i < 4; i++) { g.beginPath(); g.moveTo(-19 + i * 10, -20); g.lineTo(-19 + i * 10, -8); g.stroke(); }
+  } else if (id === 'pistol') {
+    g.rotate(-0.1);
+    rect(-26, -14, 50, 13, steel, 3);
+    rect(-26, -14, 50, 4, hi, 2);
+    rect(8, -3, 13, 26, '#1d1d1f', 3);
+    rect(-2, -2, 9, 9, steel, 3);
+  } else if (id === 'smg') {
+    g.rotate(-0.12);
+    rect(-34, -10, 60, 14, steel, 3);
+    rect(-46, -6, 14, 5, steel, 2);
+    rect(-4, 3, 9, 26, '#1d1d1f', 2);
+    rect(14, 3, 9, 16, '#1d1d1f', 3);
+    rect(24, -8, 20, 8, '#1d1d1f', 2);
+  } else {
+    // Long guns: stock, receiver, barrel; the shotgun is stubbier with a pump.
+    const shotgun = id === 'shotgun';
+    const scope = id === 'biggame';
+    g.rotate(-0.35);
+    const L = shotgun ? 44 : 50;
+    rect(-L, -4, L * 1.2, 6, steel, 2);                  // barrel
+    rect(-8, -7, 26, 11, steel, 2);                     // receiver
+    rect(12, -5, 30, 11, wood, 3);                      // stock
+    rect(34, -6, 10, 15, wood, 3);
+    if (shotgun) rect(-34, 2, 20, 7, wood, 3);          // pump
+    else rect(-30, 1, 26, 6, wood, 3);                  // fore-end
+    if (scope) rect(-10, -15, 24, 7, '#111', 3);
+    rect(-L, -4, L * 1.2, 2, hi, 1);
+  }
+  g.restore();
+}

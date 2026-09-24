@@ -41,6 +41,13 @@ function skyAt(hour, outTop, outHorizon) {
 const OVERCAST = C(0x7d8591);
 const STORM = C(0x3a4150);
 
+const SHADOW_R = 40;
+const UP = new THREE.Vector3(0, 1, 0);
+const tmpA = new THREE.Vector3();
+const tmpB = new THREE.Vector3();
+const tmpC = new THREE.Vector3();
+const tmpD = new THREE.Vector3();
+
 export class Sky {
   constructor(scene, casino) {
     this.scene = scene;
@@ -90,6 +97,16 @@ export class Sky {
     // Outdoor lights; the casino's own lights are blended against these.
     this.sun = new THREE.DirectionalLight(0xfff2dc, 1.8);
     this.moon = new THREE.DirectionalLight(0x8fa4ff, 0.25);
+    // The sun's shadows cover the ground round you (`focus`, set by main),
+    // not the whole valley: sharp where you are looking, free further out.
+    this.focus = null;
+    const sc = this.sun.shadow.camera;
+    sc.left = sc.bottom = -SHADOW_R;
+    sc.right = sc.top = SHADOW_R;
+    sc.near = 1;
+    sc.far = 400;
+    this.sun.shadow.bias = -0.0006;
+    this.sun.shadow.normalBias = 0.035;
     scene.add(this.sun, this.moon, this.sun.target, this.moon.target);
 
     // A drifting cloud layer, tinted by the sky, and a glare round the sun.
@@ -202,16 +219,17 @@ export class Sky {
     this.stars.material.opacity = this.night * (1 - this.grey);
 
     // Directional lights. Neither shines into the casino.
-    this.sun.position.copy(camera.position).addScaledVector(sunDir, 100);
-    this.sun.target.position.copy(camera.position);
-    this.sun.intensity = sunUp * (1.9 - this.grey * 1.2) * (1 - k);
+    this._placeSun(sunDir, this.focus || camera.position);
+    this.sun.intensity = sunUp * (2.5 - this.grey * 1.7) * (1 - k);
     this.sun.color.setHSL(0.1, 0.6, 0.55 + sunUp * 0.4);
     this.moon.position.copy(camera.position).addScaledVector(moonDir, 100);
     this.moon.target.position.copy(camera.position);
     this.moon.intensity = Math.max(0, moonDir.y) * 0.35 * (1 - k) * (1 - this.grey * 0.6);
 
     // Ambient: outdoors follows the sky; indoors is the casino's own mood.
-    const outAmb = lerp(0.28, 0.95, 1 - this.night) * (1 - this.grey * 0.3);
+    // Less flat fill by day than before shadows: the sun does the work, so
+    // shadowed sides read as shade. Overcast days fill in (no sun, soft light).
+    const outAmb = lerp(0.28, lerp(0.62, 0.95, this.grey), 1 - this.night) * (1 - this.grey * 0.3);
     const flash = this.flash;
     const amb = this.casino.ambient;
     amb.intensity = lerp(outAmb, 1.15, k) + flash * 2.5 * (1 - k);
@@ -234,6 +252,35 @@ export class Sky {
 
     this._updateRain(dt, camera, k);
     this._updateLightning(dt, k);
+  }
+
+  /** Sun shadows on (map size in texels) or off (0). */
+  setShadows(size) {
+    const on = size > 0;
+    this.sun.castShadow = on;
+    if (on && this.sun.shadow.mapSize.x !== size) {
+      this.sun.shadow.mapSize.set(size, size);
+      if (this.sun.shadow.map) { this.sun.shadow.map.dispose(); this.sun.shadow.map = null; }
+    }
+  }
+
+  _placeSun(sunDir, focus) {
+    // Snap the shadow camera to whole shadow-map texels, so the shadows
+    // do not crawl as you walk.
+    const texel = (SHADOW_R * 2) / this.sun.shadow.mapSize.x;
+    const fwd = tmpA.copy(sunDir).negate();
+    const right = tmpB.crossVectors(fwd, UP);
+    if (right.lengthSq() < 1e-6) right.set(1, 0, 0);
+    right.normalize();
+    const up = tmpC.crossVectors(right, fwd);
+    const a = Math.round(focus.dot(right) / texel) * texel;
+    const b = Math.round(focus.dot(up) / texel) * texel;
+    const c = focus.dot(fwd);
+    const centre = tmpD.copy(right).multiplyScalar(a).addScaledVector(up, b).addScaledVector(fwd, c);
+    this.sun.target.position.copy(centre);
+    this.sun.position.copy(centre).addScaledVector(sunDir, 200);
+    // Below the horizon there is nothing to cast: skip drawing the map.
+    this.sun.shadow.autoUpdate = sunDir.y > 0.02;
   }
 
   _updateRain(dt, camera, k) {

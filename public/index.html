@@ -60,24 +60,39 @@
   <div id="delivery" hidden></div>
   <div id="hitmark" hidden></div>
 
+  <!-- Top right, the way San Andreas had it: weapon, clock, health, armour, money. -->
   <div id="wallet">
+    <div class="sa-top">
+      <div id="sa-weapon"><canvas id="sa-icon" width="112" height="112"></canvas><b id="sa-ammo"></b></div>
+      <div class="sa-col">
+        <div class="clock" id="r-clock">07:00</div>
+        <div class="sa-bar hp"><i id="hp-fill"></i></div>
+        <div class="sa-bar ar" id="ar-bar" hidden><i id="ar-fill"></i></div>
+      </div>
+    </div>
     <div class="money" id="w-money">$0</div>
     <div class="profit" id="w-worth">worth $0</div>
     <div class="level"><b id="w-level">LVL 1</b><span class="xpbar"><i id="w-xp"></i></span></div>
     <div class="storage" id="w-storage"></div>
+    <div id="threat" hidden></div>
   </div>
 
   <div id="roundbar">
     <div class="rnum" id="r-num">DAY 1</div>
-    <div class="clock" id="r-clock">07:00</div>
     <div class="weather" id="r-weather"></div>
     <div class="event" id="r-event" hidden><b></b><i></i></div>
   </div>
 
-  <div id="mini">
+  <!-- The rich list lives on Tab now; this stays for small screens' sake. -->
+  <div id="mini" hidden>
     <div class="mini-title">RICH LIST</div>
     <ol id="mini-list"></ol>
   </div>
+
+  <canvas id="radar" width="232" height="232"></canvas>
+  <div id="zone"></div>
+  <div id="bigtext" hidden><b></b><i></i></div>
+  <div id="wasted" hidden><b>wasted</b><i></i></div>
 
   <div id="prompt" hidden><kbd>E</kbd> <span></span></div>
   <div id="prompt2" hidden><kbd>F</kbd> <span></span></div>
@@ -93,7 +108,7 @@
     <div class="hint" id="s-hint"><kbd>F</kbd> get out · <kbd>V</kbd> camera</div>
   </div>
 
-  <div id="health" hidden><b>♥</b><span class="bar"><i id="hp-fill"></i></span></div>
+  <div id="health" hidden></div>
   <div id="ammo" hidden>
     <div class="count"><b id="ammo-mag">5</b><span id="ammo-max">/ 5</span></div>
     <div class="name" id="ammo-name"></div>

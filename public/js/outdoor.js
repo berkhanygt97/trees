@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { noCast } from './shadows.js';
 import {
   BOUNDS, PLAZA, ROADS, SHOPS, ORDERS_BOARD, PLOTS, PLOT_SIZE, GATE, TRACK, RAMPS, CASINO, COTTAGES, STRIP,
   HOODS, LOTS, shopCounter,
@@ -459,6 +460,7 @@ export class Outdoor {
       else for (let x = r.x0 + 20; x < r.x1; x += 50) spots.push([x, r.z0 - 1.5], [x + 25, r.z1 + 1.5]);
     }
 
+    this.lampSpots = spots;
     const poleMat = phong(0x2b2b30, { shininess: 40 });
     const pole = new THREE.CylinderGeometry(0.1, 0.14, 5.2, 8);
     const poles = new THREE.InstancedMesh(pole, poleMat, spots.length);
@@ -738,7 +740,7 @@ export class Outdoor {
   _grass(blocked, rnd) {
     const geo = crossCards(1.1, 0.7, 2);
     geo.translate(0, 0.33, 0);
-    const mat = phong(0xffffff, { map: grassTuftTexture(), alphaTest: 0.4, side: THREE.DoubleSide });
+    const mat = noCast(phong(0xffffff, { map: grassTuftTexture(), alphaTest: 0.4, side: THREE.DoubleSide }));
     const N = 14000;
     const tufts = new THREE.InstancedMesh(geo, mat, N);
     const m = new THREE.Matrix4();

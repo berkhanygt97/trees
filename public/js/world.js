@@ -7,6 +7,7 @@ import { makeHalo, updateHalos } from './neon.js';
 import { HoodView } from './city/hoods.js';
 import { Downtown } from './city/downtown.js';
 import { Props } from './city/props.js';
+import { LightPool } from './city/lights.js';
 
 /**
  * Everything you can see: the casino building, the valley around it, the farms
@@ -30,6 +31,12 @@ export class World {
       halo.position.z += 0.1;
       scene.add(halo);
     }
+
+    // Real light, shared out to the nearest sources: chandeliers, street lamps.
+    this.lights = new LightPool(scene);
+    this.lights.add(this.casino.lightSources);
+    const lamp = ([x, z]) => ({ x, y: 4.9, z, color: 0xffd9a0, intensity: 45, range: 17, night: true });
+    this.lights.add([...this.outdoor.lampSpots, ...this.hoods.lampSpots].map(lamp));
 
     // Circles: casino furniture, trees, lamp posts. Boxes: walls and fences.
     this.staticObstacles = [...this.casino.obstacles, ...this.outdoor.obstacles, ...this.hoods.obstacles, ...this.downtown.obstacles, ...this.props.obstacles];
@@ -62,6 +69,7 @@ export class World {
     this.downtown.update(dt, this.sky.night);
     this.props.update();
     updateHalos(dt, this.sky.inside > 0.5 ? 0 : this.sky.night);
+    this.lights.update(ctx.camera.position, this.sky.night, this.sky.inside);
     // The casino's animated games only need updating when you might see them.
     const cx = ctx.camera.position.x;
     const cz = ctx.camera.position.z;
