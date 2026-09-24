@@ -23,6 +23,7 @@ import { RestaurantView } from './restaurantview.js';
 import { NpcView } from './npcs.js';
 import { Crowd } from './crowd.js';
 import { shadowTexture } from './textures.js';
+import { PerfMeter } from './perf.js';
 
 const canvas = document.getElementById('scene');
 const joinScreen = document.getElementById('join');
@@ -30,7 +31,7 @@ const nameInput = document.getElementById('name');
 const enterBtn = document.getElementById('enter');
 const joinStatus = document.getElementById('join-status');
 
-let renderer, scene, camera, world, fleet, controls, viewModel, smoke, selfAvatar, pipeline, boars, weapons, workers;
+let renderer, scene, camera, world, fleet, controls, viewModel, smoke, selfAvatar, pipeline, boars, weapons, workers, perf;
 let jobs = [];                    // today's Job Centre candidates
 let restaurants, npcs, crowd;
 let restaurantList = [];          // who owns which lot on the Strip
@@ -124,6 +125,7 @@ function initScene() {
   smoke = new Smoke(scene);
   controls = new Controls(camera, canvas, world);
   pipeline = new Pipeline(renderer);
+  perf = new PerfMeter(renderer);
   boars = new BoarView(scene);
   workers = new WorkerView(scene);
   restaurants = new RestaurantView(scene);
@@ -147,7 +149,7 @@ function initScene() {
 
   // Debug handle: useful when you are hosting and want to poke at the valley.
   window.casino = {
-    controls, world, fleet, scene, camera, net, hud, gameStates, pipeline, boars, weapons,
+    controls, world, fleet, scene, camera, net, hud, gameStates, pipeline, boars, weapons, renderer, perf,
     get workers() { return workers; },
     get npcs() { return npcs; },
     get restaurants() { return restaurants; },
@@ -787,6 +789,11 @@ addEventListener('keydown', (e) => {
     }
     return;
   }
+  if (e.code === 'F3') {
+    e.preventDefault();
+    perf.toggle();
+    return;
+  }
   if (e.code === 'KeyP') {
     const q = pipeline.cycleQuality();
     hud.toast(`Graphics: ${q.name}`, 'info');
@@ -849,6 +856,7 @@ function loop(now) {
   requestAnimationFrame(loop);
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  perf.begin();
   const serverNow = net.now();
   const wt = worldTime();
 
@@ -994,6 +1002,7 @@ function loop(now) {
     overlayFov: 58 * (0.86 + 0.14 * camera.fov / 78),
     ambient: world.casino.ambient,
   });
+  perf.end(dt);
 }
 
 const round2 = (v) => Math.round(v * 100) / 100;

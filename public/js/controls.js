@@ -37,7 +37,7 @@ export class Controls {
 
   _bind() {
     this.dom.addEventListener('click', () => {
-      if (this.enabled && !this.locked) this.dom.requestPointerLock();
+      if (this.enabled && !this.locked) this._requestLock();
     });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.dom;
@@ -67,7 +67,16 @@ export class Controls {
     window.addEventListener('blur', () => this.keys.clear());
   }
 
-  lock() { if (this.enabled) this.dom.requestPointerLock(); }
+  lock() { if (this.enabled) this._requestLock(); }
+
+  // Newer browsers return a promise that rejects when the page has no user
+  // gesture yet (or runs headless); that is not an error worth reporting.
+  _requestLock() {
+    try {
+      const p = this.dom.requestPointerLock();
+      if (p && p.catch) p.catch(() => {});
+    } catch { /* pointer lock unavailable */ }
+  }
   unlock() { if (document.pointerLockElement) document.exitPointerLock(); }
 
   get driving() { return !!this.car; }
