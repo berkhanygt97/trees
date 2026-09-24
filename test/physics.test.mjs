@@ -146,4 +146,16 @@ for (const v of VEHICLES) {
   check('you cannot drive through a parked limo', w.vehicle.pose().pos[2] > -44, `z ${w.vehicle.pose().pos[2].toFixed(1)}`);
 }
 
+// --- a knocked-over bin flies, lands and stays in the world until removed
+{
+  const w = flatWorld();
+  const bin = w.addDebris({ r: 0.3, h: 1 }, [0, 0.6, 0], [8, 3, 0]);
+  run(w, 4, {});
+  const p = bin.translation();
+  check('a knocked bin flies off and comes to rest on the ground', p.x > 2 && p.y > 0 && p.y < 0.8, `x ${p.x.toFixed(1)} y ${p.y.toFixed(2)}`);
+  const n = w.world.bodies.len();
+  w.removeBody(bin);
+  check('and is gone when it is put back', w.world.bodies.len() === n - 1);
+}
+
 done();

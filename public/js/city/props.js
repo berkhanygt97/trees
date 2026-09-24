@@ -130,6 +130,7 @@ export class Props {
       byKind.get(it.kind).push(it);
     }
     const defs = kinds();
+    this.defs = defs;
     const m = new THREE.Matrix4();
     const p = new THREE.Matrix4();
     const q = new THREE.Quaternion();
@@ -155,6 +156,93 @@ export class Props {
         it.r = def.r;
         it.index = list.indexOf(it);
         this.obstacles.push({ x: it.x, z: it.z, r: def.r, prop: it });
+      }
+    }
+  }
+
+  // --------------------------------------------------------- knocking over
+
+  /**
+   * A car drove into one. It goes flying (a physics body, if there is
+   * physics) or just keels over, and is back in its place 25 s later.
+   * `vel` = [vx, vy, vz] of whatever hit it.
+   */
+  knock(item, vel, physics, groundAt) {
+    if (item.down) return false;
+    item.down = true;
+    const obstacle = this.obstacles.find((o) => o.prop === item);
+    if (obstacle) obstacle.gone = true;
+    // Hide the instance, and stand a loose copy of it in its place.
+    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    const def = this.defs[item.kind];
+    const loose = new THREE.Group();
+    item.saved = [];
+    this.meshes[item.kind].forEach((inst, k) => {
+      const m = new THREE.Matrix4();
+      inst.getMatrixAt(item.index, m);
+      item.saved.push(m);
+      inst.setMatrixAt(item.index, zero);
+      inst.instanceMatrix.needsUpdate = true;
+      const [geo, mat, off] = def.parts[k];
+      const part = new THREE.Mesh(geo, mat);
+      part.position.set(off[0], off[1], off[2]);
+      loose.add(part);
+    });
+    const y0 = groundAt ? groundAt(item.x, item.z) : 0;
+    loose.position.set(item.x, y0, item.z);
+    loose.rotation.y = item.yaw;
+    this.group.add(loose);
+    const h = { hydrant: 0.8, bin: 1.05, bench: 0.9, news: 1.1, phone: 2.5 }[item.kind] || 1;
+    const speed = Math.hypot(vel[0], vel[2]);
+    const fly = [vel[0] * 0.9 + (Math.random() - 0.5) * 2, 2.5 + speed * 0.25, vel[2] * 0.9 + (Math.random() - 0.5) * 2];
+    const entry = { item, loose, h, t: 0, body: null };
+    if (physics) {
+      entry.body = physics.addDebris({ r: Math.max(0.2, item.r * 0.8), h }, [item.x, y0 + h / 2 + 0.05, item.z], fly, item.kind === 'phone' ? 120 : 25);
+      entry.body.setRotation({ x: 0, y: Math.sin(item.yaw / 2), z: 0, w: Math.cos(item.yaw / 2) }, true);
+    } else {
+      entry.fallDir = Math.atan2(vel[0], vel[2]);
+    }
+    this.loose = this.loose || [];
+    this.loose.push(entry);
+    // Never more than a few dozen lying about.
+    if (this.loose.length > 30) this._restore(this.loose.shift(), physics);
+    return true;
+  }
+
+  _restore(e, physics) {
+    if (e.body && physics) physics.removeBody(e.body);
+    this.group.remove(e.loose);
+    const { item } = e;
+    this.meshes[item.kind].forEach((inst, k) => {
+      inst.setMatrixAt(item.index, item.saved[k]);
+      inst.instanceMatrix.needsUpdate = true;
+    });
+    item.saved = null;
+    item.down = false;
+    const obstacle = this.obstacles.find((o) => o.prop === item);
+    if (obstacle) obstacle.gone = false;
+  }
+
+  /** Moves loose props with their physics bodies; puts them back after a while. */
+  updateLoose(dt, physics) {
+    if (!this.loose || !this.loose.length) return;
+    for (const e of [...this.loose]) {
+      e.t += dt;
+      if (e.body) {
+        const p = e.body.translation();
+        const q = e.body.rotation();
+        // The body's centre is half way up; the loose copy stands on its base.
+        const half = new THREE.Vector3(0, -e.h / 2, 0).applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w));
+        e.loose.position.set(p.x + half.x, p.y + half.y, p.z + half.z);
+        e.loose.quaternion.set(q.x, q.y, q.z, q.w);
+      } else if (e.t < 0.6) {
+        // No physics: it just keels over, away from the car.
+        const k = Math.min(1, e.t / 0.5) * 1.45;
+        e.loose.rotation.set(Math.cos(e.fallDir - e.item.yaw) * k, e.item.yaw, -Math.sin(e.fallDir - e.item.yaw) * k, 'YXZ');
+      }
+      if (e.t > 25) {
+        this._restore(e, physics);
+        this.loose.splice(this.loose.indexOf(e), 1);
       }
     }
   }

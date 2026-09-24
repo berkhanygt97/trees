@@ -118,8 +118,11 @@ export class Weapons {
     this.lastShot = now;
     this.mag--;
 
-    const o = this.camera.getWorldPosition(new THREE.Vector3());
-    const d = this.camera.getWorldDirection(new THREE.Vector3());
+    // Where the shot leaves and which way it goes: your eyes in first person;
+    // in third person, from your head towards what the crosshair is on.
+    const ray = this.aimRay ? this.aimRay() : null;
+    const o = ray ? ray.o : this.camera.getWorldPosition(new THREE.Vector3());
+    const d = ray ? ray.d : this.camera.getWorldDirection(new THREE.Vector3());
     // lag: boars are drawn ~one snapshot (100 ms) behind the server, plus the trip here.
     const lag = Math.round(100 + this.net.latency() / 2);
     this.net.send('shoot', { o: [o.x, o.y, o.z].map(r3), d: [d.x, d.y, d.z].map(r3), lag });
@@ -139,7 +142,7 @@ export class Weapons {
       const t = raySphere(o, d, new THREE.Vector3(e.pos.x, 0.55, e.pos.z), 0.7);
       if (t != null && t < best && t < gun.range) { best = t; end = o.clone().addScaledVector(d, t); }
     }
-    this.tracer(this.viewModel.muzzleWorld(new THREE.Vector3()), end);
+    this.tracer(ray && ray.muzzle ? ray.muzzle : this.viewModel.muzzleWorld(new THREE.Vector3()), end);
     if (this.mag === 0) setTimeout(() => this.reload(), 350);
     return true;
   }
@@ -201,7 +204,8 @@ export class Weapons {
       this.controls.pitch -= back * 0.35;
     }
     // Aiming zooms in.
-    const want = this.aiming ? BASE_FOV / this.gun.zoom : BASE_FOV;
+    const base = this.baseFov || BASE_FOV;
+    const want = this.aiming ? base / this.gun.zoom : base;
     if (Math.abs(this.camera.fov - want) > 0.05) {
       this.camera.fov += (want - this.camera.fov) * Math.min(1, dt * 12);
       this.camera.updateProjectionMatrix();

@@ -143,6 +143,28 @@ export class PhysicsWorld {
 
   remoteIds() { return [...this.remote.keys()]; }
 
+  // ------------------------------------------------------------ debris
+
+  /**
+   * Something light knocked flying: a bin, a hydrant. `shape` = { r, h } (an
+   * upright cylinder) or { hx, hy, hz } (a box). Returns the body.
+   */
+  addDebris(shape, pos, vel, mass = 25) {
+    const R = this.R;
+    const body = this.world.createRigidBody(R.RigidBodyDesc.dynamic()
+      .setTranslation(pos[0], pos[1], pos[2])
+      .setLinvel(vel[0], vel[1], vel[2])
+      .setAngvel({ x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 4, z: (Math.random() - 0.5) * 8 })
+      .setLinearDamping(0.3)
+      .setAngularDamping(0.4));
+    const volume = shape.r ? Math.PI * shape.r * shape.r * shape.h : 8 * shape.hx * shape.hy * shape.hz;
+    const desc = shape.r ? R.ColliderDesc.cylinder(shape.h / 2, shape.r) : R.ColliderDesc.cuboid(shape.hx, shape.hy, shape.hz);
+    this.world.createCollider(desc.setDensity(mass / volume).setFriction(0.8).setRestitution(0.2), body);
+    return body;
+  }
+
+  removeBody(body) { this.world.removeRigidBody(body); }
+
   // --------------------------------------------------------------- step
 
   /**

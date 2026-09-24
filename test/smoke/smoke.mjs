@@ -43,6 +43,12 @@ function copyDir(src, dst) {
   }
 }
 
+function within(ms, what, promise) {
+  let timer;
+  const limit = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${what} took longer than ${ms / 1000} s`)), ms); });
+  return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
+}
+
 const chromium = await loadChromium();
 if (!chromium) {
   console.log('SKIP  Playwright is not installed; nothing to smoke-test with.');
@@ -78,6 +84,7 @@ try {
   const me = [...room.players.values()][0];
 
   for (const view of views) {
+    const started = Date.now();
     if (view.server) view.server(room, me);
     await page.evaluate((v) => {
       const c = window.casino;
@@ -86,12 +93,14 @@ try {
       if (v.yaw != null) c.controls.yaw = v.yaw;
       if (v.pitch != null) c.controls.pitch = v.pitch;
     }, { pos: view.pos, yaw: view.yaw, pitch: view.pitch, client: view.client ? view.client.toString() : null });
+    // A view that has not finished in 4 minutes is stuck: fail, don't hang.
+    if (view.steps) await within(240_000, view.name, view.steps(page, room, me));
     await page.waitForTimeout(view.wait || 2500);
     const file = path.join(outDir, `${view.name}.png`);
     await page.screenshot({ path: file, timeout: 120_000 });
     const stats = await page.evaluate(() => window.casino.perf.stats());
     summary.push({ view: view.name, ...stats });
-    console.log(`shot  ${view.name.padEnd(14)} ${String(stats.calls).padStart(5)} calls  ${String(Math.round(stats.tris / 1000)).padStart(5)}k tris  ${stats.fps} fps`);
+    console.log(`shot  ${view.name.padEnd(14)} ${String(stats.calls).padStart(5)} calls  ${String(Math.round(stats.tris / 1000)).padStart(5)}k tris  ${stats.fps} fps  ${((Date.now() - started) / 1000).toFixed(0)} s`);
   }
 } catch (err) {
   errors.push(`smoke: ${err.message}`);

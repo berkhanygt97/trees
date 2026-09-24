@@ -29,6 +29,7 @@ export class Fleet {
           id: v.id, model: v.model, mesh, spec: specOf(v.model),
           pos: new THREE.Vector3(), prev: new THREE.Vector3(), target: new THREE.Vector3(),
           yaw: 0, prevYaw: 0, targetYaw: 0, lastUpdate: performance.now(), speed: 0,
+          pitch: 0, roll: 0, targetPitch: 0, targetRoll: 0,
         };
         this.items.set(v.id, e);
       }
@@ -46,6 +47,7 @@ export class Fleet {
         e.prev.copy(e.pos);
         e.target.copy(e.pos);
         e.yaw = e.prevYaw = e.targetYaw = v.yaw;
+        e.pitch = e.roll = e.targetPitch = e.targetRoll = 0;
       }
       e.mine = v.driver && v.driver === myId;
     }
@@ -60,11 +62,11 @@ export class Fleet {
 
   get(id) { return this.items.get(id); }
 
-  /** Snapshot rows: [playerId, x, y, z, yaw, anim, vehicleId, vehicleYaw]. */
+  /** Snapshot rows: [playerId, x, y, z, yaw, anim, vehicleId, vehicleYaw, gun, vehiclePitch, vehicleRoll]. */
   applySnap(rows, myId) {
     const now = performance.now();
     for (const row of rows) {
-      const [pid, x, y, z, , , vid, vyaw] = row;
+      const [pid, x, y, z, , , vid, vyaw, , vp, vr] = row;
       if (!vid || pid === myId) continue;
       const e = this.items.get(vid);
       if (!e) continue;
@@ -72,6 +74,8 @@ export class Fleet {
       e.prevYaw = e.yaw;
       e.target.set(x, y, z);
       e.targetYaw = vyaw;
+      e.targetPitch = vp || 0;
+      e.targetRoll = vr || 0;
       e.speed = e.prev.distanceTo(e.target) * CONFIG.SNAPSHOT_HZ;
       e.lastUpdate = now;
     }
@@ -93,7 +97,7 @@ export class Fleet {
     this.world.dynamicObstacles = [...this.items.values()].map((e) => ({ x: e.pos.x, z: e.pos.z, r: e.spec.radius * 0.9, vehicle: e.id }));
   }
 
-  update(dt, { myCarId, myPos, myYaw, mySpeed, mySteer, camera, night = 0 }) {
+  update(dt, { myCarId, myPos, myYaw, myQuat, mySpeed, mySteer, camera, night = 0 }) {
     const now = performance.now();
     let moved = false;
     for (const e of this.items.values()) {
@@ -106,10 +110,15 @@ export class Fleet {
         const t = Math.min(1.2, (now - e.lastUpdate) / (1000 / CONFIG.SNAPSHOT_HZ));
         e.pos.lerpVectors(e.prev, e.target, t);
         e.yaw = e.prevYaw + shortestAngle(e.prevYaw, e.targetYaw) * Math.min(1, t);
+        // Pitch and roll ease towards the latest: suspension, hills and jumps.
+        const k = Math.min(1, dt * 10);
+        e.pitch += (e.targetPitch - e.pitch) * k;
+        e.roll += (e.targetRoll - e.roll) * k;
         moved = true;
       }
       e.mesh.group.position.copy(e.pos);
-      e.mesh.group.rotation.y = e.yaw;
+      if (e.id === myCarId && myQuat) e.mesh.group.quaternion.copy(myQuat);
+      else e.mesh.group.rotation.set(e.pitch, e.yaw, e.roll, 'YXZ');
       e.mesh.update(dt, e.driver ? (e.id === myCarId ? e.speed : e.speed) : 0, e.id === myCarId ? e.steer : 0);
       const dist = camera.position.distanceTo(e.pos);
       e.mesh.showLabel(!e.driver, dist);

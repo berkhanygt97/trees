@@ -580,6 +580,8 @@ export class Room {
     p.pos[1] = clamp(y, -10, 120);
     p.pos[2] = clamp(z, BOUNDS.minZ, BOUNDS.maxZ);
     if (Number.isFinite(d.y)) p.yaw = d.y;
+    // Where you aim up or down (for your gun on other screens), clamped to sense.
+    p.aimPitch = Number.isFinite(d.ap) ? clamp(d.ap, -1.5, 1.5) : 0;
     p.anim = d.a | 0;
     // Which gun you are holding out, so everyone sees you carrying it.
     p.gunOut = typeof d.g === 'string' && p.guns.includes(d.g) ? d.g : null;
@@ -596,6 +598,9 @@ export class Room {
         v.movedAt = now;
         v.pos = [p.pos[0], p.pos[1], p.pos[2]];
         if (Number.isFinite(d.vy)) v.yaw = d.vy;
+        // Pitch and roll (hills, jumps, suspension) only matter while it moves.
+        v.pitch = Number.isFinite(d.vp) ? clamp(d.vp, -Math.PI, Math.PI) : 0;
+        v.roll = Number.isFinite(d.vr) ? clamp(d.vr, -Math.PI, Math.PI) : 0;
       }
     }
   }
@@ -1427,7 +1432,8 @@ export class Room {
       const snap = [];
       for (const p of this.players.values()) {
         const v = p.vehicle ? this._findVehicle(p, p.vehicle) : null;
-        snap.push([p.id, r2(p.pos[0]), r2(p.pos[1]), r2(p.pos[2]), r2(p.yaw), p.anim, p.vehicle || 0, v ? r2(v.yaw) : 0, p.gunOut || 0]);
+        snap.push([p.id, r2(p.pos[0]), r2(p.pos[1]), r2(p.pos[2]), r2(p.yaw), p.anim, p.vehicle || 0, v ? r2(v.yaw) : 0, p.gunOut || 0,
+          v ? r2(v.pitch || 0) : 0, v ? r2(v.roll || 0) : 0, r2(p.aimPitch || 0)]);
       }
       if (snap.length) this.broadcast('snap', snap, true);
     }

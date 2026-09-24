@@ -4,7 +4,8 @@ import {
   CROP_BY_ID, ITEMS, VEHICLE_BY_ID, IMPLEMENT_BY_ID, nextAction, cropProgress, isWatered,
   DISH_BY_ID, DAY_MS, HOUR_MS, RESTAURANTS,
 } from '/shared/catalog.js';
-import { ALL_STATIONS, PLOTS, TILE, tileAt, tileCenter, groundHeight, padStation } from '/shared/map.js';
+import { ALL_STATIONS, PLOTS, TILE, tileAt, tileCenter, groundHeight, padStation, STATIC_BOXES, RAMPS } from '/shared/map.js';
+import { terrainGrid } from '/shared/terrain.js';
 import { net } from './net.js';
 import { sfx } from './sfx.js';
 import { hud } from './hud.js';
@@ -24,6 +25,8 @@ import { NpcView } from './npcs.js';
 import { Crowd } from './crowd.js';
 import { shadowTexture } from './textures.js';
 import { PerfMeter } from './perf.js';
+import { CameraRig } from './camera.js';
+import { PhysicsWorld } from './physics/world.js';
 
 const canvas = document.getElementById('scene');
 const joinScreen = document.getElementById('join');
@@ -31,7 +34,8 @@ const nameInput = document.getElementById('name');
 const enterBtn = document.getElementById('enter');
 const joinStatus = document.getElementById('join-status');
 
-let renderer, scene, camera, world, fleet, controls, viewModel, smoke, selfAvatar, pipeline, boars, weapons, workers, perf;
+let renderer, scene, camera, world, fleet, controls, viewModel, smoke, selfAvatar, pipeline, boars, weapons, workers, perf, rig;
+let physics = null;               // Rapier, once it has loaded (driving falls back to the simple model until then)
 let jobs = [];                    // today's Job Centre candidates
 let restaurants, npcs, crowd;
 let restaurantList = [];          // who owns which lot on the Strip
@@ -124,6 +128,9 @@ function initScene() {
   fleet = new Fleet(scene, world);
   smoke = new Smoke(scene);
   controls = new Controls(camera, canvas, world);
+  rig = new CameraRig(camera, world);
+  controls.thirdPerson = !rig.firstPerson;
+  controls.chase = controls.thirdPerson;
   pipeline = new Pipeline(renderer);
   perf = new PerfMeter(renderer);
   boars = new BoarView(scene);
@@ -139,17 +146,21 @@ function initScene() {
   boars.onHurt = (e) => sfx.squeal(heard(e) * 0.7);
   boars.onDeath = (e) => sfx.squeal(heard(e));
   weapons = new Weapons({ scene, camera, net, hud, sfx, boars, controls });
+  weapons.aimRay = thirdPersonAim;
   controls.onStep = () => sfx.step();
+  // Without physics (still loading, or switched off) bumps come from the simple model.
   controls.onBump = (v) => {
-    if (v > 9) sfx.deny();
+    if (v > 9) { sfx.crash(Math.min(1, v / 25)); rig.kick(Math.min(0.6, v / 30)); }
     // A hard knock with dinner on board spills it.
     if (v > 9 && hud.wallet.carrying) net.send('spill', {});
   };
-  world.sky.onThunder = () => sfx.alarm && sfx.alarm();
+  world.sky.onThunder = () => sfx.thunder();
+  startPhysics();
 
   // Debug handle: useful when you are hosting and want to poke at the valley.
   window.casino = {
-    THREE, controls, world, fleet, scene, camera, net, hud, gameStates, pipeline, boars, weapons, renderer, perf,
+    THREE, controls, world, fleet, scene, camera, net, hud, gameStates, pipeline, boars, weapons, renderer, perf, rig,
+    get physics() { return physics; },
     get workers() { return workers; },
     get npcs() { return npcs; },
     get restaurants() { return restaurants; },
@@ -171,6 +182,116 @@ function initScene() {
     renderer.setSize(innerWidth, innerHeight);
     pipeline.resize();
   });
+}
+
+// ------------------------------------------------------------------ aiming
+
+/**
+ * Third person: the crosshair is the camera's line of sight, but the bullet
+ * leaves your head. Find what the crosshair is on (a boar, a wall, the
+ * ground) and aim from your head at that point.
+ */
+function thirdPersonAim() {
+  if (rig.firstPerson) return null;
+  const eye = new THREE.Vector3(controls.pos.x, controls.pos.y + 1.6, controls.pos.z);
+  const o = camera.getWorldPosition(new THREE.Vector3());
+  const d = camera.getWorldDirection(new THREE.Vector3());
+  const range = (weapons.gun && weapons.gun.range) || 120;
+  // Anything between the camera and you does not count.
+  const tMin = Math.max(0, eye.clone().sub(o).dot(d));
+  let t = tMin + range;
+  for (const b of boars.aliveList()) {
+    const hit = raySphereT(o, d, b.pos.x, 0.55, b.pos.z, 0.7);
+    if (hit != null && hit > tMin && hit < t) t = hit;
+  }
+  for (const b of world.boxesNear()) {
+    const hit = rayBoxT(o, d, b);
+    if (hit != null && hit > tMin && hit < t) t = hit;
+  }
+  for (let s = tMin; s < Math.min(t, tMin + 160); s += 2) {
+    const p = o.clone().addScaledVector(d, s);
+    if (p.y < groundHeight(p.x, p.z)) { t = s; break; }
+  }
+  const target = o.clone().addScaledVector(d, t);
+  const dir = target.sub(eye).normalize();
+  const right = new THREE.Vector3(Math.cos(controls.facing), 0, -Math.sin(controls.facing));
+  const muzzle = eye.clone().addScaledVector(dir, 0.9).addScaledVector(right, 0.18).add(new THREE.Vector3(0, -0.22, 0));
+  return { o: eye, d: dir, muzzle };
+}
+
+function raySphereT(o, d, cx, cy, cz, r) {
+  const ox = o.x - cx;
+  const oy = o.y - cy;
+  const oz = o.z - cz;
+  const b = ox * d.x + oy * d.y + oz * d.z;
+  const c = ox * ox + oy * oy + oz * oz - r * r;
+  const disc = b * b - c;
+  if (disc < 0) return null;
+  const t = -b - Math.sqrt(disc);
+  return t > 0 ? t : null;
+}
+
+function rayBoxT(o, d, b) {
+  let t0 = 0;
+  let t1 = Infinity;
+  for (const [p, v, lo, hi] of [[o.x, d.x, b.x0, b.x1], [o.y, d.y, -1, b.h || 4], [o.z, d.z, b.z0, b.z1]]) {
+    if (Math.abs(v) < 1e-9) { if (p < lo || p > hi) return null; continue; }
+    let a = (lo - p) / v;
+    let c = (hi - p) / v;
+    if (a > c) [a, c] = [c, a];
+    t0 = Math.max(t0, a);
+    t1 = Math.min(t1, c);
+    if (t0 > t1) return null;
+  }
+  return t0 > 0 ? t0 : null;
+}
+
+// ---------------------------------------------------------------- physics
+
+async function startPhysics() {
+  let mode = 'full';
+  try { mode = localStorage.getItem('valley.physics') || 'full'; } catch { /* default */ }
+  if (mode === 'simple') return;
+  try {
+    const RAPIER = (await import('@dimforge/rapier3d-compat')).default;
+    await RAPIER.init();
+    const p = new PhysicsWorld(RAPIER);
+    p.addTerrain(terrainGrid());
+    p.setBoxes('static', STATIC_BOXES);
+    // Trees, posts and poles are solid; street furniture gets knocked over instead.
+    p.setPosts('posts', world.staticObstacles.filter((o) => !o.prop), groundHeight);
+    p.setRamps(RAMPS);
+    p.onCrash = onCrash;
+    physics = p;
+    syncPhysicsBoxes();
+    controls.physics = p;
+    // Already sitting in a car: hand it over to the simulation.
+    if (controls.car) {
+      p.dropRemote(controls.car.id);
+      p.startDriving(controls.car.model.id, [controls.pos.x, controls.pos.y, controls.pos.z], controls.car.yaw);
+    }
+  } catch (err) {
+    console.warn('[physics] not available, using simple driving:', err.message);
+  }
+}
+
+/** Farm buildings and restaurants appear and move; keep the physics walls in step. */
+function syncPhysicsBoxes() {
+  if (!physics) return;
+  physics.setBoxes('farms', world.farms.boxes);
+  physics.setBoxes('restaurants', restaurants.boxes);
+}
+
+let lastCrash = 0;
+/** Your car hit something. `f` is the impact force per kilo of car. */
+function onCrash(f) {
+  const now = performance.now();
+  if (f < 30 || now - lastCrash < 220) return;
+  lastCrash = now;
+  const k = Math.min(1, f / 320);
+  sfx.crash(k);
+  rig.kick(k * 0.9);
+  if (f > 160 && hud.wallet.carrying) net.send('spill', {});
 }
 
 // ------------------------------------------------------------- net handlers
@@ -199,6 +320,7 @@ net.on('welcome', (d) => {
   restaurants.setList(restaurantList);
   world.extraBoxes = restaurants.boxes;
   for (const ev of d.npcs || []) npcs.onEvent(ev);
+  syncPhysicsBoxes();
 
   selfAvatar = createAvatar({ name: me.name, color: me.color, hat: me.hat, showLabel: false });
   selfAvatar.group.visible = false;
@@ -242,7 +364,7 @@ net.on('players', (list) => {
 });
 
 net.on('snap', (rows) => {
-  for (const [id, x, y, z, yaw, , vid, , gun] of rows) {
+  for (const [id, x, y, z, yaw, , vid, , gun, , , ap] of rows) {
     if (id === me.id) continue;
     const a = avatars.get(id);
     if (!a) continue;
@@ -250,6 +372,7 @@ net.on('snap', (rows) => {
     a.prev.copy(a.target);
     a.target.set(x, y, z);
     a.targetYaw = yaw;
+    a.aimPitch = ap || 0;
     a.vehicle = vid || null;
     a.lastUpdate = performance.now();
   }
@@ -281,6 +404,7 @@ net.on('plot', (p) => {
   if (!world || !p) return;
   world.farms.setPlot(p);
   world.hoods.setOwners([p]);
+  syncPhysicsBoxes();
   if (activePanel && activePanel.ui.onPlot && p.index === hud.wallet.plot) activePanel.ui.onPlot(p);
 });
 
@@ -317,6 +441,7 @@ net.on('restaurants', (list) => {
   if (!restaurants) return;
   restaurants.setList(restaurantList);
   world.extraBoxes = restaurants.boxes;
+  syncPhysicsBoxes();
   if (activePanel && activePanel.ui.repaint) activePanel.ui.repaint();
 });
 net.on('resto', (s) => {
@@ -684,7 +809,10 @@ function machineWork() {
 
 function enterCar(e) {
   const model = VEHICLE_BY_ID[e.model];
+  // It stops being a parked obstacle and becomes the car you drive.
+  if (physics) physics.dropRemote(e.id);
   controls.enterCar({ id: e.id, model, spec: e.spec, pos: [e.pos.x, e.pos.y, e.pos.z], yaw: e.yaw });
+  rig.fresh = true;
   e.driver = me.id;
   net.send('drive', { vid: e.id });
   weapons.holster();
@@ -704,8 +832,10 @@ function leaveCar(tellServer = true) {
   const parked = controls.exitCar();
   if (!parked) return;
   if (tellServer) net.send('drive', { vid: null, pos: parked.pos, yaw: parked.yaw });
-  viewModel.group.visible = true;
-  selfAvatar.group.visible = false;
+  // Park it level where it stopped (the fleet puts it back as a solid body).
+  const e = fleet.get(parked.id || (cockpit && cockpit.id));
+  if (e) { e.pos.set(parked.pos[0], parked.pos[1], parked.pos[2]); e.yaw = parked.yaw; e.mesh.group.quaternion.setFromEuler(new THREE.Euler(0, parked.yaw, 0)); }
+  rig.fresh = true;
   dropCockpit();
   hud.setSpeedo(null);
   hud.showSeeds(hud.wallet.plot >= 0);
@@ -719,6 +849,22 @@ function dropCockpit() {
   for (const m of cockpit.hides || []) m.visible = true;
   cockpit.obj.dispose();
   cockpit = null;
+}
+
+/** Driving into a bin or a hydrant sends it flying. */
+function knockProps(car) {
+  const speed = Math.abs(car.speed);
+  if (speed < 2.5) return;
+  const r = car.spec.radius + 0.4;
+  const v = physics && physics.vehicle ? physics.vehicle.velocity() : { x: -Math.sin(car.yaw) * car.speed, y: 0, z: -Math.cos(car.yaw) * car.speed };
+  for (const o of world.obstaclesNear(controls.pos.x, controls.pos.z)) {
+    if (!o.prop || o.gone) continue;
+    if (Math.hypot(o.x - controls.pos.x, o.z - controls.pos.z) > r + o.r) continue;
+    if (world.props.knock(o.prop, [v.x, v.y, v.z], physics, groundHeight)) {
+      sfx.knock(Math.min(1, speed / 20));
+      if (!physics) car.speed *= 0.92;
+    }
+  }
 }
 
 function cycleImplement() {
@@ -785,14 +931,18 @@ addEventListener('keydown', (e) => {
     else if (nearCar) enterCar(nearCar);
     return;
   }
-  if (e.code === 'KeyV' && controls.car) {
-    controls.chase = !controls.chase;
+  if (e.code === 'KeyV') {
+    // Third person (the default) or first person, on foot and in the car.
+    const mode = rig.toggle();
+    controls.thirdPerson = mode === 'tp';
+    controls.chase = controls.thirdPerson;
     controls.lookYaw = 0;
     controls.lookPitch = controls.chase ? -0.12 : -0.08;
     if (cockpit) {
       cockpit.obj.group.visible = !controls.chase;
       for (const m of cockpit.hides) m.visible = controls.chase;
     }
+    hud.toast(mode === 'tp' ? 'Camera: third person' : 'Camera: first person', 'info');
     return;
   }
   if (e.code === 'F3') {
@@ -888,14 +1038,36 @@ function loop(now) {
   const move = controls.update(dt);
   const { moving, sprinting } = move;
   const car = controls.car;
+  // On foot the world still steps: other people's cars, things you knocked over.
+  if (physics && !car) physics.step(dt);
+
+  // The camera: over your shoulder, behind your car, or your own eyes (V).
+  if (car) {
+    rig.car(dt, {
+      pos: controls.pos, quat: controls.quat, yaw: car.yaw, speed: car.speed, top: car.model.top,
+      lookYaw: controls.lookYaw, lookPitch: controls.lookPitch, spec: car.spec,
+    });
+  } else {
+    rig.foot(dt, { pos: controls.pos, yaw: controls.yaw, pitch: controls.pitch, aiming: weapons.aiming, bob: move.bob || 0 });
+  }
+  weapons.baseFov = car && !rig.firstPerson ? rig.carFov : 78;
 
   fleet.update(dt, {
     myCarId: car ? car.id : null,
-    myPos: controls.pos, myYaw: car ? car.yaw : 0,
+    myPos: controls.pos, myYaw: car ? car.yaw : 0, myQuat: car ? controls.quat : null,
     mySpeed: move.speed || 0, mySteer: move.steer || 0,
     night: world.sky.inside > 0.5 ? 0 : world.sky.night,
     camera,
   });
+  // Every other vehicle is a solid body in the physics world.
+  if (physics) {
+    for (const e of fleet.items.values()) {
+      if (car && e.id === car.id) continue;
+      const q = e.mesh.group.quaternion;
+      physics.setRemote(e.id, e.model, [e.pos.x, e.pos.y, e.pos.z], { x: q.x, y: q.y, z: q.z, w: q.w });
+    }
+    for (const id of physics.remoteIds()) if (!fleet.items.has(id)) physics.dropRemote(id);
+  }
 
   // Remote players: interpolate between the last two snapshots.
   for (const a of avatars.values()) {
@@ -922,14 +1094,28 @@ function loop(now) {
     }
   }
 
-  // Yourself, sat in your own car (seen from the chase camera).
+  // Yourself: seen from behind in third person, sat in your car from the chase camera.
+  if (!car) {
+    const show = !rig.firstPerson && !koUntil;
+    selfAvatar.group.visible = show;
+    viewModel.group.visible = rig.firstPerson;
+    if (show) {
+      selfAvatar.setSeated(false);
+      selfAvatar.group.position.copy(controls.pos);
+      selfAvatar.group.rotation.set(0, controls.facing + Math.PI, 0);
+      selfAvatar.setGun(weapons.held || null);
+      selfAvatar.setAiming && selfAvatar.setAiming(weapons.aiming);
+      selfAvatar.update(dt, moving, sprinting);
+    }
+  }
   if (car) {
     const e = fleet.get(car.id);
     selfAvatar.group.visible = controls.chase && !!e;
     if (e) {
       selfAvatar.setSeated(true);
-      fleet.seatOf(e, selfAvatar.group.position);
-      selfAvatar.group.rotation.y = car.yaw + Math.PI;
+      const [sx, sy, sz] = car.spec.seat;
+      selfAvatar.group.position.set(sx, sy, sz).applyQuaternion(controls.quat).add(controls.pos);
+      selfAvatar.group.quaternion.copy(controls.quat).multiply(HALF_Y);
       selfAvatar.update(dt, false, false);
     }
     hud.setSpeedo({
@@ -937,9 +1123,10 @@ function loop(now) {
       cockpit: !controls.chase, ...carLabel(car),
     });
     if (cockpit) cockpit.obj.update(dt, car.speed, car.model.top, car.steer, world.sky.night);
-    if (e) e.mesh.setAir(Math.max(0, controls.pos.y - groundHeight(controls.pos.x, controls.pos.z)));
+    if (e) e.mesh.setAir(Math.max(0, controls.pos.y - groundHeight(controls.pos.x, controls.pos.z)), !!physics);
     sfx.engineSpeed(car.speed / car.model.top);
     machineWork();
+    knockProps(car);
   }
 
   // Position updates at ~20 Hz; the server relays snapshots at 15 Hz.
@@ -947,9 +1134,13 @@ function loop(now) {
     lastMoveSent = now;
     net.send('move', {
       p: [round2(controls.pos.x), round2(controls.pos.y), round2(controls.pos.z)],
-      y: round2(controls.yaw),
+      // Which way your body faces, and where you are aiming up or down.
+      y: round2(controls.facing),
+      ap: round2(controls.pitch),
       a: moving ? (sprinting ? 2 : 1) : 0,
       vy: car ? round2(car.yaw) : undefined,
+      vp: car ? round2(car.pitch || 0) : undefined,
+      vr: car ? round2(car.roll || 0) : undefined,
       g: weapons.held || undefined,
     });
   }
@@ -970,7 +1161,7 @@ function loop(now) {
     robots: gameStates.robots,
   });
 
-  if (viewModel && !car) viewModel.update(dt, { moving, sprinting, aiming: weapons.aiming });
+  if (viewModel && !car && rig.firstPerson) viewModel.update(dt, { moving, sprinting, aiming: weapons.aiming });
   weapons.update(dt);
   boars.update(dt);
   workers.update(dt, net.now(), camera.position);
@@ -979,6 +1170,7 @@ function loop(now) {
   restaurants.update(dt, world.sky.night);
   updateDelivery(dt);
   smoke.update(dt);
+  world.props.updateLoose(dt, physics);
 
   // What can you do right now?
   nearest = activePanel ? null : findNearest();
@@ -1018,6 +1210,7 @@ function loop(now) {
 }
 
 const round2 = (v) => Math.round(v * 100) / 100;
+const HALF_Y = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 
 function shortestAngle(from, to) {
   let d = (to - from) % (Math.PI * 2);

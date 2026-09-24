@@ -133,6 +133,27 @@ export const sfx = {
   },
   step() { noise({ dur: 0.04, gain: 0.04, bandpass: 420 }); },
 
+  /** A car hitting something: a thump, crunching metal, and glass when it is hard. */
+  crash(k = 0.5) {
+    const v = Math.max(0.1, Math.min(1, k));
+    noise({ dur: 0.18 + v * 0.25, gain: 0.25 + v * 0.35, bandpass: 220 });
+    tone({ freq: 70, type: 'sine', dur: 0.25, gain: 0.3 * v, slide: -30 });
+    noise({ dur: 0.12 + v * 0.2, gain: 0.12 + v * 0.2, bandpass: 1800, delay: 0.02 });
+    if (v > 0.6) {
+      // Glass.
+      for (let i = 0; i < 4; i++) tone({ freq: 2400 + Math.random() * 2200, type: 'triangle', dur: 0.08, gain: 0.05, delay: 0.05 + i * 0.03 });
+    }
+  },
+  /** Scraping along a wall. */
+  scrape(k = 0.5) { noise({ dur: 0.1, gain: 0.08 + 0.1 * k, bandpass: 2800 }); },
+  /** Knocking over a bin or a hydrant. */
+  knock(k = 0.5) { noise({ dur: 0.1, gain: 0.18 * k + 0.05, bandpass: 700 }); tone({ freq: 240, type: 'triangle', dur: 0.1, gain: 0.08 * k }); },
+  /** Thunder: a low rolling rumble. */
+  thunder() {
+    noise({ dur: 2.2, gain: 0.35, bandpass: 120 });
+    noise({ dur: 1.2, gain: 0.25, bandpass: 300, delay: 0.1 });
+  },
+
   // --------------------------------------------------------------- guns
   /** `vol` falls off with distance for other people's shots. */
   gunshot(kind = 'rifle', vol = 1) {

@@ -13,8 +13,12 @@ export class Controls {
 
     this.pos = new THREE.Vector3(0, 0, 60);
     this.vel = new THREE.Vector3();
-    this.yaw = 0;   // looking down -Z
+    this.yaw = 0;   // where the camera looks (down -Z at 0)
     this.pitch = 0;
+    this.facing = 0;        // which way your body faces (third person turns you to where you walk)
+    this.thirdPerson = true;
+    this.physics = null;    // the Rapier world once it has loaded (physics/world.js)
+    this.quat = new THREE.Quaternion();   // your car's full orientation while driving
     this.onGround = true;
     this.keys = new Set();
     this.enabled = true;
@@ -24,9 +28,9 @@ export class Controls {
     this.onStep = null;
     this.onBump = null;
 
-    // Set while driving: { id, model, spec, yaw, speed, steer, vy, air }.
+    // Set while driving: { id, model, spec, yaw, pitch, roll, speed, steer, vy, air }.
     this.car = null;
-    this.chase = false;     // first person from the driver's seat by default
+    this.chase = true;      // chase camera (third person) or the driver's seat
     this.frozen = false;    // knocked out: no control until you come round
     this.aiming = false;
     this.lookYaw = 0;       // mouse look relative to the car
@@ -84,10 +88,13 @@ export class Controls {
   // ------------------------------------------------------------- vehicles
 
   enterCar({ id, model, spec, pos, yaw }) {
-    this.car = { id, model, spec, yaw, speed: 0, steer: 0, vy: 0, air: false };
+    this.car = { id, model, spec, yaw, pitch: 0, roll: 0, speed: 0, steer: 0, vy: 0, air: false };
     this.pos.set(pos[0], pos[1] || 0, pos[2]);
+    this.quat.setFromEuler(new THREE.Euler(0, yaw, 0, 'YXZ'));
     this.lookYaw = 0;
     this.lookPitch = this.chase ? -0.12 : -0.08;
+    // With physics loaded, the car is a real simulated body from here on.
+    if (this.physics) this.physics.startDriving(model.id, [this.pos.x, this.pos.y, this.pos.z], yaw);
   }
 
   /** A boar hit you: shove you away from it and up off your feet. */
@@ -103,7 +110,8 @@ export class Controls {
   exitCar() {
     const c = this.car;
     if (!c) return null;
-    const parked = { pos: [this.pos.x, groundHeight(this.pos.x, this.pos.z), this.pos.z], yaw: c.yaw };
+    if (this.physics) this.physics.stopDriving();
+    const parked = { id: c.id, pos: [this.pos.x, groundHeight(this.pos.x, this.pos.z), this.pos.z], yaw: c.yaw };
     const side = c.spec.radius + 1.0;
     const rx = Math.cos(c.yaw);
     const rz = -Math.sin(c.yaw);
@@ -111,6 +119,7 @@ export class Controls {
     this.pos.x -= rx * side;
     this.pos.z -= rz * side;
     this.yaw = c.yaw;
+    this.facing = c.yaw;
     this.pitch = 0;
     this.vel.set(0, 0, 0);
     this._resolve(PLAYER_R);
@@ -136,7 +145,8 @@ export class Controls {
       if (k.has('KeyA') || k.has('ArrowLeft')) strafe -= 1;
     }
 
-    const sprinting = active && (k.has('ShiftLeft') || k.has('ShiftRight')) && fwd > 0 && !this.aiming;
+    // Third person: sprint whichever way you are going; first person: forwards only.
+    const sprinting = active && (k.has('ShiftLeft') || k.has('ShiftRight')) && (fwd > 0 || (this.thirdPerson && (fwd || strafe))) && !this.aiming;
     const speed = (sprinting ? CONFIG.SPRINT_SPEED : CONFIG.WALK_SPEED) * (this.aiming ? 0.5 : 1);
     const moving = fwd !== 0 || strafe !== 0;
 
@@ -150,6 +160,13 @@ export class Controls {
       const s = strafe / len;
       dx = (-sin * f + cos * s) * speed;
       dz = (-cos * f - sin * s) * speed;
+    }
+
+    // Which way you face: where you walk (third person), or where you aim or look.
+    if (!this.thirdPerson || this.aiming) this.facing = this.yaw;
+    else if (moving && this.onGround) {
+      const want = Math.atan2(-dx, -dz);
+      this.facing += shortestAngle(this.facing, want) * Math.min(1, dt * 12);
     }
 
     // Snappy but not frictionless (and no steering at all mid-knockback).
@@ -184,16 +201,43 @@ export class Controls {
       this.bob += dt * 1.6;
     }
     const bobY = (moving && this.onGround ? 0.055 : 0.012) * Math.sin(this.bob);
+    return { moving, sprinting, bob: bobY };
+  }
 
-    this.camera.position.set(this.pos.x, this.pos.y + CONFIG.EYE_HEIGHT + bobY, this.pos.z);
-    this.camera.rotation.set(0, 0, 0);
-    this.camera.rotateY(this.yaw);
-    this.camera.rotateX(this.pitch);
+  /** Keys to a driving input: throttle -1..1, steer -1 (left) .. 1 (right), handbrake. */
+  _input() {
+    const k = this.keys;
+    const active = this.locked && this.enabled;
+    const gas = active && (k.has('KeyW') || k.has('ArrowUp'));
+    const brake = active && (k.has('KeyS') || k.has('ArrowDown'));
+    const left = active && (k.has('KeyA') || k.has('ArrowLeft'));
+    const right = active && (k.has('KeyD') || k.has('ArrowRight'));
+    return { throttle: (gas ? 1 : 0) - (brake ? 1 : 0), steer: (right ? 1 : 0) - (left ? 1 : 0), handbrake: active && k.has('Space') };
+  }
 
-    return { moving, sprinting };
+  /** Driving with real physics: the simulation moves the car, we read it back. */
+  _physicsDrive(dt) {
+    const c = this.car;
+    const input = this._input();
+    const pose = this.physics.step(dt, input);
+    if (!pose) return { moving: false, sprinting: false, speed: 0, steer: 0 };
+    this.pos.set(pose.pos[0], pose.pos[1], pose.pos[2]);
+    this.quat.set(pose.quat.x, pose.quat.y, pose.quat.z, pose.quat.w);
+    c.yaw = pose.yaw;
+    c.pitch = pose.pitch;
+    c.roll = pose.roll;
+    c.speed = this.physics.vehicle.speed;
+    c.steer += (input.steer - c.steer) * Math.min(1, dt * 8);
+    c.air = this.physics.vehicle.airTime > 0.2;
+    if (this.chase) this.lookYaw *= Math.pow(0.35, dt * (Math.abs(c.speed) > 3 ? 1 : 0.2));
+    this.yaw = c.yaw;
+    this.facing = c.yaw;
+    this.bob += dt;
+    return { moving: Math.abs(c.speed) > 0.3, sprinting: false, speed: c.speed, steer: -c.steer };
   }
 
   _drive(dt) {
+    if (this.physics && this.physics.vehicle) return this._physicsDrive(dt);
     const c = this.car;
     const m = c.model;
     const k = this.keys;
@@ -254,28 +298,11 @@ export class Controls {
       }
     }
 
-    // Camera: chase cam by default, V for the driver's seat.
-    const lookYaw = c.yaw + this.lookYaw;
+    // (The camera itself is placed by camera.js.)
     if (this.chase) this.lookYaw *= Math.pow(0.35, dt * (Math.abs(c.speed) > 3 ? 1 : 0.2));
-    if (this.chase) {
-      const [, h, dist] = c.spec.cam;
-      const back = new THREE.Vector3(Math.sin(lookYaw), 0, Math.cos(lookYaw));
-      const lift = h + this.lookPitch * -6;
-      this.camera.position.set(this.pos.x + back.x * dist, this.pos.y + Math.max(1.2, lift), this.pos.z + back.z * dist);
-      this.camera.lookAt(this.pos.x, this.pos.y + 1.4, this.pos.z);
-    } else {
-      const [sx, sy, sz] = c.spec.seat;
-      const cos = Math.cos(c.yaw);
-      const sin = Math.sin(c.yaw);
-      // Seat offset in the car's frame (x right, z back).
-      const wx = this.pos.x + sx * cos + sz * sin;
-      const wz = this.pos.z - sx * sin + sz * cos;
-      this.camera.position.set(wx, this.pos.y + sy + c.spec.eye * 0.9, wz);
-      this.camera.rotation.set(0, 0, 0);
-      this.camera.rotateY(lookYaw);
-      this.camera.rotateX(this.lookPitch);
-    }
+    this.quat.setFromEuler(new THREE.Euler(0, c.yaw, 0, 'YXZ'));
     this.yaw = c.yaw;
+    this.facing = c.yaw;
     this.bob += dt;
     return { moving: Math.abs(c.speed) > 0.3, sprinting: false, speed: c.speed, steer: c.steer };
   }
@@ -288,6 +315,7 @@ export class Controls {
     for (let pass = 0; pass < 2; pass++) {
       for (const o of this.world.obstaclesNear(this.pos.x, this.pos.z)) {
         if (ignoreVehicle && o.vehicle === ignoreVehicle) continue;
+        if (o.gone) continue;             // knocked over
         const dx = this.pos.x - o.x;
         const dz = this.pos.z - o.z;
         const min = o.r + r;
@@ -329,4 +357,11 @@ export class Controls {
     this.pos.z = Math.max(BOUNDS.minZ + m, Math.min(BOUNDS.maxZ - m, this.pos.z));
     return hit;
   }
+}
+
+function shortestAngle(from, to) {
+  let d = (to - from) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return d;
 }
