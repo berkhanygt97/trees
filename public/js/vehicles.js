@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { pbr, metal, glass } from './gfx/materials.js';
+import { pbr, metal, glass, carPaint, carGlass } from './gfx/materials.js';
 import { VEHICLE_BY_ID } from '/shared/catalog.js';
 import { labelSprite, shadowTexture } from './textures.js';
 import { mergeGeometries } from './merge.js';
@@ -7,23 +7,55 @@ import { mergeGeometries } from './merge.js';
 // Cars have shaped bodies: a side profile (sloping bonnet, raked windscreen,
 // boot, wheel arches) extruded to the car's width with rounded edges, a glass
 // cabin on top with pillars and a roof, chrome bumpers, a grille and mirrors.
-// Paint, glass and chrome reflect the live sky (scene.environment). Machines
-// (tractor, combine, scooter) are built from parts.
+// Lacquered paint (metal flakes under a clear coat), chrome and see-through
+// glass reflect the live sky (scene.environment); through the glass, seats,
+// a dashboard and a steering wheel. Head and tail lamps glow (brighter at
+// night, the brake lights when slowing). Machines (tractor, combine,
+// scooter) are built from parts.
 // Local frame: forward is -Z (the same as a player's yaw), up is +Y.
 
 
 const phong = (color, o = {}) => pbr(color, { shininess: 40, ...o });
-// Car paint is glossy; the sky's reflections come from scene.environment.
-const shiny = (color, o = {}) => pbr(color, { roughness: 0.28, metalness: 0.15, ...o });
-const GLASS = glass(0x141c26);
-const TYRE = phong(0x151515, { roughness: 0.92 });
-const RIM = metal(0xc8c8c8, 0.25);
-const CHROME = metal(0xffffff, 0.08);
+const GLASS = carGlass();
+const MACHINE_GLASS = glass(0x141c26);
+const TYRE = phong(0x151515, { roughness: 0.85, normalMap: treadMap(), normalScale: new THREE.Vector2(1.2, 1.2) });
+const UNDER = phong(0x0e0e0f, { roughness: 0.95 });
+const RIM = metal(0xc8c8c8, 0.22);
+const CHROME = metal(0xffffff, 0.06);
 const GRILLE = phong(0x1a1a1c, { roughness: 0.6 });
+// Lamp lenses: plain colours (no shading), turned up past white so they glow.
 const HEAD = new THREE.MeshBasicMaterial({ color: 0xfff6d0 });
 const TAIL = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
 const DARK = phong(0x222226, { shininess: 10 });
-const TINT = glass(0x121820);
+const TINT = carGlass(0x121820, { opacity: 0.6 });
+const SEAT = pbr(0x2a2826, { roughness: 0.9 });
+const DASH = pbr(0x1b1b1e, { roughness: 0.55 });
+
+/** A tyre's tread: blocks across it and two grooves round it (u round, v across). */
+function treadMap() {
+  const W = 256;
+  const H = 32;
+  const cv = document.createElement('canvas');
+  cv.width = W;
+  cv.height = H;
+  const g = cv.getContext('2d');
+  g.fillStyle = 'rgb(128,128,255)';
+  g.fillRect(0, 0, W, H);
+  // Groove walls as slopes: a dark edge and a light edge each side of a cut.
+  for (let x = 0; x < W; x += 8) {
+    g.fillStyle = 'rgb(70,128,230)'; g.fillRect(x, 0, 1, H);
+    g.fillStyle = 'rgb(186,128,230)'; g.fillRect(x + 2, 0, 1, H);
+  }
+  for (const y of [9, 22]) {
+    g.fillStyle = 'rgb(128,70,230)'; g.fillRect(0, y, W, 1);
+    g.fillStyle = 'rgb(128,186,230)'; g.fillRect(0, y + 2, W, 1);
+  }
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(3, 1);
+  t.anisotropy = 4;
+  return t;
+}
 
 /** Physical dimensions the controls and the farm need. */
 export const SPECS = {
@@ -51,18 +83,18 @@ function box(parent, w, h, d, x, y, z, mat) {
 
 function wheel(parent, r, w, x, y, z, wheels, spokes = 0) {
   const g = new THREE.Group();
-  const tyre = new THREE.Mesh(new THREE.CylinderGeometry(r, r, w, 18), TYRE);
+  const tyre = new THREE.Mesh(new THREE.CylinderGeometry(r, r, w, 30), TYRE);
   tyre.rotation.z = Math.PI / 2;
   g.add(tyre);
   if (spokes) {
     // An alloy: a dark dish behind a silver lip, `spokes` spokes and a hub
     // (the silver merged into one mesh, so it costs what the plain rim did).
-    const dish = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.64, r * 0.64, w + 0.01, 14), DARK);
+    const dish = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.64, r * 0.64, w + 0.01, 24), DARK);
     dish.rotation.z = Math.PI / 2;
     g.add(dish);
     const silver = [
-      new THREE.CylinderGeometry(r * 0.7, r * 0.7, w + 0.005, 14, 1, true).rotateZ(Math.PI / 2),
-      new THREE.CylinderGeometry(r * 0.16, r * 0.16, w + 0.05, 8).rotateZ(Math.PI / 2),
+      new THREE.CylinderGeometry(r * 0.7, r * 0.7, w + 0.005, 24, 1, true).rotateZ(Math.PI / 2),
+      new THREE.CylinderGeometry(r * 0.16, r * 0.16, w + 0.05, 12).rotateZ(Math.PI / 2),
     ];
     for (let i = 0; i < spokes; i++) {
       const a = (i / spokes) * Math.PI * 2;
@@ -71,7 +103,7 @@ function wheel(parent, r, w, x, y, z, wheels, spokes = 0) {
     g.add(new THREE.Mesh(mergeGeometries(silver), RIM));
     for (const geo of silver) geo.dispose();
   } else {
-    const rim = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.55, r * 0.55, w + 0.02, 10), RIM);
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.55, r * 0.55, w + 0.02, 20), RIM);
     rim.rotation.z = Math.PI / 2;
     g.add(rim);
     // A spoke so you can see it turn.
@@ -87,7 +119,7 @@ function wheel(parent, r, w, x, y, z, wheels, spokes = 0) {
 /** Extrudes a side profile (u forward, v up) to `width`, centred, facing -Z. */
 function profileMesh(shape, width, mat, bevel = 0.06) {
   const geo = new THREE.ExtrudeGeometry(shape, {
-    depth: Math.max(0.01, width - bevel * 2), bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 6,
+    depth: Math.max(0.01, width - bevel * 2), bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 4, curveSegments: 12,
   });
   // Extruded along +Z with u along +X: turn it so u runs to -Z (forward) and the width runs along X.
   geo.rotateY(Math.PI / 2);
@@ -181,8 +213,42 @@ function car(g, wheels, paint, o) {
       pillar(baseB, roofB, x);                 // C pillars, along the rear screen
       if (cabLen > 1.4) box(g, 0.09, cabH, 0.12, x, belt + cabH / 2, -cu, paint);   // B pillar
     }
-    // Wing mirrors.
-    for (const sx of [-1, 1]) box(g, 0.16, 0.1, 0.12, sx * (wid / 2 + 0.06), belt + 0.08, -(baseF - 0.2), paint);
+    // Wing mirrors: a stalk, a rounded housing, the glass facing back.
+    for (const sx of [-1, 1]) {
+      const mz = -(baseF - 0.2);
+      box(g, 0.1, 0.03, 0.05, sx * (wid / 2 + 0.01), belt + 0.06, mz, DARK);
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), paint);
+      shell.scale.set(0.1, 0.065, 0.07);
+      shell.position.set(sx * (wid / 2 + 0.1), belt + 0.09, mz);
+      g.add(shell);
+      const face = new THREE.Mesh(new THREE.CircleGeometry(1, 16), CHROME);
+      face.scale.set(0.085, 0.052, 1);
+      face.position.set(sx * (wid / 2 + 0.1), belt + 0.09, mz + 0.05);
+      g.add(face);
+    }
+    // Door handles.
+    const doors = cabLen > 1.4 ? [-cu - 0.35, -cu + cabLen * 0.35] : [-cu - 0.1];
+    for (const sx of [-1, 1]) for (const z of doors) box(g, 0.02, 0.035, 0.16, sx * (wid / 2 + 0.07), belt - 0.1, z, CHROME);
+
+    // Inside, seen through the glass (hidden from the driver's own seat,
+    // where the cockpit has its own): dashboard, steering wheel, seats.
+    const inside = [];
+    inside.push(box(g, wid - 0.3, 0.16, 0.38, 0, belt + 0.02, -(baseF - 0.32), DASH));
+    const wheelX = -(wid / 2 - 0.55);
+    const steering = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.022, 8, 24), DASH);
+    steering.position.set(wheelX, belt + 0.14, -(baseF - 0.62));
+    steering.rotation.x = -0.45;
+    g.add(steering);
+    inside.push(steering);
+    const seatZ = -cu + Math.min(0.35, cabLen * 0.2);
+    for (const sx of [-1, 1]) {
+      const x = sx * (wid / 2 - 0.55);
+      const back = box(g, 0.46, 0.5, 0.12, x, belt + 0.14, seatZ, SEAT);
+      back.rotation.x = 0.18;
+      inside.push(back, box(g, 0.24, 0.14, 0.1, x, belt + 0.46, seatZ + 0.06, SEAT));
+    }
+    if (cabLen > 1.4) inside.push(box(g, wid - 0.4, 0.42, 0.12, 0, belt + 0.1, -cu + cabLen * 0.42, SEAT));
+    g.userData.riderHides = [...(g.userData.riderHides || []), ...inside];
   }
 
   // Chrome bumpers, a grille, lights, a number plate, exhaust. The body's
@@ -217,7 +283,7 @@ function car(g, wheels, paint, o) {
   pipe.position.set(wid / 2 - 0.35, lift + 0.08, L + 0.08);
   g.add(pipe);
   // Under the car, dark, so the arches read as holes.
-  box(g, wid - 0.2, 0.08, len - 0.6, 0, lift + 0.04, 0, TYRE);
+  box(g, wid - 0.2, 0.08, len - 0.6, 0, lift + 0.04, 0, UNDER);
   const wx = wid / 2 - 0.05;
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) wheel(g, wheelR, 0.3, sx * wx, wheelR, sz * wz, wheels, o.spokes || 0);
   return body;
@@ -362,7 +428,7 @@ const BUILDERS = {
   },
   combine(g, wheels, paint) {
     box(g, 3.0, 2.6, 5.4, 0, 2.2, 0.8, paint);              // body
-    box(g, 2.0, 1.4, 1.8, 0, 4.1, -1.2, GLASS);             // cab
+    box(g, 2.0, 1.4, 1.8, 0, 4.1, -1.2, MACHINE_GLASS);     // cab
     box(g, 2.1, 0.12, 1.9, 0, 4.85, -1.2, paint);
     box(g, 1.4, 0.8, 1.4, 0, 3.9, 2.4, DARK);               // grain tank lid
     const pipe = box(g, 0.35, 0.35, 3.2, 1.7, 3.6, 1.6, paint);   // unloading auger
@@ -430,8 +496,19 @@ export function buildVehicle(modelId, color = '#d93a3a', { implement = null, lab
   const body = new THREE.Group();
   group.add(body);
   const wheels = [];
-  const paint = shiny(color);
+  const paint = carPaint(color, { metallic: model.body === 'hatch' || model.kind === 'machine' ? 0 : 0.35, worn: model.body === 'hatch' });
   BUILDERS[model.body](body, wheels, paint);
+  // Its own lamps, so each car can switch them on and brake on its own.
+  const head = HEAD.clone();
+  const tail = TAIL.clone();
+  body.traverse((o) => {
+    if (o.material === HEAD) o.material = head;
+    else if (o.material === TAIL) o.material = tail;
+  });
+  const HEAD_RGB = new THREE.Color(0xfff6d0);
+  const TAIL_RGB = new THREE.Color(0xff2a2a);
+  let lastSpeed = 0;
+  let brake = 0;
 
   const spec = SPECS[model.body];
 
@@ -482,9 +559,19 @@ export function buildVehicle(modelId, color = '#d93a3a', { implement = null, lab
       const k = Math.min(1, Math.max(0.35, distance / 10));
       tag.scale.set(tag.userData.base.x * k, tag.userData.base.y * k, 1);
     },
-    /** Spin the wheels at road speed, and point the front ones into the turn. */
-    update(dt, speed, steer = 0) {
+    /**
+     * Spin the wheels at road speed, and point the front ones into the turn.
+     * `night` (0..1) and `driven` light the lamps; slowing down lights the brakes.
+     */
+    update(dt, speed, steer = 0, night = 0, driven = false) {
       spin += dt * speed;
+      const slowing = dt > 0 && driven && (Math.abs(lastSpeed) - Math.abs(speed)) / dt > 3;
+      lastSpeed = speed;
+      brake = slowing || (driven && Math.abs(speed) < 0.3) ? 1 : Math.max(0, brake - dt * 4);
+      const on = driven ? Math.min(1, night * 2) : 0;
+      // Linear colours past 1 glow through the bloom.
+      head.color.copy(HEAD_RGB).multiplyScalar(0.8 + on * 6);
+      tail.color.copy(TAIL_RGB).multiplyScalar(0.45 + on * 1.6 + brake * (driven ? 5 : 0));
       for (const w of wheels) {
         w.g.rotation.x = -spin / w.r;
         w.g.rotation.y = w.front && model.id !== 'combine' ? steer * 0.45 : 0;
@@ -494,8 +581,10 @@ export function buildVehicle(modelId, color = '#d93a3a', { implement = null, lab
     dispose() {
       group.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
-        if (o.material === paint) paint.dispose();
       });
+      paint.dispose();
+      head.dispose();
+      tail.dispose();
       if (tag) { tag.material.map.dispose(); tag.material.dispose(); }
     },
   };

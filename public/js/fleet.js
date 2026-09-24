@@ -119,7 +119,7 @@ export class Fleet {
       e.mesh.group.position.copy(e.pos);
       if (e.id === myCarId && myQuat) e.mesh.group.quaternion.copy(myQuat);
       else e.mesh.group.rotation.set(e.pitch, e.yaw, e.roll, 'YXZ');
-      e.mesh.update(dt, e.driver ? (e.id === myCarId ? e.speed : e.speed) : 0, e.id === myCarId ? e.steer : 0);
+      e.mesh.update(dt, e.driver ? e.speed : 0, e.id === myCarId ? e.steer : 0, night, !!e.driver);
       const dist = camera.position.distanceTo(e.pos);
       e.mesh.showLabel(!e.driver, dist);
       // Headlights throw a pool of light down the road after dark.

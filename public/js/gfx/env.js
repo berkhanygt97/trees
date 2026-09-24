@@ -96,3 +96,33 @@ export class Environment {
     return rt.texture;
   }
 }
+
+/**
+ * A photo studio as an environment, for previews with no sky of their own
+ * (the dealer's turntable): a grey room, a bright softbox overhead and two
+ * strip lights at the sides, so paint and chrome have something to show.
+ */
+export function studioEnvironment(renderer) {
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const scene = new THREE.Scene();
+  const room = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    vertexShader: 'varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `varying vec3 vDir;
+      void main() {
+        vec3 d = normalize(vDir);
+        vec3 c = mix(vec3(0.05), vec3(0.32), smoothstep(-0.3, 0.6, d.y));
+        c += vec3(4.0) * smoothstep(0.93, 0.97, d.y);
+        c += vec3(2.2) * smoothstep(0.08, 0.02, abs(d.y - 0.25)) * smoothstep(0.7, 0.9, abs(d.x));
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+  }));
+  room.scale.setScalar(50);
+  scene.add(room);
+  const rt = pmrem.fromScene(scene, 0.03);
+  room.geometry.dispose();
+  room.material.dispose();
+  pmrem.dispose();
+  return rt.texture;
+}

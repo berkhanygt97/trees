@@ -21,9 +21,13 @@ The winner takes the pot and runs the loser's hood for a day.
 
 It plays in the third person with a spring chase camera, real car physics
 (suspension, drifts, jumps and crashes), jointed people who walk, run, aim
-and fall, sun shadows, bloom and street lamps that light the road at night,
-a rotating radar and a clock, money and health in the corner — the look of a
-2004 open-world console game, on purpose. The town has its regulars too: the
+and fall, a rotating radar and a clock, money and health in the corner. It
+is drawn the modern way: physically based materials, a real sky with a moving
+sun, drifting clouds, stars and a moon, soft shadows, ambient occlusion,
+bloom and light shafts, fog that thickens in the rain, trees and grass that
+sway in the wind, lacquered cars with glass you can see through, and people
+with sculpted faces, real eyes, hair and fingers. It picks its own settings
+for your machine (see [Graphics](#graphics)). The town has its regulars too: the
 pizza guy, an old timer, tourists in loud shirts, patrol cops, a federal agent,
 bikers and a bouncer walk the pavements, and gang members come in flannels,
 big sweaters, hoodies and twists. The casino, the race track, the boars
@@ -179,8 +183,8 @@ decided on the host, so nobody can cheat by editing their browser.
 | `G` | Swap the tractor's implement |
 | `Esc` (or `Q`) | Leave a shop or table |
 | `Tab` | Rich list and your storage |
-| `P` | Graphics: PS2 (soft) → Sharp → Potato |
-| `F3` | Frame rate and draw calls |
+| `P` | Graphics: Auto → Ultra → High → Medium → Low |
+| `F3` | Frame rate, draw calls, the graphics setting and render scale |
 | `H` | Help |
 | `C` | Smoke your cigar |
 | `M` | Mute |
@@ -551,6 +555,38 @@ hoods tinted in their owners' colours, other players, your clubhouse (**H**),
 your restaurants (**R**), delivery doors, raiders, dropped bags of money (**$**).
 The name of the place you walk into appears in the corner.
 
+### Graphics
+
+`P` cycles the graphics setting; the choice is remembered per browser.
+
+| Setting | For | What changes |
+|---|---|---|
+| **Auto** (default) | everyone | Starts on High and steps down while the game can't hold about 45 fps |
+| Ultra | a dedicated graphics card | 1.5× resolution, 4096 shadows over 160 m, ambient occlusion, light shafts, 60k grass blades, 8 lamps |
+| High | recent laptops | 2048 shadows, ambient occlusion, SMAA, 30k grass blades, 4 lamps |
+| Medium | older laptops | 1024 shadows, FXAA, 12k grass blades, 2 lamps, a shorter view |
+| Low | anything | No shadows, grass or ambient occlusion; the textures and sky stay |
+
+On every setting, **dynamic resolution** draws the world a little smaller
+when a frame runs late and sharpens it back up to the screen, to hold about
+58 fps. `localStorage['valley.dynres'] = '0'` turns it off. Each guest's own
+computer draws their game, so a slow laptop at the party only changes
+things for that guest.
+
+**Photo textures (optional).** The game makes all its own textures when it
+starts. For real photos of asphalt, paving, brick, plaster, roof tiles,
+corrugated iron, planks, gravel, dirt, grass, rock and sand (free CC0 scans
+from [Poly Haven](https://polyhaven.com)), run this once on the host, with
+internet:
+
+```bash
+npm run textures          # about 25 MB, into public/assets/cc0/
+npm run textures -- --2k  # sharper, about 90 MB
+```
+
+Restart the game and every guest gets them from the host. Delete the folder
+to go back to the generated ones.
+
 ---
 
 ## How it fits together
@@ -599,7 +635,9 @@ public/js/
   fleet.js        every vehicle in the world, parked or moving
   sky.js          sun (with shadows), moon, stars, rain, lightning, fog and draw distance
   controls.js     walking, driving (physics or the simple fallback) and collision
-  post.js         the PS2 look: low-res render, bloom, colour grade, dither
+  post.js         the renderer: HDR, ambient occlusion, bloom, light shafts, tone mapping, anti-aliasing, sharpening
+  gfx/            graphics settings (quality.js), sky and fog (atmosphere.js), reflections (env.js),
+                  materials and generated surfaces, photo textures, terrain blending, trees, grass
   batcher.js      merges everything that never moves, per material per patch of ground
   radar.js        the rotating radar
   unitsview.js    gang members and raiders, between the server's snapshots
@@ -607,7 +645,7 @@ public/js/
   avatar.js       your farmer and your first-person hands
   guns.js · weapons.js  every gun; aiming, firing, recoil, tracers
   cockpit.js      dashboards, instrument clusters and the steering wheel
-  people.js       low-poly townsfolk: five draw calls a person
+  people.js       townsfolk: crowd looks dressed as characters, their poses and what they carry
   gallery.js      /gallery.html: the cast and every car side by side
   workersview.js · npcs.js · crowd.js  hired hands, customers, passers-by
   restaurantview.js restaurants inside and out, cottages
@@ -639,8 +677,9 @@ Your car is simulated on your own screen with the Rapier physics engine
 a solid moving body in their physics. The ground is the same terrain function
 everywhere, so nobody's car floats or sinks.
 
-There are still no image, audio or font files in the project. Every texture is
-drawn into a `<canvas>` at startup and every sound is synthesised.
+There are no image, audio or font files in the project. Every texture is
+drawn into a `<canvas>` at startup (unless you fetch the optional photo
+textures, see [Graphics](#graphics)) and every sound is synthesised.
 
 ## Development
 
@@ -654,7 +693,9 @@ npm run test:smoke                # loads the real game in headless Chromium and
 
 Open `http://localhost:3000/gallery.html` to see the whole cast and every car
 without playing: `#cast`, `#faces`, `#cars`, or `#look=biker` for a turntable
-(arrow keys change who, dragging turns them).
+(arrow keys change who, dragging turns them; add `&close` for a close-up).
+`SMOKE_GFX=ultra npm run test:smoke` takes the screenshots on another graphics
+setting (Medium by default).
 
 The browser console exposes `window.casino` (`controls`, `world`, `fleet`,
 `hud`, `units`, `physics`, `worldTime()`…), so `casino.controls.pos.set(x, 0, z)`

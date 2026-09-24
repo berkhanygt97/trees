@@ -77,5 +77,54 @@ export const lambert = (color, o = {}) => pbr(color, { roughness: 0.95, ...o });
 /** Bare metal: chrome, steel, brass. */
 export const metal = (color, roughness = 0.2, o = {}) => pbr(color, { metalness: 1, roughness, ...o });
 
+let flakes = null;
+
+/** Tiny random bumps: the metal flakes under a car's lacquer. */
+function flakeMap() {
+  if (flakes) return flakes;
+  const n = 64;
+  const data = new Uint8Array(n * n * 4);
+  let s = 99;
+  const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  for (let i = 0; i < n * n; i++) {
+    const x = (rnd() - 0.5) * 0.5;
+    const y = (rnd() - 0.5) * 0.5;
+    data[i * 4] = (x * 0.5 + 0.5) * 255;
+    data[i * 4 + 1] = (y * 0.5 + 0.5) * 255;
+    data[i * 4 + 2] = Math.sqrt(1 - x * x - y * y) * 127 + 128;
+    data[i * 4 + 3] = 255;
+  }
+  flakes = new THREE.DataTexture(data, n, n);
+  flakes.wrapS = flakes.wrapT = THREE.RepeatWrapping;
+  flakes.repeat.set(12, 12);
+  flakes.magFilter = THREE.NearestFilter;
+  flakes.generateMipmaps = true;
+  flakes.minFilter = THREE.LinearMipmapLinearFilter;
+  flakes.needsUpdate = true;
+  return flakes;
+}
+
+/**
+ * Car paint: a coloured base with metal flakes (`metallic` 0..1) under a
+ * clear lacquer that mirrors the sky. `worn` takes the shine off an old banger.
+ */
+export function carPaint(color, { metallic = 0.35, worn = false } = {}) {
+  return new THREE.MeshPhysicalMaterial({
+    color,
+    metalness: metallic * 0.6,
+    roughness: worn ? 0.6 : 0.38,
+    normalMap: metallic > 0 ? flakeMap() : null,
+    normalScale: new THREE.Vector2(0.35, 0.35),
+    clearcoat: worn ? 0.25 : 1,
+    clearcoatRoughness: worn ? 0.3 : 0.04,
+    envMapIntensity: 1.1,
+  });
+}
+
+/** Car windows: tinted and see-through, with the sky sliding across them. */
+export const carGlass = (color = 0x18222c, o = {}) => pbr(color, {
+  roughness: 0.03, metalness: 0, envMapIntensity: 2.2, transparent: true, opacity: 0.45, depthWrite: false, ...o,
+});
+
 /** Window glass: dark, very smooth, mirrors the sky. */
 export const glass = (color = 0x10161e, o = {}) => pbr(color, { roughness: 0.04, metalness: 0, envMapIntensity: 1.4, ...o });

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { pbr } from '../gfx/materials.js';
+import { studioEnvironment } from '../gfx/env.js';
 import { VEHICLES, PAINTS, money } from '/shared/catalog.js';
 import { div, esc } from './util.js';
 import { buildVehicle } from '../vehicles.js';
@@ -25,8 +26,12 @@ export function createCarDealer(ctx) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.AgXToneMapping;
+  renderer.toneMappingExposure = 1.2;
   const scene = new THREE.Scene();
-  scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+  // A studio for the paint and chrome to reflect.
+  scene.environment = studioEnvironment(renderer);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.25));
   const key = new THREE.DirectionalLight(0xffffff, 2.2);
   key.position.set(5, 8, 6);
   scene.add(key);
