@@ -401,7 +401,9 @@ export class Outdoor {
       this.obstacles.push({ x: deepX, z: cz, r: 1.3 });
     } else if (s.id === 'cardealer' || s.id === 'machinery') {
       const models = VEHICLES.filter((v) => (s.id === 'cardealer' ? v.kind === 'car' : v.kind === 'machine'));
-      const shown = s.id === 'cardealer' ? models.filter((_, i) => i % 2 === 1 || i === models.length - 1).slice(0, 3) : models;
+      // Three cars on plinths out front, picked by name so a new model does not reshuffle them.
+      const showroom = ['pickup', 'ttop', 'limo'];
+      const shown = s.id === 'cardealer' ? showroom.map((id) => models.find((m) => m.id === id)).filter(Boolean) : models;
       shown.forEach((m, i) => {
         const z = s.z0 + 5 + i * ((s.z1 - s.z0 - 10) / Math.max(1, shown.length - 1));
         const x = deepX + (m.id === 'combine' ? 3 * -inward : 0) + (s.id === 'cardealer' ? 4 * -inward : 0);

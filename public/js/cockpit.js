@@ -14,6 +14,7 @@ const INTERIOR = {
   pickup:  { wid: 1.75, style: 'classic', gears: 5, redline: 5500 },
   sedan:   { wid: 1.65, style: 'modern', gears: 5, redline: 6500 },
   muscle:  { wid: 1.75, style: 'sport', gears: 4, redline: 7000 },
+  ttop:    { wid: 1.7, style: 'sport', gears: 5, redline: 6800 },
   coupe:   { wid: 1.7, style: 'sport', gears: 6, redline: 8000 },
   limo:    { wid: 1.75, style: 'modern', gears: 4, redline: 6000 },
   hyper:   { wid: 1.8, style: 'sport', gears: 7, redline: 9000 },

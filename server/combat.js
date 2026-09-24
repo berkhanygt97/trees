@@ -19,6 +19,7 @@
 // are and what they look like, when that changes) and 'shot' (tracers).
 import { GUN_BY_ID, gangGun, hoodLevel, soldierCap, HOUR_MS } from '../shared/catalog.js';
 import { HQS, HOODS, HOOD_T, hz, hx } from '../shared/hoods.js';
+import { CAST, castLook } from '../shared/looks.js';
 import { raySphere, spreadDir, History } from './ballistics.js';
 import { Colliders } from './colliders.js';
 import { rnd } from './rng.js';
@@ -33,16 +34,11 @@ const RUN = 4.4;
 
 export const UNIT_STATE = { idle: 0, patrol: 1, move: 1, advance: 1, engage: 2, down: 3, flee: 4, work: 5, ride: 6, incar: 6, crack: 7, tag: 8, vandal: 9 };
 
-/** A gang member's look: street clothes with a bandana in the gang's colour. */
+/** A gang member's look: one of the gang cast (shared/looks.js), in the gang's colour. */
 export function gangLook(color, seed = 0) {
-  const tops = ['tee', 'tank', 'hoodie', 'tee', 'jersey'];
-  const legs = ['jeans', 'khaki', 'jeans'];
   const skins = ['#f1c7a3', '#e0ac80', '#c68a5e', '#9c6644', '#6f4a33', '#8d5a3b'];
   const k = Math.abs(seed | 0);
-  return {
-    outfit: 'street', color, accent: color, top: tops[k % tops.length], legs: legs[(k >> 3) % legs.length],
-    skin: skins[(k >> 5) % skins.length], head: (k >> 7) % 3 === 0 ? 'capback' : 'bandana', beard: (k >> 9) % 4 === 0 ? 'goatee' : null,
-  };
+  return castLook(CAST.gang[k % CAST.gang.length], { color, accent: color, skin: skins[(k >> 5) % skins.length] });
 }
 
 const hash = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return h; };

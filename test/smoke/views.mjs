@@ -85,6 +85,33 @@ async function lineup(near = false) {
   tick();
 }
 
+/** The town's cast (shared/looks.js), everyone in a row, idling. */
+async function castLineup(near = false) {
+  const { createCharacter } = await import('/js/character.js');
+  const { LOOKS } = await import('/shared/looks.js');
+  const c = window.casino;
+  const eye = c.controls.pos;
+  const entries = Object.values(LOOKS);
+  const gap = near ? 0.8 : 1.05;
+  const people = entries.map((entry, i) => {
+    const p = createCharacter(entry.look, { name: near ? null : entry.name, tagScale: 0.32 });
+    p.group.position.set(eye.x + (near ? 2.6 : 7.5), 0, eye.z - ((entries.length - 1) * gap) / 2 + i * gap);
+    p.group.rotation.y = -Math.PI / 2 + 0.3;
+    c.scene.add(p.group);
+    for (let k = 0; k < 20; k++) p.update(0.1, false, false, 0);
+    return p;
+  });
+  let last = performance.now();
+  const tick = () => {
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - last) / 1000);
+    last = now;
+    for (const p of people) p.update(dt, false, false, 0);
+    requestAnimationFrame(tick);
+  };
+  tick();
+}
+
 export const VIEWS = [
   { name: 'spawn', server: (room) => at(room, 11) },
   { name: 'farm', pos: [plotSpawn(PLOTS[0]).pos[0] + 16, 0, PLOTS[0].z0 + 40], yaw: 0.6, pitch: -0.15 },
@@ -110,6 +137,10 @@ export const VIEWS = [
     client: (c) => { c.rig.mode = 'fp'; c.rig.fresh = true; }, steps: async (page) => { await page.evaluate(lineup); }, wait: 2500 },
   { name: 'people-near', pos: [street.x0 + 150, 0, midZ + 2.6], yaw: -Math.PI / 2, pitch: -0.12,
     client: (c) => { c.rig.mode = 'fp'; c.rig.fresh = true; }, steps: async (page) => { await page.evaluate(lineup, true); }, wait: 2500 },
+  { name: 'cast', server: (room) => at(room, 11), pos: [street.x0 + 90, 0, midZ], yaw: -Math.PI / 2, pitch: -0.08,
+    client: (c) => { c.rig.mode = 'fp'; c.rig.fresh = true; }, steps: async (page) => { await page.evaluate(castLineup); }, wait: 2500 },
+  { name: 'cast-near', pos: [street.x0 + 170, 0, midZ + 2.6], yaw: -Math.PI / 2, pitch: -0.16,
+    client: (c) => { c.rig.mode = 'fp'; c.rig.fresh = true; }, steps: async (page) => { await page.evaluate(castLineup, true); }, wait: 2500 },
   { name: 'gangfight', server: (room, me) => {
     at(room, 15);
     me.money = 1e6;
@@ -179,13 +210,22 @@ export const VIEWS = [
     at(room, 16);
     const s = HOOD_STREETS[me.plot];
     const z = (s.z0 + s.z1) / 2;
-    const models = ['hatch', 'pickup', 'sedan', 'muscle', 'coupe', 'limo', 'hyper'];
-    const colors = ['#8a9a5b', '#c0392b', '#2e86de', '#f1c40f', '#8e44ad', '#111111', '#16a085'];
+    const models = ['rustbucket', 'pickup', 'sedan', 'muscle', 'ttop', 'coupe', 'limo', 'hyper'];
+    const colors = ['#8a9a5b', '#c0392b', '#2e86de', '#f1c40f', '#9aa6b2', '#8e44ad', '#111111', '#16a085'];
     me.vehicles = me.vehicles.filter((v) => !v.id.includes('#show'));
     models.forEach((m, i) => me.vehicles.push({ id: `${me.slug}#show${i}`, model: m, color: colors[i], pos: [s.x0 + 60 + i * 9, 0, z + 2], yaw: -0.6, implement: null }));
     room.broadcast('vehicles', room.publicVehicles());
   }, client: (c) => { c.rig.mode = 'tp'; c.rig.fresh = true; },
     pos: [HOOD_STREETS[0].x0 + 85, 0, (HOOD_STREETS[0].z0 + HOOD_STREETS[0].z1) / 2 + 11], yaw: 0.1, pitch: -0.12, wait: 3000 },
+  { name: 'ttop', server: (room, me) => {
+    at(room, 17);
+    const s = HOOD_STREETS[me.plot];
+    const z = (s.z0 + s.z1) / 2;
+    me.vehicles = me.vehicles.filter((v) => !v.id.includes('#show'));
+    me.vehicles.push({ id: `${me.slug}#show-ttop`, model: 'ttop', color: '#9aa6b2', pos: [s.x0 + 30, 0, z + 2], yaw: 2.5, implement: null });
+    room.broadcast('vehicles', room.publicVehicles());
+  }, client: (c) => { c.rig.mode = 'fp'; c.rig.fresh = true; },
+    pos: [HOOD_STREETS[0].x0 + 25.5, 0, (HOOD_STREETS[0].z0 + HOOD_STREETS[0].z1) / 2 + 6], yaw: -0.75, pitch: -0.22, wait: 3000 },
   { name: 'afternoon', server: (room) => at(room, 16.5), pos: [street.x0 + 45, 0, midZ], yaw: Math.PI / 2 + 0.5, pitch: -0.1,
     client: (c) => { c.rig.mode = 'tp'; c.rig.fresh = true; } },
   { name: 'dusk', client: (c) => { c.rig.mode = 'tp'; }, server: (room) => at(room, 19.2), pos: [street.x0 + 120, 0, midZ], yaw: -Math.PI / 2, pitch: 0.05 },

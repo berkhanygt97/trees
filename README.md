@@ -23,7 +23,10 @@ It plays in the third person with a spring chase camera, real car physics
 (suspension, drifts, jumps and crashes), jointed people who walk, run, aim
 and fall, sun shadows, bloom and street lamps that light the road at night,
 a rotating radar and a clock, money and health in the corner — the look of a
-2004 open-world console game, on purpose. The casino, the race track, the boars
+2004 open-world console game, on purpose. The town has its regulars too: the
+pizza guy, an old timer, tourists in loud shirts, patrol cops, a federal agent,
+bikers and a bouncer walk the pavements, and gang members come in flannels,
+big sweaters, hoodies and twists. The casino, the race track, the boars
 and everything from earlier versions are all still there.
 
 **Everything is saved on the host's computer, one file per player.** Saves from
@@ -352,7 +355,7 @@ Every purchase has a shop in town, run by someone with a name tag:
 | **Builders** | house upgrades, windmill, dairy, bakery |
 | **Land Office** | field expansions: 8×8 → 12×12 → 16×16 → 20×20, and the restaurant lots on your street |
 | **Tractor Barn** | tractor, plow, seeder, water tank, combine harvester |
-| **Motors** | seven cars from a $1,500 Rust Bucket to a $220,000 Hypercar |
+| **Motors** | eight cars from a $1,500 Rust Bucket to a $220,000 Hypercar, including the Midlife Crisis T-Top (quad lamps, bonnet scoop, lift-out roof) |
 | **Rusty's Guns** | better guns than Grandpa's, a 9mm, a machine pistol and bulletproof vests (see below) |
 | **Job Centre** | hired hands for the farm, the restaurants and your gang (see below) |
 
@@ -582,10 +585,11 @@ shared/
   terrain.js      the hills: one height function the server, client and physics share
   downtown.js     downtown's newer buildings (hospital, towers, motels, gas station)
   config.js       tunables, raid difficulty, and the casino's station list
+  looks.js        the town's cast: named gang, civilian, law and tough-guy looks
 public/js/
   world.js        puts the scene together; spatial hash for collisions
   camera.js       the third-person camera (over the shoulder, chase cam, first person)
-  character.js    jointed people: one skinned mesh each, procedurally animated
+  character.js    jointed people: one skinned mesh and one painted atlas each, procedurally animated
   physics/        Rapier: the world, every vehicle's tuning and its raycast suspension
   city/           terrain, roads, hoods, downtown, street props, the light pool
   casino.js       the casino building, inside and out
@@ -604,6 +608,7 @@ public/js/
   guns.js · weapons.js  every gun; aiming, firing, recoil, tracers
   cockpit.js      dashboards, instrument clusters and the steering wheel
   people.js       low-poly townsfolk: five draw calls a person
+  gallery.js      /gallery.html: the cast and every car side by side
   workersview.js · npcs.js · crowd.js  hired hands, customers, passers-by
   restaurantview.js restaurants inside and out, cottages
   boarsview.js    boars on screen, between the server's snapshots
@@ -646,6 +651,10 @@ RAID_MODE=hardcore npm start      # relaxed | normal | hardcore
 npm test                          # every rule, save migration, physics, raids and wars
 npm run test:smoke                # loads the real game in headless Chromium and screenshots it
 ```
+
+Open `http://localhost:3000/gallery.html` to see the whole cast and every car
+without playing: `#cast`, `#faces`, `#cars`, or `#look=biker` for a turntable
+(arrow keys change who, dragging turns them).
 
 The browser console exposes `window.casino` (`controls`, `world`, `fleet`,
 `hud`, `units`, `physics`, `worldTime()`…), so `casino.controls.pos.set(x, 0, z)`

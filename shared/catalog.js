@@ -110,6 +110,7 @@ export const VEHICLES = [
   { id: 'pickup',     kind: 'car', name: 'Farmhand Pickup', price: 6000,   top: 26, accel: 8,  turn: 1.9, body: 'pickup', blurb: 'The official truck of people who own land.' },
   { id: 'sedan',      kind: 'car', name: 'Family Sedan',    price: 12000,  top: 31, accel: 9,  turn: 2.0, body: 'sedan',  blurb: 'Beige in spirit whatever colour you paint it.' },
   { id: 'muscle',     kind: 'car', name: 'Bad Decision GT', price: 38000,  top: 39, accel: 12, turn: 1.8, body: 'muscle', blurb: 'V8, loud, drinks fuel like the casino drinks wages.' },
+  { id: 'ttop',       kind: 'car', name: 'Midlife Crisis T-Top', price: 52000, top: 42, accel: 13, turn: 2.0, body: 'ttop', blurb: 'Lift the roof panels out so the whole boulevard can hear the tape deck.' },
   { id: 'coupe',      kind: 'car', name: 'Veloce Coupe',    price: 65000,  top: 45, accel: 14, turn: 2.2, body: 'coupe',  blurb: 'Italian, allegedly.' },
   { id: 'limo',       kind: 'car', name: 'Stretch Limo',    price: 120000, top: 33, accel: 8,  turn: 1.4, body: 'limo',   blurb: 'Pull up to the casino like you mean it.' },
   { id: 'hyper',      kind: 'car', name: 'Hypercar X',      price: 220000, top: 58, accel: 20, turn: 2.3, body: 'hyper',  blurb: 'Faster than your money leaves the roulette table.' },

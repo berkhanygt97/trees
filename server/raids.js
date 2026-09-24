@@ -534,11 +534,16 @@ export class Raids {
 /** What a raider wears: their gang's colours, varied a little per head. */
 function raiderLook(rival, i) {
   const skins = ['#f1c7a3', '#c68a5e', '#9c6644', '#e0ac80', '#6f4a33', '#8d5a3b', '#d9a27a'];
-  return {
+  const look = {
     outfit: rival.outfit, color: rival.color, accent: rival.accent, top: rival.top, legs: rival.legs,
     head: rival.head, mask: rival.mask, skin: skins[i % skins.length], shades: rival.outfit === 'biker' && i % 2 === 0,
     beard: rival.outfit === 'biker' ? 'full' : i % 3 === 0 ? 'goatee' : null,
   };
+  // Every other biker in a leather jacket with the club patch and a skullcap;
+  // every third street raider in an open flannel and baggy khakis.
+  if (rival.outfit === 'biker' && i % 2 === 1) Object.assign(look, { outfit: 'leather', top: 'leather', head: 'skullcap', color: '#1b1a1c', hair: '#6b3a1e' });
+  if (rival.outfit === 'street' && i % 3 === 1) Object.assign(look, { top: 'flannel', legs: 'baggy', pants: '#b59b6c' });
+  return look;
 }
 
 const hashOf = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return h; };

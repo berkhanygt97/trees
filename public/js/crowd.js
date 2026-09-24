@@ -1,5 +1,6 @@
 import { STATIONS } from '/shared/config.js';
 import { CASINO, STRIP } from '/shared/map.js';
+import { pickCast } from '/shared/looks.js';
 import { randomLook } from './people.js';
 
 // Casino regulars and people out walking. Nothing about them is sent over the
@@ -149,9 +150,11 @@ export class Crowd {
     const k1 = 0.6 + r() * 0.4;
     const p0 = [a[0] + (b[0] - a[0]) * k0, a[1] + (b[1] - a[1]) * k0];
     const p1 = [a[0] + (b[0] - a[0]) * k1, a[1] + (b[1] - a[1]) * k1];
-    const look = randomLook(r, r() < 0.3 ? 'tourist' : undefined);
+    // Some of them are the town's regulars: the pizza guy, a patrol cop, a biker...
+    const cast = r() < 0.4 ? pickCast(['civilian', 'law', 'tough'], r) : null;
+    const look = cast ? { cast } : randomLook(r, r() < 0.3 ? 'tourist' : undefined);
     if ((T - start) * WALK > Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) + 1) return;
-    this._emit(id, 'walk', { look, path: [p0, p1], t0: start * 1000, pose: 'walk', bye: true, prop: r() < 0.3 ? 'bag' : null });
+    this._emit(id, 'walk', { look, path: [p0, p1], t0: start * 1000, pose: 'walk', bye: true, prop: !cast && r() < 0.3 ? 'bag' : null });
   }
 }
 

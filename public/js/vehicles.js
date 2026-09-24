@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { VEHICLE_BY_ID } from '/shared/catalog.js';
 import { labelSprite, shadowTexture } from './textures.js';
+import { mergeGeometries } from './merge.js';
 
 // Cars have shaped bodies: a side profile (sloping bonnet, raked windscreen,
 // boot, wheel arches) extruded to the car's width with rounded edges, a glass
@@ -44,6 +45,7 @@ const GRILLE = phong(0x1a1a1c, { shininess: 30 });
 const HEAD = new THREE.MeshBasicMaterial({ color: 0xfff6d0 });
 const TAIL = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
 const DARK = phong(0x222226, { shininess: 10 });
+const TINT = phong(0x121820, { shininess: 90, specular: 0x6a7a8a });
 
 /** Physical dimensions the controls and the farm need. */
 export const SPECS = {
@@ -57,6 +59,7 @@ export const SPECS = {
   tractor: { radius: 1.6, seat: [0, 1.3, 0.75],      cam: [0, 4.6, 9],    eye: 0.95, work: 3.4 },
   combine: { radius: 2.8, seat: [0, 3.4, -1.0],      cam: [0, 7.5, 14],   eye: 1.0, work: -4.6 },
   scooter: { radius: 0.9, seat: [0, 0.72, 0.3],      cam: [0, 2.4, 5.2],  eye: 0.92 },
+  ttop:    { radius: 1.45, seat: [-0.4, 0.36, 0.35], cam: [0, 3.0, 8.1],  eye: 0.9 },
 };
 
 export const specOf = (modelId) => SPECS[(VEHICLE_BY_ID[modelId] || {}).body] || SPECS.sedan;
@@ -68,17 +71,35 @@ function box(parent, w, h, d, x, y, z, mat) {
   return m;
 }
 
-function wheel(parent, r, w, x, y, z, wheels) {
+function wheel(parent, r, w, x, y, z, wheels, spokes = 0) {
   const g = new THREE.Group();
   const tyre = new THREE.Mesh(new THREE.CylinderGeometry(r, r, w, 18), TYRE);
   tyre.rotation.z = Math.PI / 2;
   g.add(tyre);
-  const rim = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.55, r * 0.55, w + 0.02, 10), RIM);
-  rim.rotation.z = Math.PI / 2;
-  g.add(rim);
-  // A spoke so you can see it turn.
-  const spoke = new THREE.Mesh(new THREE.BoxGeometry(w + 0.04, r * 0.9, 0.12), DARK);
-  g.add(spoke);
+  if (spokes) {
+    // An alloy: a dark dish behind a silver lip, `spokes` spokes and a hub
+    // (the silver merged into one mesh, so it costs what the plain rim did).
+    const dish = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.64, r * 0.64, w + 0.01, 14), DARK);
+    dish.rotation.z = Math.PI / 2;
+    g.add(dish);
+    const silver = [
+      new THREE.CylinderGeometry(r * 0.7, r * 0.7, w + 0.005, 14, 1, true).rotateZ(Math.PI / 2),
+      new THREE.CylinderGeometry(r * 0.16, r * 0.16, w + 0.05, 8).rotateZ(Math.PI / 2),
+    ];
+    for (let i = 0; i < spokes; i++) {
+      const a = (i / spokes) * Math.PI * 2;
+      silver.push(new THREE.BoxGeometry(w + 0.03, r * 0.5, r * 0.2).rotateX(a).translate(0, Math.cos(a) * r * 0.34, Math.sin(a) * r * 0.34));
+    }
+    g.add(new THREE.Mesh(mergeGeometries(silver), RIM));
+    for (const geo of silver) geo.dispose();
+  } else {
+    const rim = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.55, r * 0.55, w + 0.02, 10), RIM);
+    rim.rotation.z = Math.PI / 2;
+    g.add(rim);
+    // A spoke so you can see it turn.
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(w + 0.04, r * 0.9, 0.12), DARK);
+    g.add(spoke);
+  }
   g.position.set(x, y, z);
   parent.add(g);
   wheels.push({ g, r, front: z < 0 });
@@ -102,6 +123,9 @@ function profileMesh(shape, width, mat, bevel = 0.06) {
  * (roof length), cabH, cabZ (cabin centre, +Z is the back), wheelR, and the
  * shape: nose (how far the bonnet drops), tail (how far the boot drops),
  * rake / rakeBack (how far the screens lean, per metre of cabin height).
+ * Trim, all optional: ttop (lift-out glass roof panels either side of a
+ * centre bar), lights: 'quad' (four round lamps in a black bezel),
+ * bumpers: 'body' (painted, not chrome), spokes (alloy wheels).
  */
 function car(g, wheels, paint, o) {
   const { len, wid, bodyH, lift, cabLen, cabH, cabZ, wheelR, roof = true } = o;
@@ -155,7 +179,19 @@ function car(g, wheels, paint, o) {
     g.add(cab);
     // Roof panel and pillars in the body colour.
     const roofLen = roofF - roofB;
-    box(g, wid - 0.18, 0.07, roofLen + 0.08, 0, belt + cabH + 0.02, -(roofF + roofB) / 2, paint);
+    const roofY = belt + cabH + 0.02;
+    if (o.ttop) {
+      // T-top: a centre bar and rails front and back, the glass showing between.
+      box(g, 0.26, 0.07, roofLen + 0.08, 0, roofY, -(roofF + roofB) / 2, paint);
+      box(g, wid - 0.18, 0.07, 0.14, 0, roofY, -roofF + 0.03, paint);
+      box(g, wid - 0.18, 0.07, 0.14, 0, roofY, -roofB - 0.03, paint);
+      for (const sx of [-1, 1]) {
+        box(g, 0.06, 0.07, roofLen + 0.08, sx * (wid / 2 - 0.12), roofY, -(roofF + roofB) / 2, paint);
+        box(g, wid / 2 - 0.3, 0.03, roofLen - 0.2, sx * (wid / 4 + 0.02), roofY + 0.02, -(roofF + roofB) / 2, TINT);   // the glass panel
+      }
+    } else {
+      box(g, wid - 0.18, 0.07, roofLen + 0.08, 0, roofY, -(roofF + roofB) / 2, paint);
+    }
     const pillar = (u0, u1, x) => {
       const dz = -(u1 - u0);
       const len2 = Math.hypot(dz, cabH);
@@ -171,14 +207,32 @@ function car(g, wheels, paint, o) {
     for (const sx of [-1, 1]) box(g, 0.16, 0.1, 0.12, sx * (wid / 2 + 0.06), belt + 0.08, -(baseF - 0.2), paint);
   }
 
-  // Chrome bumpers, a grille, lights, a number plate, exhaust.
-  box(g, wid + 0.04, 0.14, 0.2, 0, lift + 0.16, -L - 0.03, CHROME);
-  box(g, wid + 0.04, 0.14, 0.2, 0, lift + 0.16, L + 0.03, CHROME);
-  box(g, wid * 0.46, (bodyH - nose) * 0.36, 0.05, 0, lift + (bodyH - nose) * 0.55, -L - 0.01, GRILLE);
-  box(g, 0.44, 0.12, 0.02, 0, lift + 0.36, L + 0.12, phong(0xf2efe6));
+  // Chrome bumpers, a grille, lights, a number plate, exhaust. The body's
+  // rounded edge stands 7 cm proud of its profile, so the trim on the nose
+  // and the tail sits out past that (FACE), or it would be buried in the paint.
+  const FACE = 0.085;
+  const bodyBumpers = o.bumpers === 'body';
+  for (const sz of [-1, 1]) {
+    if (bodyBumpers) box(g, wid + 0.04, 0.17, 0.2, 0, lift + 0.13, sz * (L + 0.04), paint);
+    else box(g, wid + 0.04, 0.14, 0.2, 0, lift + 0.16, sz * (L + 0.03), CHROME);
+  }
+  box(g, wid * 0.46, (bodyH - nose) * 0.36, 0.05, 0, lift + (bodyH - nose) * 0.55, -L - FACE, GRILLE);
+  box(g, 0.44, 0.12, 0.02, 0, lift + 0.36, L + (bodyBumpers ? 0.16 : 0.12), phong(0xf2efe6));
   for (const sx of [-1, 1]) {
-    box(g, 0.32, 0.14, 0.05, sx * (wid / 2 - 0.28), lift + (bodyH - nose) * 0.62, -L - 0.02, HEAD);
-    box(g, 0.34, 0.13, 0.05, sx * (wid / 2 - 0.28), lift + (bodyH - tail) * 0.7, L + 0.02, TAIL);
+    const hy = lift + (bodyH - nose) * 0.62;
+    if (o.lights === 'quad') {
+      // Two round sealed beams a side, set in a black bezel.
+      box(g, 0.5, 0.2, 0.05, sx * (wid / 2 - 0.36), hy, -L - FACE, DARK);
+      for (const dx of [-0.11, 0.11]) {
+        const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.05, 12), HEAD);
+        lamp.rotation.x = Math.PI / 2;
+        lamp.position.set(sx * (wid / 2 - 0.36) + dx, hy, -L - FACE - 0.012);
+        g.add(lamp);
+      }
+    } else {
+      box(g, 0.32, 0.14, 0.05, sx * (wid / 2 - 0.28), hy, -L - FACE, HEAD);
+    }
+    box(g, 0.34, 0.13, 0.05, sx * (wid / 2 - 0.28), lift + (bodyH - tail) * 0.7, L + FACE, TAIL);
   }
   const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.3, 8), CHROME);
   pipe.rotation.x = Math.PI / 2;
@@ -187,7 +241,7 @@ function car(g, wheels, paint, o) {
   // Under the car, dark, so the arches read as holes.
   box(g, wid - 0.2, 0.08, len - 0.6, 0, lift + 0.04, 0, TYRE);
   const wx = wid / 2 - 0.05;
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) wheel(g, wheelR, 0.3, sx * wx, wheelR, sz * wz, wheels);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) wheel(g, wheelR, 0.3, sx * wx, wheelR, sz * wz, wheels, o.spokes || 0);
   return body;
 }
 
@@ -250,6 +304,49 @@ const BUILDERS = {
       box(g, 0.16, 0.02, 1.15, s, 1.035, 1.75, stripe);
     }
     for (const s of [-0.5, 0.5]) box(g, 0.12, 0.12, 0.6, s, 0.3, 2.5, CHROME);   // exhausts
+  },
+  /**
+   * An eighties wedge: long bonnet with a bulge and a scoop, quad lamps in a
+   * black bezel, body-colour bumpers and skirts, a fastback, lift-out T-tops,
+   * five-spoke alloys.
+   */
+  ttop(g, wheels, paint) {
+    const len = 4.7;
+    const wid = 1.9;
+    const lift = 0.26;
+    const bodyH = 0.6;
+    const nose = 0.16;
+    const wheelR = 0.37;
+    car(g, wheels, paint, {
+      len, wid, bodyH, lift, cabLen: 1.25, cabH: 0.5, cabZ: 0.45, wheelR, nose, tail: 0.02, rake: 1.6, rakeBack: 2.4,
+      ttop: true, lights: 'quad', bumpers: 'body', spokes: 5,
+    });
+    // The bonnet rises from the nose to the screen: the bulge follows it.
+    const L = len / 2;
+    const belt = lift + bodyH;
+    const baseF = 0.175 + 1.6 * 0.5;
+    const slope = (belt - (belt - nose + 0.02)) / (L - 0.2 - baseF);
+    const onBonnet = (z) => belt - (-z - baseF) * slope + 0.07;
+    const bulge = box(g, 0.8, 0.07, 1.25, 0, onBonnet(-1.6) + 0.02, -1.6, paint);
+    bulge.rotation.x = -Math.atan(slope);
+    // A scoop at the back of the bulge, open to the front.
+    const scoop = box(g, 0.5, 0.12, 0.42, 0, onBonnet(-1.15) + 0.1, -1.15, paint);
+    scoop.rotation.x = -Math.atan(slope);
+    box(g, 0.42, 0.07, 0.02, 0, onBonnet(-1.36) + 0.11, -1.36, DARK);
+    // Front lip, side skirts, ducktail, a black panel between the tail lights.
+    box(g, wid - 0.1, 0.07, 0.24, 0, lift - 0.015, -L + 0.02, DARK);
+    const wz = L - wheelR - 0.25;
+    for (const sx of [-1, 1]) box(g, 0.07, 0.13, 2 * wz - 2 * (wheelR + 0.1) - 0.1, sx * (wid / 2 + 0.005), lift + 0.07, 0, paint);
+    const duck = box(g, wid - 0.24, 0.05, 0.28, 0, belt + 0.06, L - 0.22, paint);
+    duck.rotation.x = 0.18;
+    box(g, wid - 0.95, 0.12, 0.03, 0, lift + (bodyH - 0.02) * 0.7, L + 0.08, DARK);
+    // Louvres over the rear glass (it drops from the roof at z = 1.075 to the boot at 1.95).
+    const glassDrop = 0.5 / (1.95 - 1.075);
+    for (let i = 0; i < 5; i++) {
+      const z = 1.22 + i * 0.13;
+      const louvre = box(g, wid - 0.55, 0.02, 0.1, 0, belt + 0.5 - (z - 1.075) * glassDrop + 0.05, z, DARK);
+      louvre.rotation.x = 0.2;
+    }
   },
   coupe(g, wheels, paint) {
     car(g, wheels, paint, { len: 4.4, wid: 1.9, bodyH: 0.56, lift: 0.26, cabLen: 1.1, cabH: 0.48, cabZ: 0.35, wheelR: 0.36, nose: 0.16, tail: 0.04, rake: 1.5, rakeBack: 1.6 });

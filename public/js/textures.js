@@ -437,6 +437,71 @@ export function plaidTexture(color = '#b83a2c') {
   }, { repeat: [2, 2] });
 }
 
+/** A loud holiday shirt: hibiscus, palm leaves and little palm trees on a base colour. */
+export function hawaiiTexture(color = '#f5efe0', accent = '#e84393') {
+  return make(`hawaii:${color}:${accent}`, 128, 128, (g, w, h) => {
+    noiseFill(g, w, h, color, 0.05, 600, 2);
+    const leaf = (x, y, a, len) => {
+      g.save();
+      g.translate(x, y);
+      g.rotate(a);
+      g.fillStyle = '#2f7a4a';
+      g.beginPath(); g.ellipse(0, 0, len, len * 0.32, 0, 0, 7); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,0.35)';
+      g.lineWidth = 1;
+      g.beginPath(); g.moveTo(-len, 0); g.lineTo(len, 0); g.stroke();
+      g.restore();
+    };
+    const flower = (x, y, r) => {
+      g.fillStyle = accent;
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        g.beginPath(); g.ellipse(x + Math.cos(a) * r * 0.6, y + Math.sin(a) * r * 0.6, r * 0.62, r * 0.42, a, 0, 7); g.fill();
+      }
+      g.fillStyle = '#f7d774';
+      g.beginPath(); g.arc(x, y, r * 0.25, 0, 7); g.fill();
+    };
+    const palm = (x, y) => {
+      g.strokeStyle = '#7a5230';
+      g.lineWidth = 2;
+      g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + 3, y - 8, x + 1, y - 16); g.stroke();
+      for (let i = 0; i < 5; i++) leaf(x + 1, y - 16, -Math.PI / 2 + (i - 2) * 0.7, 6);
+    };
+    // Tiled so the print wraps round the body without a seam.
+    for (let ty = 0; ty < 2; ty++) {
+      for (let tx = 0; tx < 2; tx++) {
+        const ox = tx * 64;
+        const oy = ty * 64;
+        leaf(ox + 14 + rand() * 6, oy + 42, rand() * 3, 11);
+        leaf(ox + 44, oy + 12 + rand() * 6, rand() * 3, 10);
+        flower(ox + 20, oy + 18, 8);
+        flower(ox + 50, oy + 46, 7);
+        palm(ox + 38, oy + 60);
+        g.fillStyle = '#f2c14e';
+        g.beginPath(); g.arc(ox + 6, oy + 58, 3, 0, 7); g.fill();
+      }
+    }
+  });
+}
+
+/** Black leather: creases and a sheen. */
+export function leatherTexture(color = '#1b1a1c') {
+  return make(`leather:${color}`, 128, 128, (g, w, h) => {
+    noiseFill(g, w, h, color, 0.08, 1400, 2);
+    g.strokeStyle = 'rgba(255,255,255,0.07)';
+    g.lineWidth = 1;
+    for (let i = 0; i < 40; i++) {
+      const x = rand() * w;
+      const y = rand() * h;
+      g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + 6, y + (rand() - 0.5) * 6, x + 10 + rand() * 12, y + (rand() - 0.5) * 4); g.stroke();
+    }
+    const sheen = g.createLinearGradient(0, 0, w, 0);
+    for (const [at, a] of [[0, 0], [0.3, 0.1], [0.4, 0], [0.6, 0], [0.7, 0.1], [1, 0]]) sheen.addColorStop(at, `rgba(255,255,255,${a})`);
+    g.fillStyle = sheen;
+    g.fillRect(0, 0, w, h);
+  });
+}
+
 export function denimTexture() {
   return make('denim', 128, 128, (g, w, h) => {
     g.fillStyle = '#3b5578';

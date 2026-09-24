@@ -18,6 +18,7 @@ export const VEHICLE_PHYSICS = {
   pickup:  car({ mass: 1700, len: 5.0, wid: 1.95, lift: 0.45, height: 1.6,  wheels: [[0.93, -1.8, 0.45], [-0.93, -1.8, 0.45], [0.93, 1.8, 0.45], [-0.93, 1.8, 0.45]], rest: 0.38, stiffness: 22, comY: 0.5 }),
   sedan:   car({ mass: 1350, len: 4.6, wid: 1.85, lift: 0.3,  height: 1.28, wheels: [[0.88, -1.69, 0.36], [-0.88, -1.69, 0.36], [0.88, 1.69, 0.36], [-0.88, 1.69, 0.36]], stiffness: 26 }),
   muscle:  car({ mass: 1550, len: 4.8, wid: 1.95, lift: 0.28, height: 1.2,  wheels: [[0.93, -1.75, 0.4], [-0.93, -1.75, 0.4], [0.93, 1.75, 0.4], [-0.93, 1.75, 0.4]], grip: 2.3, stiffness: 30 }),
+  ttop:    car({ mass: 1400, len: 4.7, wid: 1.9,  lift: 0.26, height: 1.1,  wheels: [[0.9, -1.73, 0.37], [-0.9, -1.73, 0.37], [0.9, 1.73, 0.37], [-0.9, 1.73, 0.37]], grip: 2.6, stiffness: 34, rest: 0.26, comY: 0.3 }),
   coupe:   car({ mass: 1250, len: 4.4, wid: 1.9,  lift: 0.26, height: 1.04, wheels: [[0.9, -1.59, 0.36], [-0.9, -1.59, 0.36], [0.9, 1.59, 0.36], [-0.9, 1.59, 0.36]], grip: 2.9, stiffness: 38, rest: 0.24, comY: 0.28 }),
   limo:    car({ mass: 2400, len: 7.6, wid: 1.95, lift: 0.3,  height: 1.28, wheels: [[0.93, -3.17, 0.38], [-0.93, -3.17, 0.38], [0.93, 3.17, 0.38], [-0.93, 3.17, 0.38]], steer: 0.5, stiffness: 24 }),
   hyper:   car({ mass: 1300, len: 4.5, wid: 2.0,  lift: 0.22, height: 0.88, wheels: [[0.95, -1.64, 0.36], [-0.95, -1.64, 0.36], [0.95, 1.64, 0.36], [-0.95, 1.64, 0.36]], grip: 3.4, stiffness: 46, rest: 0.2, comY: 0.24, drive: 'all' }),

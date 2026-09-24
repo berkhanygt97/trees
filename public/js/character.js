@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { plaidTexture, denimTexture, strawTexture, faceTexture, labelSprite } from './textures.js';
+import { plaidTexture, denimTexture, strawTexture, faceTexture, hawaiiTexture, leatherTexture, labelSprite } from './textures.js';
 import { buildGun } from './guns.js';
 import { mergeGeometries } from './merge.js';
 
@@ -57,13 +57,21 @@ for (const [, parent, off] of BONES) {
 
 /**
  * What someone looks like. Everything optional:
- *   outfit: 'farmer' | 'street' | 'biker' | 'track'
+ *   outfit: 'farmer' | 'street' | 'biker' | 'track', or one of the town's
+ *           cast: 'flannel' | 'heavy' | 'pizza' | 'oldtimer' | 'tourist' |
+ *           'agent' | 'cop' | 'leather' | 'bouncer'
  *   color   main colour (shirt, tracksuit, bandana for gangs)
- *   accent  second colour (bandana, stripes)
- *   top:    'plaid' | 'tee' | 'tank' | 'hoodie' | 'jersey' | 'vest'
- *   legs:   'overalls' | 'jeans' | 'khaki' | 'track'
- *   head:   'straw' | 'flatcap' | 'cap' | 'cowboy' | 'capback' | 'beanie' | 'bandana' | 'helmet' | 'hair' | 'bald'
- *   face:   'old' | 'young'; beard: 'grey' | 'full' | 'goatee' | 'stache' | null; shades; mask
+ *   accent  second colour (bandana, stripes, tie)
+ *   top:    'plaid' | 'tee' | 'tank' | 'hoodie' | 'jersey' | 'vest' | 'flannel' |
+ *           'sweater' | 'polo' | 'shirt' | 'hawaii' | 'suit' | 'uniform' | 'leather'
+ *   legs:   'overalls' | 'jeans' | 'khaki' | 'track' | 'slacks' | 'baggy' | 'shorts'; pants: their colour
+ *   head:   'straw' | 'flatcap' | 'cap' | 'cowboy' | 'capback' | 'beanie' | 'bandana' | 'helmet' | 'hair' |
+ *           'bald' | 'thin' | 'slick' | 'braids' | 'skullcap' | 'peaked'
+ *   face:   'old' | 'young' | 'lined'; eyes: iris colour
+ *   beard:  'grey' | 'full' | 'goatee' | 'stache' | 'chin' | null; shades; mask
+ *   shoes:  'boots' | 'sneakers' | 'dress'
+ *   build:  'heavy' for a big man; chain: a chain round the neck
+ *   logo:   what the print on the cap or chest shows: 'pizza' | 'badge' | 'id'
  *   skin:   a skin tone
  */
 export function normalizeLook(look = {}) {
@@ -73,6 +81,16 @@ export function normalizeLook(look = {}) {
     street: { top: 'tee', legs: 'jeans', head: 'bandana', face: 'young', beard: null, shoes: 'sneakers' },
     biker: { top: 'vest', legs: 'jeans', head: 'bandana', face: 'young', beard: 'full', shoes: 'boots', shades: true },
     track: { top: 'jersey', legs: 'track', head: 'capback', face: 'young', beard: 'goatee', shoes: 'sneakers' },
+    // The town's cast (see shared/looks.js).
+    flannel: { top: 'flannel', legs: 'baggy', pants: '#c8b48a', head: 'braids', face: 'young', beard: null, shoes: 'sneakers' },
+    heavy: { top: 'sweater', legs: 'slacks', pants: '#3a3d42', head: 'bandana', face: 'young', beard: 'goatee', shoes: 'sneakers', build: 'heavy' },
+    pizza: { top: 'polo', legs: 'slacks', pants: '#2b2b30', head: 'cap', face: 'young', beard: null, shoes: 'sneakers', logo: 'pizza', color: '#f2c14e', accent: '#c0392b' },
+    oldtimer: { top: 'shirt', legs: 'slacks', pants: '#4a4038', head: 'thin', face: 'lined', beard: null, shoes: 'dress', color: '#7a2a22', accent: '#e8c35a', hair: '#8a8078', eyes: '#5a4030' },
+    tourist: { top: 'hawaii', legs: 'shorts', pants: '#c9b99a', head: 'bald', face: 'lined', beard: 'chin', shoes: 'sneakers', color: '#f5efe0', accent: '#e84393', hair: '#8f8a82' },
+    agent: { top: 'suit', legs: 'slacks', pants: '#1f2638', head: 'slick', face: 'young', beard: null, shoes: 'dress', logo: 'id', color: '#1f2638', accent: '#2c3e66', eyes: '#4a6a8a' },
+    cop: { top: 'uniform', legs: 'slacks', pants: '#1d2436', head: 'peaked', face: 'young', beard: 'stache', shoes: 'dress', logo: 'badge', color: '#2a3654', accent: '#1d2436' },
+    leather: { top: 'leather', legs: 'jeans', head: 'skullcap', face: 'young', beard: 'full', shoes: 'boots', color: '#1b1a1c', accent: '#b8322a' },
+    bouncer: { top: 'shirt', legs: 'slacks', pants: '#1c1c20', head: 'bald', face: 'lined', beard: 'chin', shoes: 'dress', shades: true, chain: true, color: '#18181b', accent: '#18181b', hair: '#a39d94', eyes: '#4a6a8a' },
   }[outfit] || {};
   return {
     outfit,
@@ -82,14 +100,30 @@ export function normalizeLook(look = {}) {
   };
 }
 
-// The painted texture: one atlas per look, regions in pixels.
-const ATLAS = 256;
+// The painted texture: one atlas per look, regions in pixels. The last row
+// is for the town's cast: a white undershirt (and socks), a second trim
+// colour, a tie, and a print (a logo, a badge or an ID card) for the cap or
+// the chest.
+const ATLAS_W = 256;
+const ATLAS_H = 320;
 const R = {
   shirt: [0, 0, 128, 128], pants: [128, 0, 128, 128], face: [0, 128, 128, 128],
   skin: [128, 128, 32, 32], shoe: [160, 128, 32, 32], hair: [192, 128, 32, 32], accent: [224, 128, 32, 32],
   hat: [128, 160, 64, 64], dark: [192, 160, 32, 32], sole: [224, 160, 32, 32], metal: [192, 192, 32, 32], leather: [224, 192, 32, 32],
   sleeve: [128, 224, 64, 32],
+  print: [0, 256, 64, 64], tee: [64, 256, 32, 32], trim: [96, 256, 32, 32], tie: [64, 288, 32, 32],
 };
+
+// Tops whose shirt region is painted as one wrap round the torso: the chest,
+// the belly and the shoulders each sample their own band of it, and the
+// middle of the region is the front. Collars, ties and pockets land where
+// they should, instead of repeating on every part.
+const WRAP_TOPS = new Set(['flannel', 'sweater', 'polo', 'shirt', 'hawaii', 'suit', 'uniform', 'leather']);
+// Tops that hang open over a white tee, and tops with a tail below the belt.
+const OPEN_TOPS = new Set(['flannel', 'leather', 'hawaii']);
+const HEM_TOPS = new Set(['flannel', 'suit', 'hawaii', 'shirt']);
+const COLLAR_TOPS = new Set(['polo', 'shirt', 'hawaii', 'uniform']);
+const HAIRLESS = new Set(['bald', 'thin', 'skullcap']);
 
 function seeded(key) {
   let s = 2166136261;
@@ -108,10 +142,19 @@ function shade(hex, k) {
   return `#${c.getHexString()}`;
 }
 
+/** Trouser colour: the look's own, or what that kind of trousers usually is. */
+function pantsColor(look) {
+  if (look.pants) return look.pants;
+  if (look.legs === 'khaki') return '#b59b6c';
+  if (look.legs === 'track') return look.color;
+  return '#2d2d33';
+}
+
 function paintAtlas(look) {
   const rnd = seeded(JSON.stringify(look));
   const cv = document.createElement('canvas');
-  cv.width = cv.height = ATLAS;
+  cv.width = ATLAS_W;
+  cv.height = ATLAS_H;
   const g = cv.getContext('2d');
   const fill = ([x, y, w, h], color, noise = 0.05, dots = 300) => {
     g.fillStyle = color;
@@ -125,7 +168,8 @@ function paintAtlas(look) {
 
   // Shirt.
   const top = look.top;
-  if (top === 'plaid') image(R.shirt, plaidTexture(look.color));
+  if (WRAP_TOPS.has(top)) paintWrapTop(g, look, rnd, fill);
+  else if (top === 'plaid') image(R.shirt, plaidTexture(look.color));
   else if (top === 'vest') fill(R.shirt, '#26211d', 0.06);               // a black tee under the vest
   else fill(R.shirt, look.color, 0.06, 500);
   if (top === 'jersey' || top === 'track') {
@@ -146,19 +190,41 @@ function paintAtlas(look) {
   // Sleeves: same as the shirt, with stripes for tracksuits.
   {
     const [x, y, w, h] = R.sleeve;
-    if (top === 'plaid') g.drawImage(plaidTexture(look.color).image, x, y, w, h);
+    if (top === 'plaid' || top === 'flannel') g.drawImage(plaidTexture(look.color).image, x, y, w, h);
+    else if (top === 'hawaii') g.drawImage(hawaiiTexture(look.color, look.accent).image, x, y, w, h);
+    else if (top === 'leather') g.drawImage(leatherTexture(look.color).image, 0, 0, 64, 32, x, y, w, h);
+    else if (top === 'sweater') fill(R.sleeve, look.color, 0.1, 900);
     else fill(R.sleeve, top === 'vest' ? '#26211d' : look.color, 0.06);
     if (top === 'jersey') {
       g.fillStyle = look.accent;
       g.fillRect(x + w * 0.2, y, 3, h);
       g.fillRect(x + w * 0.2 + 6, y, 3, h);
     }
+    if (top === 'polo') { g.fillStyle = look.accent; g.fillRect(x, y + h - 5, w, 5); }
+    if (top === 'uniform') {
+      // A shoulder patch on the outside of each arm.
+      for (const u of [0.25, 0.75]) {
+        g.fillStyle = '#c9a24a';
+        g.beginPath(); g.ellipse(x + w * u, y + 9, 6, 7, 0, 0, 7); g.fill();
+        g.fillStyle = shade(look.color, 0.7);
+        g.beginPath(); g.ellipse(x + w * u, y + 9, 4, 5, 0, 0, 7); g.fill();
+      }
+    }
   }
 
   // Trousers.
-  if (look.legs === 'overalls' || look.legs === 'jeans') image(R.pants, denimTexture());
-  else if (look.legs === 'khaki') fill(R.pants, '#b59b6c', 0.07, 600);
-  else fill(R.pants, look.legs === 'track' ? look.color : '#2d2d33', 0.05, 400);
+  const pants = pantsColor(look);
+  if ((look.legs === 'overalls' || look.legs === 'jeans') && !look.pants) image(R.pants, denimTexture());
+  else if (look.legs === 'khaki' && !look.pants) fill(R.pants, '#b59b6c', 0.07, 600);
+  else if (look.legs === 'slacks' || look.legs === 'baggy' || look.legs === 'shorts') {
+    fill(R.pants, pants, 0.06, 700);
+    // A crease down the front and a seam down the side.
+    const [x, y, w, h] = R.pants;
+    g.fillStyle = 'rgba(255,255,255,0.08)';
+    g.fillRect(x, y, 2, h); g.fillRect(x + w - 2, y, 2, h);
+    g.fillStyle = 'rgba(0,0,0,0.14)';
+    g.fillRect(x + w * 0.25 - 1, y, 2, h); g.fillRect(x + w * 0.75 - 1, y, 2, h);
+  } else fill(R.pants, pants, 0.05, 400);
   if (look.legs === 'track') {
     const [x, y, w, h] = R.pants;
     g.fillStyle = look.accent;
@@ -166,18 +232,43 @@ function paintAtlas(look) {
   }
 
   fill(R.skin, look.skin, 0.05, 200);
-  fill(R.shoe, look.shoes === 'sneakers' ? '#e8e6e0' : '#3a2616', 0.08);
+  const shoe = { sneakers: '#e8e6e0', dress: '#141215' }[look.shoes] || '#3a2616';
+  fill(R.shoe, shoe, look.shoes === 'dress' ? 0.04 : 0.08);
+  if (look.shoes === 'dress') {
+    // Polished: a highlight across the toe.
+    const [x, y, w, h] = R.shoe;
+    g.fillStyle = 'rgba(255,255,255,0.18)';
+    g.fillRect(x, y + h * 0.3, w, h * 0.15);
+  }
   fill(R.sole, look.shoes === 'sneakers' ? '#c8c2b8' : '#1b1512', 0.04);
   fill(R.hair, look.beard === 'grey' ? '#d9d6cf' : look.hair, 0.12, 900);
   fill(R.accent, look.accent, 0.08, 600);
   fill(R.dark, '#18171a', 0.04);
   fill(R.metal, '#c9a24a', 0.15);
   fill(R.leather, '#3b2b20', 0.12, 700);
+  fill(R.tee, '#f1eee8', 0.05);
+  fill(R.trim, top === 'polo' ? look.accent : top === 'hawaii' ? look.color : shade(look.color, 0.85), 0.06);
+  fill(R.tie, look.accent, 0.06);
+  if (top === 'suit') {
+    // Diagonal stripes on the tie.
+    const [x, y, w, h] = R.tie;
+    g.fillStyle = 'rgba(255,255,255,0.18)';
+    for (let i = -h; i < w; i += 8) { g.beginPath(); g.moveTo(x + i, y + h); g.lineTo(x + i + h, y); g.lineTo(x + i + h + 3, y); g.lineTo(x + i + 3, y + h); g.fill(); }
+  }
+  paintPrint(g, look);
+
   if (look.head === 'straw') image(R.hat, strawTexture());
   else if (look.head === 'cowboy') fill(R.hat, '#7a5230', 0.1, 600);
-  else if (look.head === 'helmet') fill(R.hat, '#141416', 0.05);
+  else if (look.head === 'helmet' || look.head === 'skullcap') fill(R.hat, '#141416', 0.05);
   else if (look.head === 'flatcap') image(R.hat, plaidTexture('#6a5a48'));
+  else if (look.head === 'peaked') fill(R.hat, shade(look.color, 0.8), 0.05);
   else fill(R.hat, look.head === 'bandana' || look.head === 'beanie' ? look.accent : look.color, 0.08, 500);
+  if (look.head === 'cap' && look.logo === 'pizza') {
+    // Two-tone: the front panels in the accent colour (a sphere's front is a quarter of the way round).
+    const [x, y, w, h] = R.hat;
+    g.fillStyle = look.accent;
+    g.fillRect(x + w * 0.12, y, w * 0.26, h);
+  }
   if (look.head === 'bandana') {
     // Paisley-ish dots on the bandana.
     const [x, y, w, h] = R.hat;
@@ -197,52 +288,342 @@ function paintAtlas(look) {
   return tex;
 }
 
-/** A younger face, painted: brows, eyes, stubble, maybe shades. */
+/**
+ * A wrap-round top (see WRAP_TOPS). In the shirt region, u = 0.5 is the
+ * middle of the chest, 0 and 1 the middle of the back; v = 0 is the top of
+ * the shoulders and 1 the belt.
+ */
+function paintWrapTop(g, look, rnd, fill) {
+  const [x, y, w, h] = R.shirt;
+  const U = (u) => x + u * w;
+  const V = (v) => y + v * h;
+  const top = look.top;
+  const rect = (u0, v0, u1, v1, color) => { g.fillStyle = color; g.fillRect(U(u0), V(v0), (u1 - u0) * w, (v1 - v0) * h); };
+  // Both halves of something centred on the back seam.
+  const back = (draw) => { g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip(); draw(x); draw(x + w); g.restore(); };
+
+  if (top === 'flannel') g.drawImage(plaidTexture(look.color).image, x, y, w, h);
+  else if (top === 'hawaii') g.drawImage(hawaiiTexture(look.color, look.accent).image, x, y, w, h);
+  else if (top === 'leather') g.drawImage(leatherTexture(look.color).image, x, y, w, h);
+  else fill(R.shirt, look.color, top === 'sweater' ? 0.1 : 0.06, top === 'sweater' ? 1400 : 500);
+
+  // Soft folds, darker towards the sides: cheap volume.
+  const sides = g.createLinearGradient(x, 0, x + w, 0);
+  sides.addColorStop(0, 'rgba(0,0,0,0.10)');
+  sides.addColorStop(0.3, 'rgba(0,0,0,0.0)');
+  sides.addColorStop(0.5, 'rgba(255,255,255,0.05)');
+  sides.addColorStop(0.7, 'rgba(0,0,0,0.0)');
+  sides.addColorStop(1, 'rgba(0,0,0,0.10)');
+  g.fillStyle = sides;
+  g.fillRect(x, y, w, h);
+  g.fillStyle = 'rgba(0,0,0,0.08)';
+  for (let i = 0; i < 5; i++) {
+    const u = 0.28 + rnd() * 0.44;
+    g.fillRect(U(u), V(0.55 + rnd() * 0.3), 6 + rnd() * 8, 2);
+  }
+
+  if (OPEN_TOPS.has(top)) {
+    // Hanging open over a white tee, the edges a shade darker.
+    const tee = '#f1eee8';
+    rect(0.44, top === 'hawaii' ? 0.12 : 0.06, 0.56, 1, tee);
+    g.fillStyle = 'rgba(0,0,0,0.06)';
+    for (let i = 0; i < 40; i++) g.fillRect(U(0.44 + rnd() * 0.12), V(rnd()), 2, 2);
+    rect(0.425, 0.06, 0.44, 1, 'rgba(0,0,0,0.35)');
+    rect(0.56, 0.06, 0.575, 1, 'rgba(0,0,0,0.35)');
+    if (top === 'leather') {
+      // Zips down both edges, and a round neck on the tee.
+      rect(0.43, 0.1, 0.438, 1, '#9a9ea4');
+      rect(0.562, 0.1, 0.57, 1, '#9a9ea4');
+      rect(0.44, 0.06, 0.56, 0.1, '#d8d4cc');
+      // Lapels folded back either side of the opening.
+      g.fillStyle = 'rgba(0,0,0,0.45)';
+      for (const s of [-1, 1]) {
+        g.beginPath(); g.moveTo(U(0.5 + s * 0.075), V(0.02)); g.lineTo(U(0.5 + s * 0.16), V(0.08)); g.lineTo(U(0.5 + s * 0.08), V(0.36)); g.closePath(); g.fill();
+      }
+      g.strokeStyle = 'rgba(255,255,255,0.15)';
+      g.lineWidth = 1;
+      for (const s of [-1, 1]) { g.beginPath(); g.moveTo(U(0.5 + s * 0.16), V(0.08)); g.lineTo(U(0.5 + s * 0.08), V(0.36)); g.stroke(); }
+    }
+  }
+  if (top === 'sweater') {
+    // Ribbed collar and hem.
+    rect(0.4, 0, 0.6, 0.05, shade(look.color, 0.75));
+    g.fillStyle = shade(look.color, 0.8);
+    g.fillRect(x, V(0.9), w, h * 0.1);
+    g.fillStyle = 'rgba(0,0,0,0.15)';
+    for (let i = 0; i < w; i += 3) g.fillRect(x + i, V(0.9), 1, h * 0.1);
+  }
+  if (top === 'polo' || top === 'shirt' || top === 'uniform') {
+    // Open neck and a button placket.
+    g.fillStyle = top === 'uniform' ? '#15161a' : look.skin;
+    g.beginPath(); g.moveTo(U(0.45), V(0.02)); g.lineTo(U(0.55), V(0.02)); g.lineTo(U(0.5), V(top === 'uniform' ? 0.1 : 0.2)); g.closePath(); g.fill();
+    if (top === 'shirt' && look.outfit === 'oldtimer') {
+      // A yellow vest under the shirt.
+      g.fillStyle = look.accent;
+      g.beginPath(); g.moveTo(U(0.47), V(0.1)); g.lineTo(U(0.53), V(0.1)); g.lineTo(U(0.5), V(0.2)); g.closePath(); g.fill();
+    }
+    rect(0.497, 0.2, 0.503, top === 'polo' ? 0.4 : 1, 'rgba(0,0,0,0.3)');
+    g.fillStyle = 'rgba(255,255,255,0.6)';
+    const buttons = top === 'polo' ? [0.28, 0.36] : [0.3, 0.45, 0.6, 0.75, 0.9];
+    for (const v of buttons) { g.beginPath(); g.arc(U(0.51), V(v), 1.2, 0, 7); g.fill(); }
+    if (top === 'shirt' && look.outfit !== 'bouncer') {
+      // A faint check.
+      g.fillStyle = 'rgba(0,0,0,0.12)';
+      for (let i = 0; i < w; i += 10) g.fillRect(x + i, y, 2, h);
+      for (let i = 0; i < h; i += 10) g.fillRect(x, y + i, w, 2);
+    }
+  }
+  if (top === 'polo') {
+    // Contrast yoke over the shoulders.
+    rect(0, 0, 1, 0.1, look.accent);
+    rect(0.44, 0, 0.56, 0.02, look.accent);
+  }
+  if (top === 'uniform') {
+    // Two pockets with flaps, a name bar, a belt line.
+    for (const u of [0.38, 0.62]) {
+      rect(u - 0.055, 0.3, u + 0.055, 0.5, shade(look.color, 0.85));
+      rect(u - 0.06, 0.28, u + 0.06, 0.34, shade(look.color, 0.7));
+      g.fillStyle = 'rgba(255,255,255,0.5)';
+      g.beginPath(); g.arc(U(u), V(0.325), 1, 0, 7); g.fill();
+    }
+    rect(0.33, 0.24, 0.43, 0.27, '#d8d4cc');
+  }
+  if (top === 'suit') {
+    // White shirt in the V of the jacket, the tie down the middle, lapels, buttons.
+    g.fillStyle = '#f2efe8';
+    g.beginPath(); g.moveTo(U(0.41), V(0)); g.lineTo(U(0.59), V(0)); g.lineTo(U(0.5), V(0.5)); g.closePath(); g.fill();
+    g.fillStyle = look.accent;
+    g.beginPath(); g.moveTo(U(0.488), V(0.05)); g.lineTo(U(0.512), V(0.05)); g.lineTo(U(0.518), V(0.44)); g.lineTo(U(0.5), V(0.5)); g.lineTo(U(0.482), V(0.44)); g.closePath(); g.fill();
+    g.strokeStyle = shade(look.color, 0.55);
+    g.lineWidth = 2;
+    g.beginPath(); g.moveTo(U(0.41), V(0)); g.lineTo(U(0.5), V(0.5)); g.lineTo(U(0.59), V(0)); g.stroke();
+    g.strokeStyle = shade(look.color, 1.4);
+    g.lineWidth = 1;
+    g.beginPath(); g.moveTo(U(0.4), V(0.05)); g.lineTo(U(0.44), V(0.28)); g.moveTo(U(0.6), V(0.05)); g.lineTo(U(0.56), V(0.28)); g.stroke();
+    rect(0.5, 0.5, 0.503, 1, 'rgba(0,0,0,0.35)');
+    g.fillStyle = shade(look.color, 0.5);
+    for (const v of [0.62, 0.8]) { g.beginPath(); g.arc(U(0.51), V(v), 1.5, 0, 7); g.fill(); }
+    // A pocket square.
+    rect(0.6, 0.3, 0.64, 0.33, '#e8e4dc');
+  }
+  if (top === 'leather' && look.outfit === 'leather') {
+    // The club patch on the back: a horned wheel and two rockers, in the accent colour.
+    back((cx) => {
+      g.fillStyle = look.accent;
+      g.fillRect(cx - 18, V(0.2), 36, 6);
+      g.fillRect(cx - 16, V(0.74), 32, 5);
+      g.strokeStyle = look.accent;
+      g.lineWidth = 3;
+      g.beginPath(); g.arc(cx, V(0.47), 11, 0, 7); g.stroke();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2;
+        g.beginPath(); g.moveTo(cx, V(0.47)); g.lineTo(cx + Math.cos(a) * 11, V(0.47) + Math.sin(a) * 11); g.stroke();
+      }
+      g.fillStyle = '#e8e4dc';
+      g.beginPath(); g.moveTo(cx - 10, V(0.35)); g.lineTo(cx - 16, V(0.24)); g.lineTo(cx - 5, V(0.33)); g.fill();
+      g.beginPath(); g.moveTo(cx + 10, V(0.35)); g.lineTo(cx + 16, V(0.24)); g.lineTo(cx + 5, V(0.33)); g.fill();
+    });
+  }
+}
+
+/** The print: one small picture per look, shown on the chest or the cap. */
+function paintPrint(g, look) {
+  const [x, y, w, h] = R.print;
+  g.save();
+  g.translate(x, y);
+  if (look.logo === 'pizza') {
+    // Pizza Pronto: a slice on a red disc, with a crust and pepperoni.
+    g.fillStyle = look.color;
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = look.accent;
+    g.beginPath(); g.arc(32, 30, 27, 0, 7); g.fill();
+    g.fillStyle = '#f7d774';
+    g.beginPath(); g.moveTo(32, 50); g.lineTo(14, 16); g.quadraticCurveTo(32, 8, 50, 16); g.closePath(); g.fill();
+    g.fillStyle = '#b9772d';
+    g.beginPath(); g.moveTo(14, 16); g.quadraticCurveTo(32, 8, 50, 16); g.lineTo(48, 21); g.quadraticCurveTo(32, 13, 16, 21); g.closePath(); g.fill();
+    g.fillStyle = '#b3261e';
+    for (const [px, py] of [[28, 24], [38, 26], [32, 36], [24, 32]]) { g.beginPath(); g.arc(px, py, 3.2, 0, 7); g.fill(); }
+    g.fillStyle = '#fff';
+    g.font = 'bold 10px Arial, sans-serif';
+    g.textAlign = 'center';
+    g.fillText('PRONTO', 32, 62);
+  } else if (look.logo === 'badge') {
+    // A seven-point star on the shirt colour.
+    g.fillStyle = look.top === 'uniform' ? look.color : shade(look.color, 0.8);
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = '#d9b14a';
+    g.beginPath();
+    for (let i = 0; i < 14; i++) {
+      const a = -Math.PI / 2 + (i / 14) * Math.PI * 2;
+      const r = i % 2 ? 13 : 29;
+      g.lineTo(32 + Math.cos(a) * r, 33 + Math.sin(a) * r);
+    }
+    g.closePath(); g.fill();
+    g.fillStyle = '#8a6a1e';
+    g.beginPath(); g.arc(32, 33, 9, 0, 7); g.fill();
+    g.fillStyle = '#f2d98a';
+    g.beginPath(); g.arc(32, 33, 5, 0, 7); g.fill();
+  } else if (look.logo === 'id') {
+    // A clip-on ID card: blue header, photo, lines of text.
+    g.fillStyle = '#f4f1ea';
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = '#23407a';
+    g.fillRect(0, 0, w, 16);
+    g.fillStyle = '#fff';
+    g.font = 'bold 11px Arial, sans-serif';
+    g.textAlign = 'center';
+    g.fillText('AGENT', 32, 12);
+    g.fillStyle = '#8a9aa8';
+    g.fillRect(6, 22, 20, 26);
+    g.fillStyle = look.skin;
+    g.beginPath(); g.arc(16, 32, 6, 0, 7); g.fill();
+    g.fillStyle = '#555';
+    for (const ly of [24, 32, 40]) g.fillRect(31, ly, 26, 3);
+    g.fillStyle = '#23407a';
+    g.fillRect(0, 54, w, 10);
+  } else {
+    g.fillStyle = look.color;
+    g.fillRect(0, 0, w, h);
+  }
+  g.restore();
+}
+
+/** A painted face: brows, eyes, nose, mouth, stubble or a beard, lines with age. */
 function drawYoungFace(g, [x, y, w, h], look, rnd) {
   const k = w / 256;
   const X = (v) => x + v * k;
   const Y = (v) => y + v * k;
+  const lined = look.face === 'lined';
+  const glow = (cx, cy, r, color, a, sy = 1) => {
+    g.save();
+    g.translate(X(cx), Y(cy));
+    g.scale(1, sy);
+    const gr = g.createRadialGradient(0, 0, 0, 0, 0, r * k);
+    gr.addColorStop(0, `rgba(${color},${a})`);
+    gr.addColorStop(1, `rgba(${color},0)`);
+    g.fillStyle = gr;
+    g.fillRect(-r * k, -r * k, r * 2 * k, r * 2 * k);
+    g.restore();
+  };
   g.fillStyle = look.skin;
   g.fillRect(x, y, w, h);
   for (let i = 0; i < 500; i++) {
     g.fillStyle = `rgba(0,0,0,${rnd() * 0.05})`;
     g.fillRect(x + rnd() * w, y + rnd() * h, 2, 2);
   }
-  // Hairline at the top of the head.
-  g.fillStyle = look.hair;
-  g.fillRect(x, y, w, 60 * k);
+  // Light and shade, the way a photo texture has it: a lit forehead and nose,
+  // sunken eyes, warm cheeks, a shadow under the jaw.
+  glow(128, 80, 50, '255,245,230', 0.16, 0.7);
+  glow(128, 142, 16, '255,240,225', 0.14, 1.6);
+  for (const ex of [96, 160]) glow(ex, 116, 24, '60,30,20', lined ? 0.34 : 0.24, 0.7);
+  for (const cx of [84, 172]) glow(cx, 150, 26, '180,70,55', 0.12, 1);
+  glow(128, 226, 70, '40,20,15', 0.3, 0.45);
+  for (const sx of [58, 198]) glow(sx, 140, 30, '40,20,15', 0.16, 1.6);
+
+  // Hair at the top of the head (all round), a fringe of it for the balding.
+  if (!HAIRLESS.has(look.head)) {
+    g.fillStyle = look.hair;
+    g.fillRect(x, y, w, 60 * k);
+    // A soft, uneven hairline.
+    for (let i = 0; i < 40; i++) g.fillRect(X(rnd() * 256), Y(56 + rnd() * 6), 5 * k, 4 * k);
+  } else if (look.head === 'thin') {
+    g.fillStyle = look.hair;
+    g.globalAlpha = 0.9;
+    g.fillRect(x, Y(52), 62 * k, 60 * k);
+    g.fillRect(X(194), Y(52), 62 * k, 60 * k);
+    g.globalAlpha = 0.35;
+    g.fillRect(x, Y(20), 50 * k, 32 * k);
+    g.fillRect(X(206), Y(20), 50 * k, 32 * k);
+    g.globalAlpha = 1;
+  } else if (look.head === 'bald') {
+    glow(128, 20, 60, '255,250,240', 0.18, 0.6);
+    g.fillStyle = look.hair;
+    g.globalAlpha = 0.25;
+    g.fillRect(x, Y(80), 44 * k, 40 * k);
+    g.fillRect(X(212), Y(80), 44 * k, 40 * k);
+    g.globalAlpha = 1;
+  }
+
+  if (lined) {
+    // Forehead lines, bags under the eyes, lines from the nose to the mouth.
+    g.strokeStyle = 'rgba(80,40,28,0.45)';
+    g.lineWidth = 2 * k;
+    for (const fy of [72, 82, 92]) { g.beginPath(); g.moveTo(X(98), Y(fy)); g.quadraticCurveTo(X(128), Y(fy - 5), X(158), Y(fy)); g.stroke(); }
+    for (const ex of [96, 160]) {
+      g.beginPath(); g.ellipse(X(ex), Y(130), 12 * k, 5 * k, 0, 0.1, Math.PI - 0.1); g.stroke();
+      const out = ex < 128 ? -1 : 1;
+      for (let j = -1; j <= 1; j++) { g.beginPath(); g.moveTo(X(ex + out * 16), Y(118 + j * 4)); g.lineTo(X(ex + out * 25), Y(116 + j * 7)); g.stroke(); }
+    }
+    g.strokeStyle = 'rgba(80,40,28,0.5)';
+    g.lineWidth = 3 * k;
+    g.beginPath(); g.moveTo(X(114), Y(150)); g.quadraticCurveTo(X(100), Y(170), X(104), Y(192)); g.stroke();
+    g.beginPath(); g.moveTo(X(142), Y(150)); g.quadraticCurveTo(X(156), Y(170), X(152), Y(192)); g.stroke();
+  }
+
   // Stubble or a beard round the jaw.
   if (look.beard) {
-    g.fillStyle = look.beard === 'goatee' || look.beard === 'stache' ? look.hair : `${look.hair}`;
+    g.fillStyle = look.hair;
     g.globalAlpha = look.beard === 'full' ? 0.95 : 0.9;
-    if (look.beard === 'full') g.fillRect(X(70), Y(160), 116 * k, 70 * k);
-    if (look.beard === 'goatee') g.fillRect(X(112), Y(186), 32 * k, 30 * k);
-    g.fillRect(X(100), Y(170), 56 * k, 8 * k);                            // moustache
+    if (look.beard === 'full') {
+      g.fillRect(X(70), Y(160), 116 * k, 70 * k);
+      for (const sx of [58, 186]) g.fillRect(X(sx), Y(120), 12 * k, 60 * k);   // sideburns
+    }
+    if (look.beard === 'goatee') g.fillRect(X(110), Y(186), 36 * k, 34 * k);
+    if (look.beard === 'chin') {
+      g.beginPath();
+      g.moveTo(X(100), Y(172)); g.lineTo(X(108), Y(172)); g.lineTo(X(112), Y(190)); g.lineTo(X(144), Y(190)); g.lineTo(X(148), Y(172));
+      g.lineTo(X(156), Y(172)); g.lineTo(X(154), Y(210)); g.quadraticCurveTo(X(128), Y(232), X(102), Y(210)); g.closePath(); g.fill();
+    }
+    g.fillRect(X(102), Y(170), 52 * k, 8 * k);                             // moustache
     g.globalAlpha = 1;
+    // Stray hairs so it is not a flat patch.
+    g.fillStyle = 'rgba(0,0,0,0.25)';
+    for (let i = 0; i < 60; i++) g.fillRect(X(100 + rnd() * 56), Y(168 + rnd() * 50), 1.5 * k, 3 * k);
   } else {
-    g.fillStyle = 'rgba(40,30,25,0.18)';
+    g.fillStyle = 'rgba(40,30,25,0.16)';
     g.fillRect(X(76), Y(168), 104 * k, 50 * k);
   }
+
   // Eyes and brows.
+  const brows = lined && HAIRLESS.has(look.head) ? shade(look.hair, 0.8) : look.hair;
   for (const ex of [96, 160]) {
     if (look.shades) {
       g.fillStyle = '#0c0c10';
       g.fillRect(X(ex - 20), Y(108), 40 * k, 20 * k);
     } else {
-      g.fillStyle = '#f4efe6';
-      g.beginPath(); g.ellipse(X(ex), Y(118), 12 * k, 6 * k, 0, 0, 7); g.fill();
-      g.fillStyle = '#3a2a1a';
-      g.beginPath(); g.arc(X(ex), Y(118), 5 * k, 0, 7); g.fill();
+      g.fillStyle = '#dcd2c4';
+      g.beginPath(); g.ellipse(X(ex), Y(118), 11 * k, 5.5 * k, 0, 0, 7); g.fill();
+      g.fillStyle = look.eyes || '#3a2a1a';
+      g.beginPath(); g.arc(X(ex), Y(118), 5.5 * k, 0, 7); g.fill();
+      g.fillStyle = '#0e0b0a';
+      g.beginPath(); g.arc(X(ex), Y(118), 2.5 * k, 0, 7); g.fill();
+      g.fillStyle = 'rgba(255,255,255,0.8)';
+      g.fillRect(X(ex + 1), Y(115), 2 * k, 2 * k);
+      // Upper lid.
+      g.strokeStyle = 'rgba(40,20,15,0.85)';
+      g.lineWidth = 2.5 * k;
+      g.beginPath(); g.ellipse(X(ex), Y(119), 13 * k, 7.5 * k, 0, Math.PI * 1.08, Math.PI * 1.92); g.stroke();
     }
-    g.fillStyle = look.hair;
-    g.fillRect(X(ex - 18), Y(98), 36 * k, 7 * k);
+    g.fillStyle = brows;
+    g.beginPath();
+    const inner = ex < 128 ? ex + 18 : ex - 18;
+    const outer = ex < 128 ? ex - 19 : ex + 19;
+    g.moveTo(X(inner), Y(101)); g.lineTo(X(outer), Y(99)); g.lineTo(X(outer), Y(104)); g.lineTo(X(inner), Y(108));
+    g.closePath(); g.fill();
   }
   if (look.shades) { g.fillStyle = '#0c0c10'; g.fillRect(X(116), Y(112), 24 * k, 4 * k); }
-  // Nose shadow and a mouth.
+  // Nose: a lit bridge, a shadow down one side, nostrils.
   g.fillStyle = 'rgba(110,50,40,0.3)';
   g.beginPath(); g.moveTo(X(128), Y(120)); g.lineTo(X(118), Y(158)); g.lineTo(X(138), Y(158)); g.closePath(); g.fill();
-  g.fillStyle = 'rgba(90,30,30,0.7)';
-  g.fillRect(X(110), Y(180), 36 * k, 4 * k);
+  g.fillStyle = 'rgba(40,15,10,0.55)';
+  for (const nx of [121, 135]) { g.beginPath(); g.ellipse(X(nx), Y(156), 3.5 * k, 2 * k, 0, 0, 7); g.fill(); }
+  // Mouth: a dark line between the lips, a fuller, lighter lower lip.
+  g.fillStyle = 'rgba(150,70,60,0.45)';
+  g.beginPath(); g.ellipse(X(128), Y(186), 17 * k, 5 * k, 0, 0, 7); g.fill();
+  g.fillStyle = 'rgba(70,25,22,0.8)';
+  g.fillRect(X(110), Y(180), 36 * k, 3.5 * k);
+  g.fillStyle = 'rgba(255,220,200,0.18)';
+  g.fillRect(X(118), Y(186), 20 * k, 2 * k);
 }
 
 // ------------------------------------------------------------ geometry
@@ -250,6 +631,8 @@ function drawYoungFace(g, [x, y, w, h], look, rnd) {
 /** Builds the body for a look's shape: a list of parts, merged and skinned. */
 function buildGeometry(look) {
   const parts = [];
+  // o.vr: [top, bottom] as fractions of the paint region, when a part should
+  // only sample a band of it (the torso wrap); otherwise it takes the lot.
   const add = (bone, geo, paint, o = {}) => {
     const m = new THREE.Matrix4().compose(
       new THREE.Vector3(o.x || 0, o.y || 0, o.z || 0),
@@ -257,22 +640,31 @@ function buildGeometry(look) {
       new THREE.Vector3(o.sx || 1, o.sy || 1, o.sz || 1),
     );
     geo.applyMatrix4(m);
-    parts.push({ bone: B[bone], geo, paint });
+    parts.push({ bone: B[bone], geo, paint, vr: o.vr });
   };
-  const cyl = (rt, rb, h, seg = 9) => new THREE.CylinderGeometry(rt, rb, h, seg);
+  const cyl = (rt, rb, h, seg = 9, open = false) => new THREE.CylinderGeometry(rt, rb, h, seg, 1, open);
   const sph = (r, ws = 10, hs = 8) => new THREE.SphereGeometry(r, ws, hs);
   const boxg = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 
-  const bulky = look.outfit === 'farmer';
-  const sleeves = { plaid: 'rolled', tee: 'short', tank: 'none', hoodie: 'long', jersey: 'long', vest: 'short' }[look.top] || 'short';
+  const heavy = look.build === 'heavy';
+  const bulky = look.outfit === 'farmer' || heavy;
+  const wrap = WRAP_TOPS.has(look.top);
+  const sleeves = {
+    plaid: 'rolled', tee: 'short', tank: 'none', hoodie: 'long', jersey: 'long', vest: 'short',
+    flannel: 'long', sweater: 'long', polo: 'short', shirt: 'long', hawaii: 'short', suit: 'long', uniform: 'short', leather: 'long',
+  }[look.top] || 'short';
+  // Wrap tops turn the torso round so the middle of the region is the front,
+  // and give each part its band: shoulders, chest, belly.
+  const band = (vr) => (wrap ? { ry: Math.PI, vr } : {});
+  const limb = heavy ? 1.18 : 1;
 
   // Hips and belly.
   add('hips', cyl(0.165, 0.16, 0.2, 10), 'pants', { y: -0.02, sz: 0.74 });
-  add('spine', cyl(bulky ? 0.2 : 0.17, 0.165, 0.24, 10), look.legs === 'overalls' ? 'pants' : 'shirt', { y: 0.1, sz: bulky ? 0.82 : 0.72 });
-  if (bulky) add('spine', sph(0.19, 10, 8), 'pants', { y: 0.08, z: 0.03, sy: 0.8, sz: 0.8 });   // a belly
+  add('spine', cyl(bulky ? 0.2 : 0.17, 0.165, 0.24, 10), look.legs === 'overalls' ? 'pants' : 'shirt', { y: 0.1, sz: bulky ? 0.82 : 0.72, ...band([0.56, 1]) });
+  if (bulky) add('spine', sph(0.19, 10, 8), look.legs === 'overalls' ? 'pants' : wrap ? 'sleeve' : 'shirt', { y: 0.08, z: 0.03, sy: 0.8, sz: 0.8 });   // a belly
   // Chest: broad at the shoulders.
-  add('chest', cyl(0.21, bulky ? 0.2 : 0.175, 0.3, 10), 'shirt', { y: 0.1, sz: 0.66 });
-  add('chest', cyl(0.12, 0.21, 0.07, 10), 'shirt', { y: 0.285, sz: 0.62 });                     // shoulders slope
+  add('chest', cyl(heavy ? 0.235 : 0.21, bulky ? 0.2 : 0.175, 0.3, 10), 'shirt', { y: 0.1, sz: heavy ? 0.72 : 0.66, ...band([0.13, 0.69]) });
+  add('chest', cyl(0.12, heavy ? 0.235 : 0.21, 0.07, 10), 'shirt', { y: 0.285, sz: 0.62, ...band([0, 0.13]) });   // shoulders slope
   if (look.legs === 'overalls') {
     add('chest', boxg(0.24, 0.2, 0.03), 'pants', { y: 0.07, z: 0.125 });                          // bib
     for (const s of [-1, 1]) {
@@ -287,27 +679,69 @@ function buildGeometry(look) {
   }
   if (look.top === 'hoodie') add('chest', sph(0.13, 10, 6), 'shirt', { y: 0.28, z: -0.1, sx: 1.3, sy: 0.6 });   // hood
   if (look.top === 'jersey') add('chest', cyl(0.085, 0.09, 0.05, 8), 'shirt', { y: 0.31 });                   // collar
-  add('neck', cyl(0.058, 0.065, 0.12, 8), 'skin', { y: 0.03 });
+  if (HEM_TOPS.has(look.top)) {
+    // The tail of the shirt or jacket, hanging over the belt.
+    add('hips', cyl(0.178, 0.19, 0.15, 10, true), 'shirt', { y: 0.005, sz: 0.8, ry: Math.PI, vr: [0.82, 1] });
+  }
+  if (look.top === 'sweater') add('hips', cyl(0.172, 0.178, 0.08, 10, true), 'tee', { y: -0.03, sz: 0.8 });   // tee below it
+  if (COLLAR_TOPS.has(look.top)) {
+    // A collar standing round the neck, points down at the front.
+    add('chest', cyl(0.078, 0.086, 0.045, 10, true), 'trim', { y: 0.3, sz: 0.95 });
+    for (const s of [-1, 1]) add('chest', boxg(0.05, 0.05, 0.012), 'trim', { x: s * 0.038, y: 0.27, z: 0.08, rx: -0.35, rz: s * 0.5 });
+  }
+  if (look.top === 'suit') {
+    add('chest', cyl(0.076, 0.082, 0.04, 10, true), 'tee', { y: 0.3, sz: 0.95 });                  // shirt collar
+    add('chest', boxg(0.032, 0.03, 0.02), 'tie', { y: 0.275, z: 0.075, rx: -0.3 });                  // tie knot
+  }
+  if (look.top === 'leather') {
+    // A stand-up collar (the lapels are painted on).
+    add('chest', cyl(0.092, 0.1, 0.055, 10, true), 'sleeve', { y: 0.305, z: -0.01, sz: 0.95 });
+  }
+  if (look.top === 'uniform') {
+    // Epaulettes, a duty belt with a holster and a radio.
+    for (const s of ['L', 'R']) add(`shoulder${s}`, boxg(0.07, 0.014, 0.13), 'trim', { y: 0.058 });
+    add('hips', cyl(0.174, 0.174, 0.055, 10), 'dark', { y: 0.06, sz: 0.78 });
+    add('hips', boxg(0.06, 0.16, 0.09), 'dark', { x: -0.19, y: -0.02, z: 0.01 });
+    add('hips', boxg(0.05, 0.08, 0.035), 'dark', { x: 0.12, y: 0.03, z: 0.12 });
+  }
+  if (look.logo === 'badge' || look.logo === 'id' || (look.logo === 'pizza' && look.top === 'polo')) {
+    // The print on the left of the chest.
+    const id = look.logo === 'id';
+    add('chest', boxg(id ? 0.06 : 0.07, id ? 0.08 : 0.07, 0.006), 'print', { x: 0.085, y: id ? 0.11 : 0.16, z: 0.132, ry: 0.35, rx: -0.12 });
+  }
+  if (look.chain) {
+    // A heavy chain hanging round the neck (the front half of a ring, laid on the chest) with a pendant.
+    add('chest', new THREE.TorusGeometry(0.12, 0.009, 4, 14, Math.PI), 'metal', { y: 0.32, z: 0.05, rx: -0.85, rz: Math.PI });
+    add('chest', boxg(0.045, 0.06, 0.012), 'metal', { y: 0.2, z: 0.146, rx: -0.3 });
+  }
+  add('neck', cyl(heavy ? 0.068 : 0.058, heavy ? 0.078 : 0.065, 0.12, 8), 'skin', { y: 0.03 });
 
   // Head: the painted face on a slightly long skull, nose and ears.
   const skull = sph(0.12, 14, 12);
   skull.rotateY(-Math.PI / 2);
   add('head', skull, 'face', { y: 0.12, sy: 1.14, sz: 1.06 });
-  add('head', new THREE.ConeGeometry(0.022, 0.055, 5), 'skin', { y: 0.11, z: 0.125, rx: Math.PI / 2 });
+  add('head', new THREE.ConeGeometry(0.028, 0.06, 6), 'skin', { y: 0.118, z: 0.114, rx: Math.PI / 2 + 0.5, sx: 0.85 });
   for (const s of [-1, 1]) add('head', sph(0.028, 6, 5), 'skin', { x: s * 0.12, y: 0.12, sx: 0.5, sz: 0.8 });
   // Beards.
   if (look.beard === 'grey' || look.beard === 'full') {
     add('head', new THREE.SphereGeometry(0.105, 10, 8, 0, Math.PI * 2, Math.PI * 0.35, Math.PI * 0.55), 'hair', { y: 0.07, z: 0.03, sx: 1.05, sy: 1.1 });
     add('head', boxg(0.1, 0.022, 0.03), 'hair', { y: 0.075, z: 0.125 });
   } else if (look.beard === 'goatee') {
-    add('head', boxg(0.05, 0.05, 0.03), 'hair', { y: 0.02, z: 0.105 });
+    add('head', sph(0.028, 7, 5), 'hair', { y: 0.025, z: 0.1, sy: 1.15, sz: 0.6 });
   }
   if (look.mask) {
     // A bandana over the nose and mouth, outlaw style.
     add('head', new THREE.CylinderGeometry(0.126, 0.118, 0.09, 12, 1, true), 'accent', { y: 0.08, z: 0.006, sz: 1.08 });
     add('head', new THREE.ConeGeometry(0.07, 0.1, 4), 'accent', { y: 0.02, z: 0.09, rx: Math.PI, sz: 0.4 });
   }
-  if (look.shades) add('head', boxg(0.2, 0.035, 0.02), 'dark', { y: 0.135, z: 0.118 });
+  if (look.shades) {
+    // Two dark lenses on a bridge, wrapping round to the temples.
+    for (const s of [-1, 1]) {
+      add('head', boxg(0.078, 0.038, 0.012), 'dark', { x: s * 0.047, y: 0.137, z: 0.122, ry: s * 0.28 });
+      add('head', boxg(0.008, 0.012, 0.09), 'dark', { x: s * 0.106, y: 0.142, z: 0.07, ry: s * 0.1 });
+    }
+    add('head', boxg(0.03, 0.01, 0.01), 'dark', { y: 0.146, z: 0.132 });
+  }
 
   // Headwear.
   const hatY = 0.21;
@@ -326,7 +760,8 @@ function buildGeometry(look) {
     case 'capback': {
       const back = look.head === 'capback' ? Math.PI : 0;
       add('head', new THREE.SphereGeometry(0.128, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), 'hat', { y: hatY - 0.04, sy: 0.75, sz: 1.08 });
-      add('head', boxg(0.18, 0.012, 0.1), 'hat', { y: hatY - 0.035, z: back ? -0.16 : 0.16, rx: back ? -0.1 : 0.1 });
+      add('head', boxg(0.18, 0.012, 0.1), look.logo === 'pizza' ? 'accent' : 'hat', { y: hatY - 0.035, z: back ? -0.16 : 0.16, rx: back ? -0.1 : 0.1 });
+      if (look.logo === 'pizza' && !back) add('head', boxg(0.07, 0.055, 0.005), 'print', { y: hatY + 0.005, z: 0.122, rx: -0.55 });
       break;
     }
     case 'flatcap':
@@ -337,10 +772,22 @@ function buildGeometry(look) {
     case 'beanie':
       add('head', new THREE.SphereGeometry(0.13, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.55), 'hat', { y: hatY - 0.05, sy: 1.0, sz: 1.06 });
       break;
+    case 'skullcap':
+      // A tight black cap pulled down to the brows, tied at the back.
+      add('head', new THREE.SphereGeometry(0.128, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.52), 'hat', { y: 0.13, rx: -0.25, sy: 1.12, sz: 1.08 });
+      add('head', boxg(0.03, 0.06, 0.02), 'hat', { y: 0.12, z: -0.14, rx: 0.4 });
+      break;
     case 'bandana':
       // Tied round the head, the knot and tails at the back.
       add('head', new THREE.SphereGeometry(0.127, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.5), 'hat', { y: hatY - 0.045, sy: 0.85, sz: 1.07 });
       add('head', boxg(0.05, 0.1, 0.02), 'hat', { y: hatY - 0.09, z: -0.13, rx: 0.3 });
+      break;
+    case 'peaked':
+      // A patrol cap: crown, black band, a shiny peak and the badge.
+      add('head', cyl(0.148, 0.128, 0.085, 12), 'hat', { y: hatY + 0.035, sz: 1.06 });
+      add('head', cyl(0.131, 0.131, 0.035, 12), 'dark', { y: hatY + 0.005, sz: 1.06 });
+      add('head', boxg(0.19, 0.012, 0.085), 'dark', { y: hatY - 0.01, z: 0.155, rx: 0.3 });
+      add('head', boxg(0.04, 0.045, 0.006), 'print', { y: hatY + 0.035, z: 0.14, rx: -0.12 });
       break;
     case 'helmet':
       add('head', new THREE.SphereGeometry(0.14, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.52), 'hat', { y: hatY - 0.05, sz: 1.08 });
@@ -348,6 +795,30 @@ function buildGeometry(look) {
     case 'hair':
       add('head', new THREE.SphereGeometry(0.126, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.45), 'hair', { y: hatY - 0.05, sz: 1.07 });
       break;
+    case 'slick':
+      // Combed back, with a bit of height at the front.
+      // Combed back: hugging the skull, off the forehead, down to the collar at the back.
+      add('head', new THREE.SphereGeometry(0.128, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.4), 'hair', { y: 0.125, rx: -0.4, sy: 1.14, sz: 1.08 });
+      break;
+    case 'braids': {
+      // Short twists all round from the crown, shorter over the face.
+      add('head', new THREE.SphereGeometry(0.127, 12, 7, 0, Math.PI * 2, 0, Math.PI * 0.42), 'hair', { y: hatY - 0.05, sz: 1.07 });
+      const q = new THREE.Quaternion();
+      const dir = new THREE.Vector3();
+      for (let i = 0; i < 18; i++) {
+        const a = (i / 18) * Math.PI * 2 + 0.17;
+        const front = Math.cos(a);
+        if (front > 0.8) continue;                                   // leave the face clear
+        const len = front > 0.3 ? 0.07 : 0.13;
+        dir.set(Math.sin(a) * 0.5, -1, front * 0.5).normalize();
+        q.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir);
+        const twist = cyl(0.017, 0.012, len, 5).applyQuaternion(q);
+        add('head', twist, 'hair', {
+          x: Math.sin(a) * 0.115 + dir.x * len * 0.5, y: 0.2 + dir.y * len * 0.5, z: front * 0.12 + dir.z * len * 0.5,
+        });
+      }
+      break;
+    }
     default:
       break;
   }
@@ -356,37 +827,53 @@ function buildGeometry(look) {
   for (const s of ['L', 'R']) {
     const up = sleeves === 'none' ? 'skin' : 'sleeve';
     const fore = sleeves === 'long' ? 'sleeve' : 'skin';
-    add(`shoulder${s}`, sph(0.075, 8, 6), look.top === 'tank' ? 'skin' : 'shirt', { y: -0.01 });
-    add(`shoulder${s}`, cyl(0.066, 0.056, UPPER_ARM, 8), up, { y: -UPPER_ARM / 2 });
+    const shoulderPaint = look.top === 'tank' ? 'skin' : wrap ? 'sleeve' : 'shirt';
+    add(`shoulder${s}`, sph(0.075 * limb, 8, 6), shoulderPaint, { y: -0.01 });
+    add(`shoulder${s}`, cyl(0.066 * limb, 0.056 * limb, UPPER_ARM, 8), up, { y: -UPPER_ARM / 2 });
     if (sleeves === 'rolled') add(`shoulder${s}`, cyl(0.07, 0.07, 0.05, 8), 'sleeve', { y: -UPPER_ARM + 0.02 });
-    if (sleeves === 'short') add(`shoulder${s}`, cyl(0.07, 0.066, 0.12, 8), 'sleeve', { y: -0.06 });
-    add(`elbow${s}`, sph(0.052, 7, 5), fore === 'skin' && sleeves !== 'rolled' ? 'skin' : 'sleeve');
-    add(`elbow${s}`, cyl(0.051, 0.042, FOREARM, 8), fore, { y: -FOREARM / 2 });
+    if (sleeves === 'short') add(`shoulder${s}`, cyl(0.07 * limb, 0.066 * limb, 0.12, 8), 'sleeve', { y: -0.06 });
+    add(`elbow${s}`, sph(0.052 * limb, 7, 5), fore === 'skin' && sleeves !== 'rolled' ? 'skin' : 'sleeve');
+    add(`elbow${s}`, cyl(0.051 * limb, 0.042 * limb, FOREARM, 8), fore, { y: -FOREARM / 2 });
     add(`wrist${s}`, boxg(0.075, 0.1, 0.042), 'skin', { y: -0.05 });
     add(`wrist${s}`, boxg(0.022, 0.05, 0.025), 'skin', { x: (s === 'L' ? -1 : 1) * 0.035, y: -0.04, z: 0.025, rz: (s === 'L' ? -1 : 1) * 0.3 });
   }
 
   // Legs: thigh, knee, shin, boot.
   for (const s of ['L', 'R']) {
-    add(`hip${s}`, cyl(0.09, 0.07, 0.44, 9), 'pants', { y: -0.22 });
-    add(`knee${s}`, sph(0.068, 7, 5), 'pants');
-    add(`knee${s}`, cyl(0.066, 0.056, 0.4, 9), 'pants', { y: -0.2 });
+    if (look.legs === 'baggy') {
+      // Loose, low, bunched over the shoes.
+      add(`hip${s}`, cyl(0.108, 0.094, 0.44, 9), 'pants', { y: -0.22 });
+      add(`knee${s}`, sph(0.09, 7, 5), 'pants');
+      add(`knee${s}`, cyl(0.09, 0.098, 0.4, 9), 'pants', { y: -0.2 });
+      add(`ankle${s}`, cyl(0.104, 0.1, 0.07, 9), 'pants', { y: 0.03 });
+    } else if (look.legs === 'shorts') {
+      add(`hip${s}`, cyl(0.1, 0.094, 0.34, 9), 'pants', { y: -0.17 });
+      add(`hip${s}`, cyl(0.075, 0.068, 0.12, 8), 'skin', { y: -0.38 });
+      add(`knee${s}`, sph(0.066, 7, 5), 'skin');
+      add(`knee${s}`, cyl(0.062, 0.05, 0.4, 8), 'skin', { y: -0.2 });
+      add(`ankle${s}`, cyl(0.052, 0.052, 0.06, 8), 'tee', { y: 0.02 });                       // socks
+    } else {
+      add(`hip${s}`, cyl(0.09 * (heavy ? 1.15 : 1), 0.07, 0.44, 9), 'pants', { y: -0.22 });
+      add(`knee${s}`, sph(0.068, 7, 5), 'pants');
+      add(`knee${s}`, cyl(0.066, 0.056, 0.4, 9), 'pants', { y: -0.2 });
+    }
     add(`ankle${s}`, boxg(0.115, 0.08, 0.25), 'shoe', { y: -0.025, z: 0.05 });
     add(`ankle${s}`, boxg(0.12, 0.022, 0.26), 'sole', { y: -0.066, z: 0.05 });
     if (look.shoes === 'boots') add(`ankle${s}`, cyl(0.064, 0.06, 0.12, 8), 'shoe', { y: 0.04 });
   }
 
   // Into body space, painted from the atlas, weighted fully to their bone.
-  const geos = parts.map(({ bone, geo, paint }) => {
+  const geos = parts.map(({ bone, geo, paint, vr }) => {
     const g = geo.index ? geo : geo;
     const [bx, by, bz] = BIND[bone];
     g.translate(bx, by, bz);
-    const [x, y, w, h] = R[paint];
+    let [x, y, w, h] = R[paint];
+    if (vr) { y += h * vr[0]; h *= vr[1] - vr[0]; }
     const pad = 1.5;
-    const u0 = (x + pad) / ATLAS;
-    const u1 = (x + w - pad) / ATLAS;
-    const v1 = 1 - (y + pad) / ATLAS;
-    const v0 = 1 - (y + h - pad) / ATLAS;
+    const u0 = (x + pad) / ATLAS_W;
+    const u1 = (x + w - pad) / ATLAS_W;
+    const v1 = 1 - (y + (vr ? 0 : pad)) / ATLAS_H;
+    const v0 = 1 - (y + h - (vr ? 0 : pad)) / ATLAS_H;
     const uv = g.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, u0 + uv.getX(i) * (u1 - u0), v0 + uv.getY(i) * (v1 - v0));
     const n = g.attributes.position.count;
@@ -406,7 +893,7 @@ const shapeCache = new Map();
 const materialCache = new Map();
 
 function shapeKey(l) {
-  return [l.outfit, l.top, l.legs, l.head, l.beard, l.shoes, l.shades ? 1 : 0, l.mask ? 1 : 0].join('/');
+  return [l.outfit, l.top, l.legs, l.head, l.beard, l.shoes, l.shades ? 1 : 0, l.mask ? 1 : 0, l.build || '', l.chain ? 1 : 0, l.logo || ''].join('/');
 }
 
 function geometryFor(look) {
