@@ -43,6 +43,7 @@
       <div><kbd>Q</kbd><span>Gun out / away · <kbd>R</kbd> reload</span></div>
       <div><kbd>LMB</kbd> <kbd>RMB</kbd><span>Shoot · aim</span></div>
       <div><kbd>Tab</kbd><span>Rich list + your storage</span></div>
+      <div><kbd>M</kbd><span>Map · <kbd>N</kbd> sound on / off</span></div>
       <div><kbd>H</kbd><span>Help · <kbd>P</kbd> graphics</span></div>
     </div>
 
@@ -127,6 +128,22 @@
     </div>
   </div>
 
+  <div id="map" class="screen" hidden>
+    <canvas id="map-canvas"></canvas>
+    <div class="map-head"><b>THE VALLEY</b><span class="map-here"></span></div>
+    <div class="map-legend">
+      <span><i class="lg you"></i>You</span>
+      <span><i class="lg dot" style="--c:#4fc3ff"></i>Players</span>
+      <span><i class="lg icon">H</i>Your clubhouse</span>
+      <span><i class="lg icon" style="--c:#f2c14e">R</i>Your restaurants</span>
+      <span><i class="lg icon" style="--c:#6dff7a">$</i>Dropped cash</span>
+      <span><i class="lg dot" style="--c:#ff2a2a"></i>Raiders</span>
+      <span><i class="lg sq" style="--c:#ff8a3a"></i>Rival gang car</span>
+      <span><i class="lg flag"></i>Waypoint</span>
+    </div>
+    <div class="map-hint"><kbd>Click</kbd> set / clear waypoint · <kbd>Wheel</kbd> zoom · <kbd>Drag</kbd> move · <kbd>M</kbd> or <kbd>Esc</kbd> close</div>
+  </div>
+
   <div id="help" class="screen" hidden>
     <div class="board-card">
       <h2>HOW TO PLAY</h2>
@@ -167,8 +184,11 @@
           <p>Every so often a herd charges out of the woods and starts eating your crops. <kbd>Q</kbd> gets Grandpa's rifle out, <kbd>RMB</kbd> aims, <kbd>LMB</kbd> fires, <kbd>R</kbd> reloads. Headshots count double.</p>
           <p>Get close and a boar paws the ground and grunts — that is your warning. Then it charges in a straight line: <b>step sideways</b> and it runs past. Only one comes at you at a time. Get hit too often and you are wasted (you lose nothing).</p>
           <p>Boars get bigger and meaner as your farm levels up; <b>Rusty's Guns</b> in town sells better guns. Or just run them over.</p></div>
+        <div><h4>🗺️ THE MAP</h4>
+          <p><kbd>M</kbd> opens the whole valley: every hood and whose gang runs it, other players, raiders, your clubhouse and restaurants. Wheel to zoom, drag to move.</p>
+          <p><b>Click</b> to plant a waypoint: it shows on your radar (on the rim when it is far away) until you get there. Click it again to take it away. <kbd>N</kbd> turns the sound on and off.</p></div>
         <div><h4>🖥️ GRAPHICS</h4>
-          <p><kbd>P</kbd> cycles PS2 (soft), Sharp (sharper shadows) and Potato (no shadows or bloom, for slow laptops). <kbd>F3</kbd> shows the frame rate.</p></div>
+          <p><kbd>P</kbd> cycles Auto, Ultra, High, Medium and Low. Auto picks for your machine and steps down if the game slows. <kbd>F3</kbd> shows the frame rate and the setting.</p></div>
       </div>
       <p class="fineprint">Everything saves on the host's computer automatically. Come back with the same name to pick up where you left off.</p>
     </div>

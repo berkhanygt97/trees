@@ -95,6 +95,7 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow
 #hud > * { pointer-events: none; }
 /* The reconnect button has to stay clickable. */
 #disconnected, #disconnected * { pointer-events: auto; }
+#map, #map * { pointer-events: auto; }
 
 #crosshair {
   position: absolute; left: 50%; top: 50%; width: 6px; height: 6px;
@@ -796,3 +797,39 @@ tr.me td { background: rgba(242,193,78,.1); }
 #warbar b { font: 400 30px/1 var(--sa-font); -webkit-text-stroke: 1.5px #000; paint-order: stroke fill; }
 #warbar i { font: 400 20px/1 var(--sa-font); font-style: normal; color: #ffd0c8; min-width: 54px; text-align: center; }
 #warbar.warning { border-color: #f2c14e; }
+
+/* The full-screen map (M). */
+#map { display: block; padding: 0; background: #10140d; overflow: hidden; z-index: 45; }
+#map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+#map-canvas.dragging { cursor: grabbing; }
+#map .map-head {
+  position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: baseline; gap: 22px;
+  padding: 16px 28px 26px; background: linear-gradient(180deg, rgba(0,0,0,.78), rgba(0,0,0,0));
+  pointer-events: none;
+}
+#map .map-head b {
+  font: 400 44px/1 var(--sa-font); letter-spacing: 3px; color: #f2c14e;
+  -webkit-text-stroke: 2px #000; paint-order: stroke fill; text-shadow: 0 3px 0 #000;
+}
+#map .map-here { font: italic 700 19px var(--sa-title); color: #d7ccf0; text-shadow: 0 2px 4px #000; }
+#map .map-legend {
+  position: absolute; right: 22px; bottom: 56px; display: grid; grid-template-columns: auto auto; gap: 6px 18px;
+  padding: 12px 16px; border-radius: 10px; background: rgba(8,8,6,.78); border: 1px solid var(--line);
+  font: 700 12px var(--font); color: #e8dcc0; pointer-events: none;
+}
+#map .map-legend span { display: flex; align-items: center; gap: 8px; }
+#map .lg { display: inline-block; flex: none; width: 14px; height: 14px; font-style: normal; }
+#map .lg.dot { border-radius: 50%; background: var(--c); border: 1.5px solid #000; }
+#map .lg.sq { background: var(--c); border: 1.5px solid #000; width: 12px; height: 12px; }
+#map .lg.icon { width: 18px; height: 18px; border-radius: 50%; background: #111; color: var(--c, #fff); font: 400 12px/18px var(--sa-font); text-align: center; }
+#map .lg.you { width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-bottom: 15px solid #fff; filter: drop-shadow(0 0 1px #000); }
+#map .lg.flag { width: 14px; height: 16px; background: linear-gradient(#ff4fd8, #ff4fd8) 1px 0 / 2px 16px no-repeat; position: relative; }
+#map .lg.flag::after { content: ''; position: absolute; left: 3px; top: 1px; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 10px solid #ff4fd8; }
+#map .map-hint {
+  position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; pointer-events: none;
+  font: 700 13px var(--font); color: #e8dcc0; text-shadow: 0 2px 4px #000;
+}
+@media (max-width: 720px) {
+  #map .map-legend { display: none; }
+  #map .map-head b { font-size: 30px; }
+}

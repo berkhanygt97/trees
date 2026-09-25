@@ -1,6 +1,7 @@
 import { BOUNDS, CASINO, PLOTS, PLOT_SIZE, STATIC_BOXES, TRACK, DOWNTOWN } from '/shared/map.js';
 import { ALL_ROADS } from '/shared/roads.js';
 import { HOODS, HQS, PARKS, hoodAt } from '/shared/hoods.js';
+import { BUILDINGS } from '/shared/downtown.js';
 
 // The radar in the bottom-left corner, the way San Andreas had it: a round
 // map that turns with the camera, your arrow in the middle, blips for
@@ -8,7 +9,8 @@ import { HOODS, HQS, PARKS, hoodAt } from '/shared/hoods.js';
 // took it in a war).
 //
 // The whole valley is drawn once into a big canvas (redrawn when a hood
-// changes hands); every frame just turns and crops it.
+// changes hands); every frame just turns and crops it. The full-screen map
+// (M) draws the same canvas north-up, with names on it.
 
 const PAD = 60;                          // metres of map drawn past the edge of the world
 const PX = 1.25;                         // canvas pixels per metre of the base map
@@ -16,6 +18,9 @@ const W = Math.ceil((BOUNDS.maxX - BOUNDS.minX + PAD * 2) * PX);
 const H = Math.ceil((BOUNDS.maxZ - BOUNDS.minZ + PAD * 2) * PX);
 const mx = (x) => (x - BOUNDS.minX + PAD) * PX;
 const mz = (z) => (z - BOUNDS.minZ + PAD) * PX;
+const SA_FONT = 'Impact, Haettenschweiler, "Arial Narrow Bold", "Arial Black", sans-serif';
+const TITLE_FONT = '"Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif';
+const UI_FONT = '"Trebuchet MS", "Segoe UI", system-ui, sans-serif';
 
 export class Radar {
   constructor(canvas) {
@@ -35,7 +40,7 @@ export class Radar {
     let changed = false;
     for (const p of list || []) {
       if (!p || p.index == null || p.index < 0 || p.index >= HOODS.length) continue;
-      const next = p.owner ? { owner: p.owner, color: p.color, holder: p.holderColor || null } : null;
+      const next = p.owner ? { owner: p.owner, color: p.color, holder: p.holderColor || null, gang: p.gang || '', holderGang: p.holder || '' } : null;
       if (JSON.stringify(next) !== JSON.stringify(this.hoods[p.index])) { this.hoods[p.index] = next; changed = true; }
     }
     if (changed) this._draw();
@@ -171,7 +176,7 @@ export class Radar {
           y *= (R - 6) / d;
           edge = true;
         }
-        this._blip(S / 2 + x, S / 2 + y, b, edge, yaw);
+        this._blip(g, S / 2 + x, S / 2 + y, b, edge, yaw);
       }
     }
 
@@ -204,8 +209,137 @@ export class Radar {
     g.fillText('N', px, py + 0.5);
   }
 
-  _blip(x, y, b, edge, yaw) {
-    const g = this.g;
+  /**
+   * The full-screen map (M): the whole valley north-up. `view` = { x, z, zoom }
+   * is the world point in the middle of the screen and screen pixels per
+   * metre. Hood and landmark names, every blip, you, and your waypoint with
+   * a line to it.
+   */
+  drawMap(canvas, view, { pos, facing, waypoint }) {
+    const dpr = Math.min(2, devicePixelRatio || 1);
+    const cw = canvas.clientWidth;
+    const ch = canvas.clientHeight;
+    if (canvas.width !== Math.round(cw * dpr) || canvas.height !== Math.round(ch * dpr)) {
+      canvas.width = Math.round(cw * dpr);
+      canvas.height = Math.round(ch * dpr);
+    }
+    const g = canvas.getContext('2d');
+    const k = view.zoom;
+    const sx = (x) => cw / 2 + (x - view.x) * k;
+    const sy = (z) => ch / 2 + (z - view.z) * k;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = '#10140d';
+    g.fillRect(0, 0, cw, ch);
+    g.save();
+    g.translate(cw / 2, ch / 2);
+    g.scale(k / PX, k / PX);
+    g.translate(-mx(view.x), -mz(view.z));
+    g.imageSmoothingEnabled = true;
+    g.drawImage(this.base, 0, 0);
+    g.restore();
+
+    // A faint 100 m grid, so distances read at a glance.
+    g.strokeStyle = 'rgba(255,255,255,0.06)';
+    g.lineWidth = 1;
+    g.beginPath();
+    for (let x = Math.ceil(BOUNDS.minX / 100) * 100; x <= BOUNDS.maxX; x += 100) { g.moveTo(sx(x), sy(BOUNDS.minZ)); g.lineTo(sx(x), sy(BOUNDS.maxZ)); }
+    for (let z = Math.ceil(BOUNDS.minZ / 100) * 100; z <= BOUNDS.maxZ; z += 100) { g.moveTo(sx(BOUNDS.minX), sy(z)); g.lineTo(sx(BOUNDS.maxX), sy(z)); }
+    g.stroke();
+
+    // Names: hoods (and whose gang runs them), then the landmarks.
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    const label = (text, x, y, size, color, family = SA_FONT, style = '') => {
+      g.font = `${style} ${size}px ${family}`;
+      g.lineJoin = 'round';
+      g.lineWidth = Math.max(2.5, size / 4.5);
+      g.strokeStyle = '#000';
+      g.strokeText(text, x, y);
+      g.fillStyle = color;
+      g.fillText(text, x, y);
+    };
+    const big = Math.max(15, Math.min(34, k * 24));
+    const small = Math.max(12, Math.min(22, k * 15));
+    HOODS.forEach((h, i) => {
+      const own = this.hoods[i];
+      const x = sx((h.x0 + h.x1) / 2);
+      const y = sy(h.z0) + big * 0.9;              // along the woods at the top, clear of the street
+      label(h.name.toUpperCase(), x, y, big, '#efe6d6');
+      if (own && own.gang) label(own.gang, x, y + big * 0.95, small, own.color, TITLE_FONT, 'italic bold');
+      if (own && own.holder && own.holderGang) label(`held by ${own.holderGang}`, x, y + big * 0.95 + small * 1.1, small * 0.85, own.holder, TITLE_FONT, 'italic bold');
+    });
+    const hospital = BUILDINGS.find((b) => b.id === 'hospital');
+    const marks = [
+      ['DOWNTOWN', 0, DOWNTOWN.z1 - 28, '#d7ccf0'],
+      ['CASINO ROYALE', (CASINO.MIN_X + CASINO.MAX_X) / 2, (CASINO.MIN_Z + CASINO.MAX_Z) / 2, '#f2c14e'],
+      ['THE SPEEDWAY', TRACK.cx, TRACK.cz, '#e8e8e0'],
+    ];
+    if (hospital) marks.push(['COUNTY GENERAL', (hospital.x0 + hospital.x1) / 2, (hospital.z0 + hospital.z1) / 2, '#ff8a80']);
+    for (const [text, x, z, color] of marks) label(text, sx(x), sy(z), small, color);
+
+    // Every blip on the radar, north-up (the waypoint is drawn on its own below).
+    for (const [key, list] of this.blips) {
+      if (key === 'waypoint') continue;
+      for (const b of list) {
+        const x = sx(b.x);
+        const y = sy(b.z);
+        if (x < -20 || y < -20 || x > cw + 20 || y > ch + 20) continue;
+        this._blip(g, x, y, b, false, 0);
+      }
+    }
+
+    // Your waypoint: a dotted line from you, the flag, and how far it is.
+    const me = [sx(pos.x), sy(pos.z)];
+    if (waypoint) {
+      const w = [sx(waypoint.x), sy(waypoint.z)];
+      g.save();
+      g.setLineDash([8, 7]);
+      g.lineDashOffset = -performance.now() / 60;
+      g.strokeStyle = 'rgba(255,79,216,0.85)';
+      g.lineWidth = 3;
+      g.beginPath(); g.moveTo(me[0], me[1]); g.lineTo(w[0], w[1]); g.stroke();
+      g.restore();
+      this._blip(g, w[0], w[1], { color: '#ff4fd8', shape: 'flag', size: 7 }, false, 0);
+      const d = Math.hypot(waypoint.x - pos.x, waypoint.z - pos.z);
+      label(`${Math.round(d)} m`, w[0], w[1] + 16, 15, '#ffd6f4', UI_FONT, 'bold');
+    }
+
+    // You: a bigger arrow than on the radar, with a pulse round it.
+    const pulse = (performance.now() / 900) % 1;
+    g.strokeStyle = `rgba(255,255,255,${0.7 * (1 - pulse)})`;
+    g.lineWidth = 2;
+    g.beginPath(); g.arc(me[0], me[1], 10 + pulse * 22, 0, Math.PI * 2); g.stroke();
+    g.save();
+    g.translate(me[0], me[1]);
+    g.rotate(-facing);
+    g.scale(1.35, 1.35);
+    g.fillStyle = '#ffffff';
+    g.strokeStyle = '#000';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(0, -9); g.lineTo(7, 7); g.lineTo(0, 3); g.lineTo(-7, 7); g.closePath();
+    g.fill(); g.stroke();
+    g.restore();
+
+    // North, and a scale bar.
+    g.fillStyle = '#111';
+    g.beginPath(); g.arc(cw - 40, 92, 15, 0, Math.PI * 2); g.fill();
+    g.lineWidth = 2;
+    g.strokeStyle = '#efe6d6';
+    g.stroke();
+    label('N', cw - 40, 93, 18, '#fff');
+    const metres = [50, 100, 200, 500].find((m) => m * k >= 70) || 500;
+    const bx = 28;
+    const by = ch - 64;
+    g.fillStyle = '#000';
+    g.fillRect(bx - 2, by - 2, metres * k + 4, 9);
+    g.fillStyle = '#efe6d6';
+    g.fillRect(bx, by, metres * k, 5);
+    g.textAlign = 'left';
+    label(`${metres} m`, bx + metres * k + 8, by + 2, 14, '#efe6d6');
+  }
+
+  _blip(g, x, y, b, edge, yaw) {
     const s = (b.size || 5) * (edge ? 0.8 : 1);
     g.fillStyle = b.color || '#fff';
     g.strokeStyle = '#000';
@@ -230,6 +364,14 @@ export class Radar {
         g.textAlign = 'center';
         g.textBaseline = 'middle';
         g.fillText(b.label || '?', x, y + 0.5);
+        break;
+      case 'flag':
+        // Your waypoint: a pennant on a pole, planted where you clicked.
+        g.lineWidth = 2;
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x, y - s * 3.2); g.stroke();
+        g.beginPath(); g.moveTo(x, y - s * 3.2); g.lineTo(x + s * 2.2, y - s * 2.5); g.lineTo(x, y - s * 1.8); g.closePath();
+        g.fill(); g.stroke();
+        g.beginPath(); g.arc(x, y, s * 0.45, 0, Math.PI * 2); g.fill(); g.stroke();
         break;
       case 'marker':
         // A checkpoint: a big red blip, pulsing.

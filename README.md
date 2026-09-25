@@ -187,7 +187,8 @@ decided on the host, so nobody can cheat by editing their browser.
 | `F3` | Frame rate, draw calls, the graphics setting and render scale |
 | `H` | Help |
 | `C` | Smoke your cigar |
-| `M` | Mute |
+| `M` | The map: wheel to zoom, drag to move, click to set a waypoint |
+| `N` | Mute |
 
 ---
 
@@ -555,6 +556,14 @@ hoods tinted in their owners' colours, other players, your clubhouse (**H**),
 your restaurants (**R**), delivery doors, raiders, dropped bags of money (**$**).
 The name of the place you walk into appears in the corner.
 
+**`M` opens the map**: the whole valley, north up, with every hood's name and
+the gang that runs it, the landmarks, and everything the radar shows. Wheel to
+zoom in on the cursor, drag to move around. **Click to set a waypoint**: a pink
+flag with a dotted line from you and how far it is. It stays on your radar,
+pinned to the rim while it is out of range, until you get within 10 m of it.
+Click the flag again (or right-click) to take it away. The game keeps going
+while the map is up, and `M` or `Esc` takes you back.
+
 ### Graphics
 
 `P` cycles the graphics setting; the choice is remembered per browser.
@@ -639,7 +648,8 @@ public/js/
   gfx/            graphics settings (quality.js), sky and fog (atmosphere.js), reflections (env.js),
                   materials and generated surfaces, photo textures, terrain blending, trees, grass
   batcher.js      merges everything that never moves, per material per patch of ground
-  radar.js        the rotating radar
+  radar.js        the rotating radar, and the full-screen map drawn from the same picture
+  mapview.js      the map screen (M): zoom, drag and your waypoint
   unitsview.js    gang members and raiders, between the server's snapshots
   raidview.js     raid cars and dropped bags of money
   avatar.js       your farmer and your first-person hands

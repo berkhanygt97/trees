@@ -58,7 +58,7 @@ check('restaurant staff need a restaurant', p.workers.length === 0);
 const money0 = p.money;
 room.handle(p, { t: 'hire', d: { station: 'jobcentre', cid: board[0].cid, role: 'field', name: '  Big <b>Earl</b>!!  ' } });
 const earl = p.workers[0];
-if (earl) earl.trait = 'steady';   // 6am to 8pm, so the test knows when he works
+if (earl) { earl.trait = 'steady'; earl.speed = 1; }   // 6am to 8pm at an average pace, so the test knows how much he gets done
 check('hire a field hand with your own name for them', earl && earl.name === 'Big bEarlb', earl && earl.name);
 check('the first day is paid up front', earl && money0 - p.money === earl.wage, `wage ${earl && earl.wage}`);
 check('hired candidates leave the board', !room.staff.candidates().some((c) => c.cid === board[0].cid));

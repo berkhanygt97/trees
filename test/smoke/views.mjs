@@ -267,4 +267,49 @@ export const VIEWS = [
   { name: 'rain', server: (room) => at(room, 15, 'rain'), pos: [0, 0, 200], yaw: 0, pitch: -0.05, wait: 7000 },
   { name: 'storm-night', server: (room) => at(room, 21.5, 'storm'), pos: [-60, 0, 216], yaw: 1.2, pitch: 0.05, wait: 7000 },
   { name: 'back-to-clear', server: (room) => at(room, 12), wait: 500 },
+  // The map (M): the whole valley, a waypoint planted with a click, zooming in
+  // on the cursor, then the waypoint on the radar's rim once the map is shut.
+  { name: 'map', pos: [street.x0 + 60, 0, midZ], yaw: 0, pitch: 0, wait: 1500, steps: async (page) => {
+    await page.keyboard.press('KeyM');
+    await page.waitForFunction(() => window.casino.map.open, null, { timeout: 30_000 });
+    await page.waitForTimeout(500);
+    await page.mouse.click(...await mapPoint(page, 450, 60));
+    const wp = await page.evaluate(() => window.casino.map.waypoint);
+    if (!wp || Math.abs(wp.x - 450) > 4 || Math.abs(wp.z - 60) > 4) throw new Error(`map: a click did not plant the waypoint (${JSON.stringify(wp)})`);
+  } },
+  { name: 'map-zoom', wait: 1500, steps: async (page) => {
+    const fit = await page.evaluate(() => window.casino.map.view.zoom);
+    await page.mouse.move(...await mapPoint(page, street.x0 + 60, midZ));
+    for (let i = 0; i < 6; i++) { await page.mouse.wheel(0, -240); await page.waitForTimeout(80); }
+    const v = await page.evaluate(() => ({ ...window.casino.map.view }));
+    if (!(v.zoom > fit * 2)) throw new Error(`map: the wheel did not zoom in (${fit} -> ${v.zoom})`);
+    // Clicking the flag again takes the waypoint away.
+    await page.waitForTimeout(600);
+    const p1 = await mapPoint(page, street.x0 + 90, midZ);
+    await page.mouse.click(...p1);
+    await page.waitForTimeout(300);
+    const w1 = await page.evaluate(() => window.casino.map.waypoint);
+    const p2 = await mapPoint(page, street.x0 + 90, midZ);
+    await page.mouse.click(...p2);
+    await page.waitForTimeout(300);
+    const w2 = await page.evaluate(() => ({ w: window.casino.map.waypoint, v: window.casino.map.view }));
+    if (w2.w) throw new Error(`map: clicking the flag did not take the waypoint away ${JSON.stringify({ p1, w1, p2, w2 })}`);
+    await page.evaluate(() => window.casino.map.setWaypoint({ x: 450, z: 60 }));
+  } },
+  { name: 'map-radar', wait: 2500, steps: async (page) => {
+    await page.keyboard.press('KeyM');
+    const s = await page.evaluate(() => ({ open: window.casino.map.open, wp: window.casino.map.waypoint }));
+    if (s.open || !s.wp) throw new Error(`map: M should shut the map and keep the waypoint (${JSON.stringify(s)})`);
+    await page.waitForFunction(() => (window.casino.radar.blips.get('waypoint') || []).length === 1, null, { timeout: 30_000 });
+  } },
 ];
+
+/** Where a world point is on the open map, in page pixels. */
+async function mapPoint(page, x, z) {
+  return page.evaluate(([x, z]) => {
+    const m = window.casino.map;
+    const r = m.canvas.getBoundingClientRect();
+    const [sx, sy] = m.toScreen(x, z);
+    return [r.left + sx, r.top + sy];
+  }, [x, z]);
+}

@@ -33,6 +33,7 @@ import { PerfMeter } from './perf.js';
 import { CameraRig } from './camera.js';
 import { markShadows } from './shadows.js';
 import { Radar, zoneName } from './radar.js';
+import { MapScreen } from './mapview.js';
 import { UnitsView } from './unitsview.js';
 import { RaidView } from './raidview.js';
 import { PhysicsWorld } from './physics/world.js';
@@ -193,6 +194,8 @@ function initScene() {
     get physics() { return physics; },
     get units() { return units; },
     get radar() { return radar; },
+    get map() { return mapScreen; },
+    openMap: (on = true) => toggleMap(on),
     get workers() { return workers; },
     get npcs() { return npcs; },
     get restaurants() { return restaurants; },
@@ -394,6 +397,11 @@ net.on('welcome', (d) => {
   world.hoods.setOwners(d.plots);
   world.hoods.setTags(tagsNow);
   radar = new Radar(document.getElementById('radar'));
+  mapScreen = new MapScreen(document.getElementById('map'), radar);
+  mapScreen.onChange = (w) => {
+    lastRadarBlips = 0;               // show the waypoint on the radar straight away
+    if (w) sfx.click();
+  };
   updateThreat();
   radar.setHoods(d.plots);
   hud.setHealth(hp);
@@ -768,7 +776,24 @@ function relock() {
   clearTimeout(relockTimer);
   controls.lock();
   // Browsers impose a short cooldown after an Esc-driven unlock; try once more.
-  relockTimer = setTimeout(() => { if (!controls.locked && !hud.panelOpen) controls.lock(); }, 1400);
+  relockTimer = setTimeout(() => { if (!controls.locked && !hud.panelOpen && !(mapScreen && mapScreen.open)) controls.lock(); }, 1400);
+}
+
+/** The full-screen map (M). The mouse is let go while it is up, so it can be clicked. */
+function toggleMap(on = !(mapScreen && mapScreen.open)) {
+  if (!mapScreen || on === mapScreen.open || (on && activePanel)) return;
+  if (on) {
+    hud.toggleHelp(false);
+    holding = false;
+    triggerHeld = false;
+    weapons.setAiming(false);
+    mapScreen.show(true);
+    controls.unlock();
+  } else {
+    mapScreen.show(false);
+    relock();
+  }
+  sfx.click();
 }
 
 // ------------------------------------------------------------ deliveries
@@ -1019,8 +1044,13 @@ addEventListener('keydown', (e) => {
     hud.showBoard(true);
     return;
   }
-  if (e.code === 'KeyM') {
+  if (e.code === 'KeyN') {
     hud.toast(sfx.toggleMute() ? 'Sound off' : 'Sound on', 'info');
+    return;
+  }
+  if (e.code === 'KeyM' && !activePanel) { toggleMap(); return; }
+  if (mapScreen && mapScreen.open) {
+    if (e.code === 'Escape') toggleMap(false);
     return;
   }
   if (e.code === 'KeyH' && !activePanel) { hud.toggleHelp(); return; }
@@ -1100,7 +1130,7 @@ addEventListener('keyup', (e) => {
 });
 
 addEventListener('mousedown', (e) => {
-  if (!me || activePanel || !controls.locked || controls.frozen) return;
+  if (!me || activePanel || (mapScreen && mapScreen.open) || !controls.locked || controls.frozen) return;
   if (e.button === 2) { weapons.setAiming(true); return; }
   if (e.button !== 0) return;
   if (weapons.out && !controls.car) {
@@ -1129,6 +1159,7 @@ let last = performance.now();
 let lastMoveSent = 0;
 let lastShadowMark = 0;
 let radar = null;
+let mapScreen = null;               // the full-screen map (M) and your waypoint
 let wreckSmoke = null;              // dark smoke off smashed-up buildings
 let lastWreckPuff = 0;
 let units = null;
@@ -1148,8 +1179,10 @@ function loop(now) {
   const dt = Math.min(0.05, frameTime);
   last = now;
   perf.begin();
-  // Auto graphics and dynamic resolution watch the real frame time.
-  if (quality.frame(frameTime)) pipeline.resize();
+  // Auto graphics and dynamic resolution watch the real frame time (not
+  // while the map is up and the valley is not being drawn).
+  const mapUp = !!(mapScreen && mapScreen.open);
+  if (!mapUp && quality.frame(frameTime)) pipeline.resize();
   const serverNow = net.now();
   const wt = worldTime();
 
@@ -1305,6 +1338,7 @@ function loop(now) {
   }
 
   updateRadar(dt, now, car);
+  if (mapUp) mapScreen.draw({ pos: controls.pos, facing: car ? car.yaw : controls.facing });
   if (triggerHeld && weapons.out && weapons.gun.auto && !car && controls.locked && weapons.fire()) selfAvatar.fire();
 
   // Your headlights light the road ahead after dark (a light from the pool).
@@ -1388,6 +1422,9 @@ function loop(now) {
   if (activePanel && activePanel.ui.tick) activePanel.ui.tick(serverNow);
   hud.setClock(wt, clock.weather);
   hud.setWar(war, serverNow);
+
+  // The map covers the whole screen, so the valley need not be drawn under it.
+  if (mapUp) { perf.end(dt); return; }
 
   // Sky light and reflections: the live sky outdoors, the casino's own inside.
   const sky = world.sky;
@@ -1502,6 +1539,14 @@ function updateRadar(dt, now, car) {
       const d = HQS[me.plot].door;
       radar.setBlips('home', [{ x: d[0], z: d[2], color: me.color, shape: 'icon', label: 'H', size: 6, edge: true }]);
     }
+    // Your waypoint, pinned to the rim when it is far off; it goes once you get there.
+    const wp = mapScreen && mapScreen.waypoint;
+    if (wp && Math.hypot(wp.x - controls.pos.x, wp.z - controls.pos.z) < 10) {
+      mapScreen.setWaypoint(null);
+      hud.toast('You have reached your waypoint', 'info');
+    }
+    const w = mapScreen && mapScreen.waypoint;
+    radar.setBlips('waypoint', w ? [{ x: w.x, z: w.z, color: '#ff4fd8', shape: 'flag', size: 6, edge: true }] : []);
   }
   radar.update(dt, { yaw, pos: controls.pos, facing: car ? car.yaw : controls.facing, speed: car ? car.speed : 0 });
   if (now - lastZone > 500) {

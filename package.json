@@ -1,6 +1,6 @@
 {
   "name": "lan-harvest-royale",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "A LAN-hosted open-world farming, restaurant and gang game for 4-5 friends: run your own neighbourhood, fight off rival gang raids, go to war with the neighbours, and gamble the profits in town. Progress is saved per player on the host.",
   "type": "module",
   "scripts": {
